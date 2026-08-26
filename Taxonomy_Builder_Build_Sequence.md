@@ -18,6 +18,18 @@ Gets a working grid on screen holding the core data correctly, with save and loa
 
 ---
 
+### Backlog raised after Stage 1 testing (not yet in CLAUDE.md)
+
+James tested the Stage 1 build and raised the following, to be picked up at the noted later stage rather than now:
+
+1. **Description text overflow.** Description cells should visually overlap into empty adjacent description columns, indented one character width per level, so the hierarchy reads as a tight, indented tree rather than columns of blank cells. → Proposed for **Stage 2** (visual presentation).
+2. **One description cell per row, enforced.** Only the description column matching a row's deepest occupied level should be enterable (Section 4.1's rule made real, not just a convention). Needs a decision when built: block a second entry outright, or auto-clear whichever cell had text before. → Proposed for **Stage 3** (ties to promote/demote redefining a row's level).
+3. **Code cell width.** Code cells should be sized to the width of a capital "O" plus 2px padding either side, rather than a generic input width. → Proposed for **Stage 2**.
+4. **Code column headers.** Header labels should be short numerals ("1", "2", …) rather than "Code 1", "Code 2", to fit the narrow code columns. → Proposed for **Stage 2**.
+5. **Code fill-down.** Entering a code should replicate it down the column to subsequent rows until a different code is entered, at which point the new value replicates from there. Needs a decision when built: does it stop at a change in a shallower-level (parent) code, or only when a value is typed directly into that same column? → Proposed for **Stage 3**, though it could land as a Stage 1 follow-up instead — decide when we get there.
+
+---
+
 ## Stage 2 — Visual Conventions
 
 Makes the grid actually look right and communicate level and type visually.
