@@ -7,7 +7,7 @@ import type { TaxonomyProject, TaxonomyRow } from './types';
 import { getLevelColor } from './colors';
 import { saveExportFile } from './exportFolder';
 
-type ExportColumn = { type: 'code' | 'desc'; level: number } | { type: 'delimiter' };
+type ExportColumn = { type: 'code' | 'desc'; level: number } | { type: 'delimiter' } | { type: 'gap' };
 
 function buildExportColumns(numLevels: number, delimiterPositions: number[]): ExportColumn[] {
   const columns: ExportColumn[] = [];
@@ -15,6 +15,10 @@ function buildExportColumns(numLevels: number, delimiterPositions: number[]): Ex
     columns.push({ type: 'code', level });
     if (delimiterPositions.includes(level + 1)) columns.push({ type: 'delimiter' });
   }
+  // A blank spacer column between the code block and the description block, matching the
+  // on-screen grid's own gap column under the "Code" / "Description" section headings
+  // (Section 7: the export should match the working view exactly).
+  columns.push({ type: 'gap' });
   for (let level = 0; level < numLevels; level++) {
     columns.push({ type: 'desc', level });
   }
@@ -24,10 +28,11 @@ function buildExportColumns(numLevels: number, delimiterPositions: number[]): Ex
 function buildDiscreteGrid(project: TaxonomyProject): { header: string[]; rows: string[][]; columns: ExportColumn[] } {
   const { numLevels, delimiterPositions } = project.settings;
   const columns = buildExportColumns(numLevels, delimiterPositions);
-  const header = columns.map((c) => (c.type === 'delimiter' ? '' : String(c.level + 1)));
+  const header = columns.map((c) => (c.type === 'code' || c.type === 'desc' ? String(c.level + 1) : ''));
   const rows = project.rows.map((row) =>
     columns.map((c) => {
       if (c.type === 'delimiter') return '-';
+      if (c.type === 'gap') return '';
       if (c.type === 'code') return row.codes[c.level] ?? '';
       return row.descriptions[c.level] ?? '';
     }),
@@ -115,6 +120,17 @@ export async function exportDiscreteXlsx(project: TaxonomyProject): Promise<void
   for (const rowValues of rows) sheet.addRow(rowValues);
 
   // Column colour-coding and delimiter styling, matching the on-screen grid (Section 4.2/7).
+  //
+  // Column widths: with text wrap off (the default — nothing here turns it on), a cell whose
+  // text is wider than its column spills into the next cell to the right for as long as that
+  // neighbour stays empty, the same trick the on-screen grid itself relies on. Since only one
+  // description column ever holds text on any given row (Section 4.1), every other
+  // description column on that row is empty and free to spill into — so every code column and
+  // every description column except the last can be narrowed right down, and only the last
+  // description column (with no column to its right to spill into) needs to stay auto-fit to
+  // its own longest value.
+  const NARROW_WIDTH = 1.5;
+  const lastDescLevel = project.settings.numLevels - 1;
   columns.forEach((col, colIndex) => {
     const excelCol = sheet.getColumn(colIndex + 1);
     if (col.type === 'delimiter') {
@@ -125,13 +141,15 @@ export async function exportDiscreteXlsx(project: TaxonomyProject): Promise<void
       });
       return;
     }
+    if (col.type === 'gap') {
+      excelCol.width = 3;
+      return;
+    }
     const isCode = col.type === 'code';
-    excelCol.width = autoFitWidth(
-      header[colIndex],
-      rows.map((r) => r[colIndex]),
-      isCode ? 4 : 8,
-      isCode ? 4 : 60,
-    );
+    const staysWide = col.type === 'desc' && col.level === lastDescLevel;
+    excelCol.width = staysWide
+      ? autoFitWidth(header[colIndex], rows.map((r) => r[colIndex]), 8, 60)
+      : NARROW_WIDTH;
     excelCol.alignment = { horizontal: isCode ? 'center' : 'left' };
     const hex = getLevelColor(col.level);
     if (!hex) return;
