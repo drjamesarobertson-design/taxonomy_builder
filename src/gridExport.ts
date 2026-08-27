@@ -117,7 +117,11 @@ export async function exportDiscreteXlsx(project: TaxonomyProject): Promise<void
   const headerRow = sheet.addRow(header);
   headerRow.font = { bold: true };
   headerRow.alignment = { horizontal: 'center' };
-  for (const rowValues of rows) sheet.addRow(rowValues);
+  // A blank string value still writes an actual (empty) cell in the xlsx — Excel treats that
+  // as "has content" and refuses to spill a neighbouring cell's overflow text into it. Writing
+  // null instead leaves the cell with no value at all, which is what the overflow trick below
+  // actually needs.
+  for (const rowValues of rows) sheet.addRow(rowValues.map((v) => (v === '' ? null : v)));
 
   // Column colour-coding and delimiter styling, matching the on-screen grid (Section 4.2/7).
   //

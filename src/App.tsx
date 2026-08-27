@@ -199,6 +199,11 @@ export default function App() {
                 Redo
               </button>
             )}
+            {project && supportsFileSystemAccess() && (
+              <button type="button" onClick={handleChooseFolder} title="Where Save to File and Export write their files">
+                {exportFolderName ? `Folder: ${exportFolderName}` : 'Choose Export Folder'}
+              </button>
+            )}
             {project && (
               <button type="button" onClick={handleSave}>
                 Save to File
@@ -217,11 +222,6 @@ export default function App() {
             {project && (
               <button type="button" onClick={handleLoadClick}>
                 Load from File
-              </button>
-            )}
-            {project && supportsFileSystemAccess() && (
-              <button type="button" onClick={handleChooseFolder} title="Where Save to File and Export write their files">
-                {exportFolderName ? `Folder: ${exportFolderName}` : 'Choose Export Folder'}
               </button>
             )}
             {project && (
