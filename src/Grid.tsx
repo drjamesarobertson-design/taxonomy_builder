@@ -44,8 +44,12 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(
     null,
   );
+  const [promoteDemoteChoice, setPromoteDemoteChoice] = useState<{
+    direction: 'promote' | 'demote';
+  } | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const confirmDialogRef = useRef<HTMLDivElement>(null);
+  const promoteDemoteDialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // A native window.alert() can be dismissed by keystrokes the user is still buffering
@@ -59,6 +63,10 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
   useEffect(() => {
     if (confirmDialog) confirmDialogRef.current?.focus();
   }, [confirmDialog]);
+
+  useEffect(() => {
+    if (promoteDemoteChoice) promoteDemoteDialogRef.current?.focus();
+  }, [promoteDemoteChoice]);
 
   useEffect(() => {
     // A freshly created taxonomy starts with one empty row already in place — put the
@@ -471,6 +479,35 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     setContextMenu(null);
   }
 
+  // Right-click "Replicate Codes Above" — recovers codes that were deleted (or never
+  // entered) by copying the value from the row directly above the selection into every
+  // selected cell in this column. A deliberate copy, not a fresh entry, so it skips the
+  // ascending-order check that would otherwise reject a duplicate of the row above.
+  function handleReplicateAbove() {
+    if (!contextMenu || contextMenu.kind !== 'code' || !selection) return;
+    const { level } = contextMenu;
+    const selectedIndices = rows
+      .map((r, i) => (selection.rowIds.has(r.id) ? i : -1))
+      .filter((i) => i !== -1)
+      .sort((a, b) => a - b);
+    if (selectedIndices.length === 0) return;
+    const topIndex = selectedIndices[0];
+    const sourceValue = topIndex > 0 ? (rows[topIndex - 1].codes[level] ?? '') : '';
+    if (!sourceValue) {
+      setValidationError('No code above to replicate from.');
+      return;
+    }
+    onChange(
+      rows.map((row) =>
+        selection.rowIds.has(row.id)
+          ? { ...row, codes: row.codes.map((c, i) => (i === level ? sourceValue : c)) }
+          : row,
+      ),
+    );
+    setSelection(null);
+    setContextMenu(null);
+  }
+
   // A row's level is the position of its deepest populated description column (Section
   // 4.1); -1 means the row has no description at all yet.
   function levelOf(row: TaxonomyRow): number {
@@ -489,7 +526,39 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     return i;
   }
 
-  function handlePromoteDemote(direction: 'promote' | 'demote') {
+  // Decides whether promote/demote needs to ask "just this entry, or with children?" — only
+  // relevant when at least one selected entry actually has children — then dispatches. A
+  // boundary violation on one of the selected entries themselves is reported immediately,
+  // before ever asking about scope, since it fails regardless of which scope is chosen.
+  function requestPromoteDemote(direction: 'promote' | 'demote') {
+    if (!selection || selection.kind !== 'desc') return;
+    const offset = direction === 'promote' ? -1 : 1;
+    const selectedIndices = rows
+      .map((r, i) => (selection.rowIds.has(r.id) ? i : -1))
+      .filter((i) => i !== -1 && levelOf(rows[i]) !== -1);
+    if (selectedIndices.length === 0) return;
+    setContextMenu(null);
+    const outOfBounds = selectedIndices.some((idx) => {
+      const newLevel = levelOf(rows[idx]) + offset;
+      return newLevel < 0 || newLevel >= numLevels;
+    });
+    if (outOfBounds) {
+      setValidationError(
+        direction === 'promote'
+          ? 'Cannot promote further — already at the leftmost level'
+          : 'Cannot demote further — no levels remain to the right',
+      );
+      return;
+    }
+    const hasChildren = selectedIndices.some((idx) => getDescendantEndIndex(idx) > idx + 1);
+    if (hasChildren) {
+      setPromoteDemoteChoice({ direction });
+    } else {
+      handlePromoteDemote(direction, 'withChildren');
+    }
+  }
+
+  function handlePromoteDemote(direction: 'promote' | 'demote', scope: 'entry' | 'withChildren') {
     if (!selection || selection.kind !== 'desc') return;
     const offset = direction === 'promote' ? -1 : 1;
     const selectedIndices = rows
@@ -498,12 +567,13 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
       .sort((a, b) => a - b);
     if (selectedIndices.length === 0) return;
 
-    // Each selected entry, plus all of its descendants (Section 6.3), moves as one block.
+    // Each selected entry moves either alone, or together with all of its descendants
+    // (Section 6.3), per the chosen scope.
     const affected = new Set<number>();
     const ranges: Array<{ start: number; end: number }> = [];
     for (const idx of selectedIndices) {
       if (affected.has(idx)) continue; // already covered by an earlier ancestor's range
-      const end = getDescendantEndIndex(idx);
+      const end = scope === 'withChildren' ? getDescendantEndIndex(idx) : idx + 1;
       ranges.push({ start: idx, end });
       for (let i = idx; i < end; i++) affected.add(i);
     }
@@ -522,25 +592,29 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
 
     // Moving the block can't leave its new position skipping a level relative to its
     // still-unmoved neighbours above or below — the same cascade rule that governs typing
-    // a description directly (Section 4.1 / the description-cascade rule).
-    for (const { start, end } of ranges) {
-      const newTopLevel = levelOf(rows[start]) + offset;
-      for (let i = start - 1; i >= 0; i--) {
-        if (affected.has(i)) continue;
-        const lvl = levelOf(rows[i]);
-        if (lvl === -1) continue;
-        if (newTopLevel > lvl + 1) {
-          setValidationError('Descriptions must cascade no more than one column right');
-          return;
+    // a description directly (Section 4.1 / the description-cascade rule). Deliberately
+    // skipped when moving "just this entry" away from its children — detaching it from
+    // them is the entire point, so the gap it leaves behind is expected, not an error.
+    if (scope === 'withChildren') {
+      for (const { start, end } of ranges) {
+        const newTopLevel = levelOf(rows[start]) + offset;
+        for (let i = start - 1; i >= 0; i--) {
+          if (affected.has(i)) continue;
+          const lvl = levelOf(rows[i]);
+          if (lvl === -1) continue;
+          if (newTopLevel > lvl + 1) {
+            setValidationError('Descriptions must cascade no more than one column right');
+            return;
+          }
+          break;
         }
-        break;
-      }
-      const newBottomLevel = levelOf(rows[end - 1]) + offset;
-      if (end < rows.length) {
-        const lvl = levelOf(rows[end]);
-        if (lvl !== -1 && lvl > newBottomLevel + 1) {
-          setValidationError('Descriptions must cascade no more than one column right');
-          return;
+        const newBottomLevel = levelOf(rows[end - 1]) + offset;
+        if (end < rows.length) {
+          const lvl = levelOf(rows[end]);
+          if (lvl !== -1 && lvl > newBottomLevel + 1) {
+            setValidationError('Descriptions must cascade no more than one column right');
+            return;
+          }
         }
       }
     }
@@ -684,11 +758,16 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
           {contextMenu.kind === 'desc' && (
             <>
               <li onClick={handleToggleCase}>Toggle Case</li>
-              <li onClick={() => handlePromoteDemote('promote')}>Promote</li>
-              <li onClick={() => handlePromoteDemote('demote')}>Demote</li>
+              <li onClick={() => requestPromoteDemote('promote')}>Promote</li>
+              <li onClick={() => requestPromoteDemote('demote')}>Demote</li>
             </>
           )}
-          {contextMenu.kind === 'code' && <li onClick={handleDeleteCodes}>Delete Codes</li>}
+          {contextMenu.kind === 'code' && (
+            <>
+              <li onClick={handleDeleteCodes}>Delete Codes</li>
+              <li onClick={handleReplicateAbove}>Replicate Codes Above</li>
+            </>
+          )}
           <li className="context-menu-separator" onClick={() => handleInsertRow('above')}>
             Insert Row Above
           </li>
@@ -722,6 +801,49 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
                 }}
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {promoteDemoteChoice && (
+        <div className="validation-overlay" onClick={() => setPromoteDemoteChoice(null)}>
+          <div
+            ref={promoteDemoteDialogRef}
+            className="validation-dialog"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <p>
+              {promoteDemoteChoice.direction === 'promote' ? 'Promote' : 'Demote'} just this
+              entry, or this entry and its children?
+            </p>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setPromoteDemoteChoice(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handlePromoteDemote(promoteDemoteChoice.direction, 'entry');
+                  setPromoteDemoteChoice(null);
+                }}
+              >
+                Just This Entry
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handlePromoteDemote(promoteDemoteChoice.direction, 'withChildren');
+                  setPromoteDemoteChoice(null);
+                }}
+              >
+                Entry + Children
               </button>
             </div>
           </div>
