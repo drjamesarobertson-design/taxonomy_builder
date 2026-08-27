@@ -264,6 +264,14 @@ body.sign-on-theme .delimiter-empty {
   padding: 4px 2px;
 }
 
+.section-heading {
+  background: #102a5c;
+  color: #fff;
+  font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 0.95rem;
+  letter-spacing: 0.03em;
+}
+
 .code-col {
   width: 1px; /* shrink-to-fit; actual width comes from .code-cell */
 }
