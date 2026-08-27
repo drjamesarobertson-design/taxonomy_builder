@@ -86,14 +86,25 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
     if (editIndex === -1) return;
 
     const oldValue = rows[editIndex].codes[level] ?? '';
-    if (char === oldValue) return;
+    // Retyping the same character is a deliberate re-entry (e.g. re-cascading "." padding),
+    // not a no-op — it still runs the full cascade/clear-right logic below.
+    const isPadding = char === '.';
 
     if (char !== '' && !isValidCodeChar(char)) {
       window.alert('Invalid code. Valid codes are: ".", 0 to 9, A to Z, a to z');
       return;
     }
 
-    if (char !== '') {
+    // "." marks "no description / unused from here on" (Section 4.4), so it's exempt from
+    // both the ordering rule and the description-correspondence rule below.
+    if (char !== '' && !isPadding && !(rows[editIndex].descriptions[level] ?? '').trim()) {
+      window.alert(
+        'There is no corresponding description, codes can only be entered for columns with a corresponding description entry',
+      );
+      return;
+    }
+
+    if (char !== '' && !isPadding && char !== oldValue) {
       const { upper, lower } = findOrderBounds(editIndex, level);
       const tooLow = upper !== null && char.charCodeAt(0) <= upper.charCodeAt(0);
       const tooHigh = lower !== null && char.charCodeAt(0) >= lower.charCodeAt(0);
@@ -107,8 +118,10 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
     const parentValue = level > 0 ? (rows[editIndex].codes[level - 1] ?? '') : null;
     let cascadeActive = true;
 
+    // "." fills every column to the right with "." too (padding runs to the end of the
+    // row); any other value simply clears the columns to the right, per Section 4.4/6.3.
     function applyCode(row: TaxonomyRow): TaxonomyRow {
-      const codes = row.codes.map((c, i) => (i === level ? char : i > level ? '' : c));
+      const codes = row.codes.map((c, i) => (i === level ? char : i > level ? (isPadding ? '.' : '') : c));
       return { ...row, codes };
     }
 
@@ -164,6 +177,19 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
     rowIndex: number,
   ) {
     const input = e.currentTarget;
+
+    // Retyping the exact character a code cell already holds is a deliberate re-entry
+    // (e.g. re-cascading "." padding), but the browser never fires onChange when the
+    // resulting value is unchanged — so handle that case here instead.
+    if (kind === 'code' && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const row = rows[rowIndex];
+      if (row && (row.codes[level] ?? '') === e.key) {
+        e.preventDefault();
+        updateCode(row.id, level, e.key);
+        return;
+      }
+    }
+
     switch (e.key) {
       case 'Enter':
       case 'ArrowDown':

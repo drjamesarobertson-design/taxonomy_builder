@@ -49,6 +49,14 @@ After trying fill-down, James asked for the following ahead of schedule (origina
 
 James found that changing an existing code required deleting it first before typing the replacement, and that this two-step interaction was breaking the clear-to-the-right and cascade behaviour above (since the delete and the retype landed as two separate edits, losing the cascade's reference to the value being replaced). Root-caused to overtype not being supported: a code cell now selects its existing character on focus, so typing directly replaces it in one step, matching the two rules above correctly in the common case. Verified with the exact scenario James described (a column reading `2, 3, 6`; changing `3` to `4` clears only that row's deeper codes and leaves the `6` row's own codes untouched) and confirmed a genuine two-step delete-then-retype still cascades correctly too.
 
+### "." padding and description-correspondence gate
+
+Further feedback after trying overtype:
+
+- **Retyping the same character now still applies.** The browser genuinely never fires a change event when a text input's value doesn't actually change (true for both real keystrokes and programmatic fill, confirmed by tracing it directly) — so retyping "." (or any code) to deliberately re-trigger the cascade/padding-fill below was silently doing nothing. Fixed by detecting this exact case in the key handler and applying the same update logic directly, since the normal change event never arrives.
+- **"." is the Section 4.4 padding character**, so it's now exempt from the ascending-order rule (padding isn't a real sibling code) and, when entered at some level, automatically fills every column to its right with "." too, out to the last level — rather than clearing them to blank as any other code change does.
+- **A real (non-".") code can only be entered in a column that has a corresponding description at that exact level, for that row.** Attempting one where the row's own description at that level is empty is rejected with a popup: "There is no corresponding description, codes can only be entered for columns with a corresponding description entry". "." is exempt from this too, since it explicitly marks "no description here". This only gates direct typing — a value arriving through the fill-down cascade or the "." rightward-fill is unaffected, since those rows are inheriting an ancestor's code rather than asserting their own.
+
 ---
 
 ## Stage 2 — Visual Conventions
