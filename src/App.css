@@ -83,6 +83,7 @@
 
 .grid-wrapper {
   overflow-x: auto;
+  padding-right: 30ch; /* room for description text to overflow past the last column */
 }
 
 .taxonomy-grid {
@@ -92,38 +93,53 @@
 .taxonomy-grid th,
 .taxonomy-grid td {
   border: 1px solid #ccc;
-  padding: 2px;
+  padding: 0;
   text-align: center;
 }
 
 .taxonomy-grid th {
-  background: #f0f0f0;
   font-size: 0.8rem;
   white-space: nowrap;
-  padding: 4px 6px;
+  padding: 4px 2px;
 }
 
 .code-col {
-  width: 2.5rem;
+  width: 1px; /* shrink-to-fit; actual width comes from .code-cell */
 }
 
 .code-cell {
-  width: 1.6rem;
+  width: 1.2em;
+  padding: 0 2px;
   text-align: center;
   border: none;
+  background: transparent;
   font: inherit;
+  box-sizing: content-box;
 }
 
 .desc-col {
-  min-width: 12rem;
+  position: relative;
+  width: 6rem;
+  height: 1.7rem;
+  overflow: visible;
+  text-align: left;
 }
 
 .desc-cell {
-  width: 100%;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 32ch;
   border: none;
+  background: transparent;
   font: inherit;
   padding: 2px 4px;
   box-sizing: border-box;
+}
+
+.desc-col-selected {
+  outline: 2px dashed #333;
+  outline-offset: -2px;
 }
 
 .delim-col {
@@ -136,10 +152,36 @@
 .desc-cell:focus {
   outline: 2px solid #4a90d9;
   outline-offset: -1px;
+  background: #fff;
+  z-index: 2;
 }
 
 .row-actions-col {
   width: 2rem;
+}
+
+.context-menu {
+  position: fixed;
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  z-index: 100;
+  min-width: 9rem;
+}
+
+.context-menu li {
+  padding: 6px 12px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 0.9rem;
+}
+
+.context-menu li:hover {
+  background: #f0f0f0;
 }
 
 .remove-row-btn {
