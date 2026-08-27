@@ -32,16 +32,9 @@
   gap: 0.5rem;
 }
 
-.app-logo-placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.app-logo {
   width: 4.5rem;
-  height: 4.5rem;
-  border: 1px dashed currentColor;
-  border-radius: 6px;
-  opacity: 0.5;
-  font-size: 0.75rem;
+  height: auto;
   flex-shrink: 0;
 }
 
