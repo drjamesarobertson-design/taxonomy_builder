@@ -363,6 +363,99 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
     setContextMenu(null);
   }
 
+  // A row's level is the position of its deepest populated description column (Section
+  // 4.1); -1 means the row has no description at all yet.
+  function levelOf(row: TaxonomyRow): number {
+    for (let i = row.descriptions.length - 1; i >= 0; i--) {
+      if ((row.descriptions[i] ?? '').trim()) return i;
+    }
+    return -1;
+  }
+
+  // The end (exclusive) of the contiguous run of descendant rows following startIndex —
+  // every row deeper than it, stopping at the first row at the same level or shallower.
+  function getDescendantEndIndex(startIndex: number): number {
+    const startLevel = levelOf(rows[startIndex]);
+    let i = startIndex + 1;
+    while (i < rows.length && levelOf(rows[i]) > startLevel) i++;
+    return i;
+  }
+
+  function handlePromoteDemote(direction: 'promote' | 'demote') {
+    if (!selection) return;
+    const offset = direction === 'promote' ? -1 : 1;
+    const selectedIndices = rows
+      .map((r, i) => (selection.rowIds.has(r.id) ? i : -1))
+      .filter((i) => i !== -1 && levelOf(rows[i]) !== -1)
+      .sort((a, b) => a - b);
+    if (selectedIndices.length === 0) return;
+
+    // Each selected entry, plus all of its descendants (Section 6.3), moves as one block.
+    const affected = new Set<number>();
+    const ranges: Array<{ start: number; end: number }> = [];
+    for (const idx of selectedIndices) {
+      if (affected.has(idx)) continue; // already covered by an earlier ancestor's range
+      const end = getDescendantEndIndex(idx);
+      ranges.push({ start: idx, end });
+      for (let i = idx; i < end; i++) affected.add(i);
+    }
+
+    for (const i of affected) {
+      const newLevel = levelOf(rows[i]) + offset;
+      if (newLevel < 0 || newLevel >= numLevels) {
+        setValidationError(
+          direction === 'promote'
+            ? 'Cannot promote further — already at the leftmost level'
+            : 'Cannot demote further — no levels remain to the right',
+        );
+        return;
+      }
+    }
+
+    // Moving the block can't leave its new position skipping a level relative to its
+    // still-unmoved neighbours above or below — the same cascade rule that governs typing
+    // a description directly (Section 4.1 / the description-cascade rule).
+    for (const { start, end } of ranges) {
+      const newTopLevel = levelOf(rows[start]) + offset;
+      for (let i = start - 1; i >= 0; i--) {
+        if (affected.has(i)) continue;
+        const lvl = levelOf(rows[i]);
+        if (lvl === -1) continue;
+        if (newTopLevel > lvl + 1) {
+          setValidationError('Descriptions must cascade no more than one column right');
+          return;
+        }
+        break;
+      }
+      const newBottomLevel = levelOf(rows[end - 1]) + offset;
+      if (end < rows.length) {
+        const lvl = levelOf(rows[end]);
+        if (lvl !== -1 && lvl > newBottomLevel + 1) {
+          setValidationError('Descriptions must cascade no more than one column right');
+          return;
+        }
+      }
+    }
+
+    onChange(
+      rows.map((row, i) => {
+        if (!affected.has(i)) return row;
+        const oldLevel = levelOf(row);
+        const newLevel = oldLevel + offset;
+        // Only the description moves; colour follows the column automatically since it's
+        // never stored per-row. The code is blanked, not carried over (Section 6.3).
+        const descriptions = row.descriptions.map((d, idx) => {
+          if (idx === newLevel) return row.descriptions[oldLevel];
+          if (idx === oldLevel) return '';
+          return d;
+        });
+        return { ...row, descriptions, codes: row.codes.map(() => '') };
+      }),
+    );
+    setSelection(null);
+    setContextMenu(null);
+  }
+
   return (
     <div className="grid-wrapper">
       <table className="taxonomy-grid">
@@ -464,6 +557,8 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
           onClick={(e) => e.stopPropagation()}
         >
           <li onClick={handleToggleCase}>Toggle Case</li>
+          <li onClick={() => handlePromoteDemote('promote')}>Promote</li>
+          <li onClick={() => handlePromoteDemote('demote')}>Demote</li>
         </ul>
       )}
 
