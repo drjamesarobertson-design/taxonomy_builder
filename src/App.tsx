@@ -2,7 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import type { TaxonomyProject, TaxonomyRow } from './types';
 import { createEmptyRow, createProject } from './types';
 import { saveProjectToFile, loadProjectFromFile } from './storage';
-import { exportDiscreteCsv, exportDiscreteXlsx } from './gridExport';
+import {
+  exportDiscreteCsv,
+  exportDiscreteXlsx,
+  exportConcatenatedCsv,
+  exportConcatenatedXlsx,
+} from './gridExport';
 import NewTaxonomyForm from './NewTaxonomyForm';
 import Grid from './Grid';
 import Logo from './Logo';
@@ -23,6 +28,12 @@ export default function App() {
   const [redoStack, setRedoStack] = useState<TaxonomyRow[][]>([]);
   const lastEditKeyRef = useRef<string | null>(null);
 
+  // Export (Section 7 / Section 9): choosing "Export to CSV" or "Export to Excel" opens a
+  // small dialog to pick Discrete Columns (Section 7, matches the on-screen grid) or
+  // Concatenated (Section 9, one combined code/description per row for ERP import).
+  const [exportChoice, setExportChoice] = useState<{ format: 'csv' | 'xlsx' } | null>(null);
+  const exportDialogRef = useRef<HTMLDivElement>(null);
+
   // The sign-on (New Taxonomy) screen gets its own dark theme; the working grid keeps the
   // existing light one. Toggled on the body so the theme covers the full page, not just the
   // width-constrained .app box.
@@ -30,6 +41,10 @@ export default function App() {
     document.body.classList.toggle('sign-on-theme', !project);
     return () => document.body.classList.remove('sign-on-theme');
   }, [project]);
+
+  useEffect(() => {
+    if (exportChoice) exportDialogRef.current?.focus();
+  }, [exportChoice]);
 
   // Ctrl/Cmd+Z (undo) and Ctrl/Cmd+Shift+Z or Ctrl+Y (redo) work anywhere in the grid,
   // including while a cell is focused — our own row-level undo takes priority over the
@@ -107,14 +122,17 @@ export default function App() {
     fileInputRef.current?.click();
   }
 
-  function handleExportCsv() {
-    if (!project) return;
-    exportDiscreteCsv(project);
-  }
-
-  function handleExportXlsx() {
-    if (!project) return;
-    exportDiscreteXlsx(project);
+  function runExport(mode: 'discrete' | 'concatenated') {
+    if (!project || !exportChoice) return;
+    const { format } = exportChoice;
+    if (format === 'csv') {
+      if (mode === 'discrete') exportDiscreteCsv(project);
+      else exportConcatenatedCsv(project);
+    } else {
+      if (mode === 'discrete') exportDiscreteXlsx(project);
+      else exportConcatenatedXlsx(project);
+    }
+    setExportChoice(null);
   }
 
   async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
@@ -163,12 +181,12 @@ export default function App() {
               </button>
             )}
             {project && (
-              <button type="button" onClick={handleExportCsv}>
+              <button type="button" onClick={() => setExportChoice({ format: 'csv' })}>
                 Export to CSV
               </button>
             )}
             {project && (
-              <button type="button" onClick={handleExportXlsx}>
+              <button type="button" onClick={() => setExportChoice({ format: 'xlsx' })}>
                 Export to Excel
               </button>
             )}
@@ -220,6 +238,37 @@ export default function App() {
             autoFocusFirstRow={autoFocusFirstRow}
           />
         </>
+      )}
+
+      {exportChoice && (
+        <div className="validation-overlay" onClick={() => setExportChoice(null)}>
+          <div
+            ref={exportDialogRef}
+            className="validation-dialog"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <p>
+              Export to {exportChoice.format === 'csv' ? 'CSV' : 'Excel'} — Discrete Columns or
+              Concatenated?
+            </p>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setExportChoice(null)}>
+                Cancel
+              </button>
+              <button type="button" onClick={() => runExport('discrete')}>
+                Discrete Columns
+              </button>
+              <button type="button" onClick={() => runExport('concatenated')}>
+                Concatenated
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
