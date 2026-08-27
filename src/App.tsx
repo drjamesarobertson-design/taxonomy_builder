@@ -8,6 +8,7 @@ import {
   exportConcatenatedCsv,
   exportConcatenatedXlsx,
 } from './gridExport';
+import { chooseExportFolder, peekExportFolderName, supportsFileSystemAccess } from './exportFolder';
 import NewTaxonomyForm from './NewTaxonomyForm';
 import Grid from './Grid';
 import Logo from './Logo';
@@ -33,6 +34,19 @@ export default function App() {
   // Concatenated (Section 9, one combined code/description per row for ERP import).
   const [exportChoice, setExportChoice] = useState<{ format: 'csv' | 'xlsx' } | null>(null);
   const exportDialogRef = useRef<HTMLDivElement>(null);
+
+  // Export folder (Section 8-adjacent convenience James asked for): on Chromium browsers,
+  // Save/Export can write straight into a folder picked once via the File System Access API,
+  // remembered across reloads, instead of prompting a fresh "Save As" dialog every time.
+  const [exportFolderName, setExportFolderName] = useState<string | null>(null);
+  useEffect(() => {
+    peekExportFolderName().then(setExportFolderName);
+  }, []);
+
+  async function handleChooseFolder() {
+    const folder = await chooseExportFolder();
+    if (folder) setExportFolderName(folder.name);
+  }
 
   // The sign-on (New Taxonomy) screen gets its own dark theme; the working grid keeps the
   // existing light one. Toggled on the body so the theme covers the full page, not just the
@@ -68,8 +82,16 @@ export default function App() {
     purpose: string,
     maxDescriptionLength: number,
     delimiterPositions: number[],
+    indentChar: string,
   ) {
-    const newProject = createProject(title, tableName, purpose, maxDescriptionLength, delimiterPositions);
+    const newProject = createProject(
+      title,
+      tableName,
+      purpose,
+      maxDescriptionLength,
+      delimiterPositions,
+      indentChar,
+    );
     // Start the user off with a row already in place, cursor ready, rather than an empty grid.
     newProject.rows = [createEmptyRow(newProject.settings.numLevels)];
     setProject(newProject);
@@ -112,27 +134,29 @@ export default function App() {
     setDirty(true);
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!project) return;
-    saveProjectToFile(project);
+    await saveProjectToFile(project);
     setDirty(false);
+    peekExportFolderName().then(setExportFolderName);
   }
 
   function handleLoadClick() {
     fileInputRef.current?.click();
   }
 
-  function runExport(mode: 'discrete' | 'concatenated') {
+  async function runExport(mode: 'discrete' | 'concatenated') {
     if (!project || !exportChoice) return;
     const { format } = exportChoice;
     if (format === 'csv') {
-      if (mode === 'discrete') exportDiscreteCsv(project);
-      else exportConcatenatedCsv(project);
+      if (mode === 'discrete') await exportDiscreteCsv(project);
+      else await exportConcatenatedCsv(project);
     } else {
-      if (mode === 'discrete') exportDiscreteXlsx(project);
-      else exportConcatenatedXlsx(project);
+      if (mode === 'discrete') await exportDiscreteXlsx(project);
+      else await exportConcatenatedXlsx(project);
     }
     setExportChoice(null);
+    peekExportFolderName().then(setExportFolderName);
   }
 
   async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
@@ -193,6 +217,11 @@ export default function App() {
             {project && (
               <button type="button" onClick={handleLoadClick}>
                 Load from File
+              </button>
+            )}
+            {project && supportsFileSystemAccess() && (
+              <button type="button" onClick={handleChooseFolder} title="Where Save to File and Export write their files">
+                {exportFolderName ? `Folder: ${exportFolderName}` : 'Choose Export Folder'}
               </button>
             )}
             {project && (

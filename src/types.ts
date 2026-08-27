@@ -13,6 +13,12 @@ export interface TaxonomySettings {
   paddingChar: string;
   /** Maximum ERP description field length, captured at taxonomy creation (Section 6.7). */
   maxDescriptionLength: number;
+  /**
+   * Character used as the per-level leading indent in Concatenated exports (Section 9).
+   * Default a single space (ASCII 32); some ERPs prefer a visible character such as "_"
+   * instead, since leading spaces can be trimmed on import.
+   */
+  indentChar: string;
 }
 
 export interface TaxonomyRow {
@@ -38,6 +44,7 @@ export const DEFAULT_SETTINGS: TaxonomySettings = {
   delimiterPositions: [3],
   paddingChar: '.',
   maxDescriptionLength: 40,
+  indentChar: ' ',
 };
 
 export function createEmptyRow(numLevels: number): TaxonomyRow {
@@ -54,13 +61,14 @@ export function createProject(
   purpose: string,
   maxDescriptionLength: number,
   delimiterPositions: number[],
+  indentChar: string = ' ',
 ): TaxonomyProject {
   return {
     version: 1,
     title,
     tableName,
     purpose,
-    settings: { ...DEFAULT_SETTINGS, maxDescriptionLength, delimiterPositions },
+    settings: { ...DEFAULT_SETTINGS, maxDescriptionLength, delimiterPositions, indentChar },
     rows: [],
   };
 }

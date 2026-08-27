@@ -8,6 +8,7 @@ interface NewTaxonomyFormProps {
     purpose: string,
     maxDescriptionLength: number,
     delimiterPositions: number[],
+    indentChar: string,
   ) => void;
   onLoadClick: () => void;
 }
@@ -27,6 +28,12 @@ export default function NewTaxonomyForm({ onCreate, onLoadClick }: NewTaxonomyFo
   const [delimiterPositions, setDelimiterPositions] = useState<number[]>(
     DEFAULT_SETTINGS.delimiterPositions,
   );
+  // Concatenated exports (Section 9) indent each level with a leading space by default; some
+  // ERPs trim leading spaces on import, so James asked for an alternative single character
+  // (e.g. "_") to be configurable per taxonomy instead.
+  const [replaceIndentChar, setReplaceIndentChar] = useState(false);
+  const [indentChar, setIndentChar] = useState('_');
+  const [indentCharError, setIndentCharError] = useState<string | null>(null);
 
   function addDelimiter() {
     // Default the new one to just after the last one, or after column 3 if there are none yet.
@@ -47,9 +54,23 @@ export default function NewTaxonomyForm({ onCreate, onLoadClick }: NewTaxonomyFo
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim() || !tableName.trim()) return;
+    if (replaceIndentChar) {
+      const code = indentChar.charCodeAt(0);
+      if (indentChar.length !== 1 || Number.isNaN(code) || code < 33 || code > 126) {
+        setIndentCharError('Enter a single printable ASCII character (not space).');
+        return;
+      }
+    }
     const sorted = [...new Set(delimiterPositions)].sort((a, b) => a - b);
     const maxDescriptionLength = Math.max(1, Number(maxDescriptionLengthText) || DEFAULT_SETTINGS.maxDescriptionLength);
-    onCreate(title.trim(), tableName.trim(), purpose.trim(), maxDescriptionLength, sorted);
+    onCreate(
+      title.trim(),
+      tableName.trim(),
+      purpose.trim(),
+      maxDescriptionLength,
+      sorted,
+      replaceIndentChar ? indentChar : ' ',
+    );
   }
 
   return (
@@ -124,6 +145,36 @@ export default function NewTaxonomyForm({ onCreate, onLoadClick }: NewTaxonomyFo
             + Insert {delimiterPositions.length > 0 ? 'Further ' : ''}Delimiter
           </button>
         )}
+      </fieldset>
+
+      <fieldset className="indent-char-setup">
+        <legend>Leading Pad Character</legend>
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={replaceIndentChar}
+            onChange={(e) => {
+              setReplaceIndentChar(e.target.checked);
+              setIndentCharError(null);
+            }}
+          />
+          Replace leading space with other ASCII character?
+        </label>
+        {replaceIndentChar && (
+          <label>
+            Leading Pad Character
+            <input
+              value={indentChar}
+              maxLength={1}
+              onChange={(e) => {
+                setIndentChar(e.target.value);
+                setIndentCharError(null);
+              }}
+              title="A single printable ASCII character (e.g. &quot;_&quot;) used instead of a space to indent each level in Concatenated exports"
+            />
+          </label>
+        )}
+        {indentCharError && <p className="field-error">{indentCharError}</p>}
       </fieldset>
 
       <div className="form-actions">

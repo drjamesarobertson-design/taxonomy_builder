@@ -1,10 +1,10 @@
 import type { TaxonomyProject } from './types';
-import { downloadBlob } from './download';
+import { saveExportFile } from './exportFolder';
 
-export function saveProjectToFile(project: TaxonomyProject): void {
+export async function saveProjectToFile(project: TaxonomyProject): Promise<void> {
   const json = JSON.stringify(project, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
-  downloadBlob(blob, `${project.tableName || project.title || 'taxonomy'}.json`);
+  await saveExportFile(blob, `${project.tableName || project.title || 'taxonomy'}.json`);
 }
 
 function isTaxonomyProject(data: unknown): data is TaxonomyProject {
@@ -34,6 +34,11 @@ export function loadProjectFromFile(file: File): Promise<TaxonomyProject> {
         const settings = data.settings as unknown as Record<string, unknown>;
         if (!Array.isArray(settings.delimiterPositions) && typeof settings.delimiterAfter === 'number') {
           settings.delimiterPositions = [settings.delimiterAfter];
+        }
+        // Older files predate the configurable Concatenated-export indent character — default
+        // to the space that was previously hardcoded.
+        if (typeof settings.indentChar !== 'string' || settings.indentChar.length !== 1) {
+          settings.indentChar = ' ';
         }
         resolve(data);
       } catch {
