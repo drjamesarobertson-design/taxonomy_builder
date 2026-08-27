@@ -14,6 +14,14 @@ export default function App() {
   const [autoFocusFirstRow, setAutoFocusFirstRow] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Undo/redo (Section 6.8) over the grid's rows. Consecutive edits to the same field (the
+  // same code or description cell, identified by Grid's coalesceKey) merge into one undo
+  // step rather than one step per keystroke; every other kind of change — promote/demote,
+  // insert/delete, sort, case toggle, move — always gets its own step.
+  const [undoStack, setUndoStack] = useState<TaxonomyRow[][]>([]);
+  const [redoStack, setRedoStack] = useState<TaxonomyRow[][]>([]);
+  const lastEditKeyRef = useRef<string | null>(null);
+
   // The sign-on (New Taxonomy) screen gets its own dark theme; the working grid keeps the
   // existing light one. Toggled on the body so the theme covers the full page, not just the
   // width-constrained .app box.
@@ -21,6 +29,22 @@ export default function App() {
     document.body.classList.toggle('sign-on-theme', !project);
     return () => document.body.classList.remove('sign-on-theme');
   }, [project]);
+
+  // Ctrl/Cmd+Z (undo) and Ctrl/Cmd+Shift+Z or Ctrl+Y (redo) work anywhere in the grid,
+  // including while a cell is focused — our own row-level undo takes priority over the
+  // browser's native per-field undo, so it stays consistent with the toolbar buttons.
+  useEffect(() => {
+    if (!project) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z') return;
+      if (e.altKey) return;
+      e.preventDefault();
+      if (e.shiftKey) handleRedo();
+      else handleUndo();
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  });
 
   function handleCreate(
     title: string,
@@ -35,11 +59,40 @@ export default function App() {
     setProject(newProject);
     setDirty(true);
     setAutoFocusFirstRow(true);
+    setUndoStack([]);
+    setRedoStack([]);
+    lastEditKeyRef.current = null;
   }
 
-  function handleRowsChange(rows: TaxonomyRow[]) {
+  function handleRowsChange(rows: TaxonomyRow[], coalesceKey?: string) {
     if (!project) return;
+    const shouldCoalesce = coalesceKey !== undefined && coalesceKey === lastEditKeyRef.current;
+    if (!shouldCoalesce) {
+      setUndoStack((stack) => [...stack, project.rows]);
+      setRedoStack([]);
+    }
+    lastEditKeyRef.current = coalesceKey ?? null;
     setProject({ ...project, rows });
+    setDirty(true);
+  }
+
+  function handleUndo() {
+    if (undoStack.length === 0 || !project) return;
+    const previous = undoStack[undoStack.length - 1];
+    setUndoStack((stack) => stack.slice(0, -1));
+    setRedoStack((stack) => [...stack, project.rows]);
+    lastEditKeyRef.current = null;
+    setProject({ ...project, rows: previous });
+    setDirty(true);
+  }
+
+  function handleRedo() {
+    if (redoStack.length === 0 || !project) return;
+    const next = redoStack[redoStack.length - 1];
+    setRedoStack((stack) => stack.slice(0, -1));
+    setUndoStack((stack) => [...stack, project.rows]);
+    lastEditKeyRef.current = null;
+    setProject({ ...project, rows: next });
     setDirty(true);
   }
 
@@ -63,6 +116,9 @@ export default function App() {
       setDirty(false);
       setAutoFocusFirstRow(false);
       setLoadError(null);
+      setUndoStack([]);
+      setRedoStack([]);
+      lastEditKeyRef.current = null;
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Could not load this file.');
     }
@@ -80,6 +136,16 @@ export default function App() {
         <h1 className="app-heading">The ERP Doctor Taxonomy Builder</h1>
         <div className="header-right">
           <div className="toolbar">
+            {project && (
+              <button type="button" onClick={handleUndo} disabled={undoStack.length === 0}>
+                Undo
+              </button>
+            )}
+            {project && (
+              <button type="button" onClick={handleRedo} disabled={redoStack.length === 0}>
+                Redo
+              </button>
+            )}
             {project && (
               <button type="button" onClick={handleSave}>
                 Save to File

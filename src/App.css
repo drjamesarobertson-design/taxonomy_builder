@@ -41,6 +41,21 @@
 .toolbar button {
   padding: 0.4rem 0.8rem;
   cursor: pointer;
+  background: #1660d1;
+  color: #fff;
+  border: 1px solid #1660d1;
+  border-radius: 4px;
+}
+
+.toolbar button:hover {
+  background: #124fa8;
+  border-color: #124fa8;
+}
+
+.toolbar button:disabled {
+  background: #9ab3dd;
+  border-color: #9ab3dd;
+  cursor: default;
 }
 
 .load-error {
@@ -92,10 +107,22 @@
   align-self: flex-start;
 }
 
+.form-actions button {
+  background: #1660d1;
+  color: #fff;
+  border: 1px solid #1660d1;
+  border-radius: 4px;
+}
+
+.form-actions button:hover {
+  background: #124fa8;
+  border-color: #124fa8;
+}
+
 .app-footer {
   margin-top: 2.5rem;
   padding-top: 1rem;
-  font-size: 0.75rem;
+  font-size: 11pt;
   color: #b9c9ef;
   max-width: 480px;
 }

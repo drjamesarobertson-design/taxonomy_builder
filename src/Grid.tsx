@@ -8,7 +8,12 @@ import { formatCharRanges, isValidCodeChar, validCodesInRange } from './codeVali
 interface GridProps {
   settings: TaxonomySettings;
   rows: TaxonomyRow[];
-  onChange: (rows: TaxonomyRow[]) => void;
+  /**
+   * coalesceKey, when present, identifies the single field being edited (e.g. a specific
+   * code or description cell) — the caller uses it to merge consecutive edits to the same
+   * field into one undo step, without Grid needing to know anything about undo itself.
+   */
+  onChange: (rows: TaxonomyRow[], coalesceKey?: string) => void;
   /** Focus the first row's first description cell once, on mount (freshly created taxonomy). */
   autoFocusFirstRow?: boolean;
 }
@@ -18,6 +23,9 @@ type CellKind = 'code' | 'desc';
 interface Selection {
   kind: CellKind;
   level: number;
+  /** For a code-cell selection spanning several columns; absent (or equal to level) for a
+   * single-column selection. Description selections are always single-column. */
+  levelEnd?: number;
   rowIds: Set<string>;
 }
 
@@ -39,6 +47,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
 
   const [selection, setSelection] = useState<Selection | null>(null);
   const [anchorRowId, setAnchorRowId] = useState<string | null>(null);
+  const [anchorLevel, setAnchorLevel] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(
@@ -209,7 +218,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     const maxDescCol = getMaxDescriptionColumn();
     if (char !== '' && level > maxDescCol) {
       setValidationError(
-        'There is no corresponding description, codes can only be entered for columns with a corresponding description entry',
+        'There are no descriptions in this column, codes can only be entered for columns covered by the description hierarchy',
       );
       return;
     }
@@ -262,7 +271,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
           }
         }
       }
-      onChange(updated);
+      onChange(updated, `code:${level}:${rowId}`);
       return;
     }
 
@@ -294,6 +303,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
         }
         return applyCode(row);
       }),
+      `code:${level}:${rowId}`,
     );
   }
 
@@ -326,6 +336,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
           ? { ...row, descriptions: row.descriptions.map((d, i) => (i === level ? value : d)) }
           : row,
       ),
+      `desc:${level}:${rowId}`,
     );
   }
 
@@ -469,7 +480,10 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
   // Shift-click extends a contiguous range from the anchor; ctrl/cmd-click toggles one row
   // in or out; a plain click starts a fresh single-cell selection (and arms drag-select, so
   // dragging down the column extends it the same way shift-click would). Shared by code and
-  // description cells — a selection is always scoped to one kind and one column.
+  // description cells. A code selection can also span several columns — shift-clicking or
+  // dragging into a different column extends a rectangular block, so codes can be replicated
+  // across more than one column at once — but a description selection always stays within
+  // its own column, since Toggle Case/Promote/Demote/Move are inherently single-column.
   function handleCellMouseDown(kind: CellKind, rowId: string, level: number, e: React.MouseEvent) {
     if (e.button !== 0) return; // right/middle click: leave selection to handleCellContextMenu
     if (moveMode) {
@@ -480,15 +494,27 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
       setMoveTarget({ rowId });
       return;
     }
-    if (e.shiftKey && selection && selection.kind === kind && selection.level === level && anchorRowId) {
+    if (e.shiftKey && selection && selection.kind === kind && anchorRowId && anchorLevel !== null) {
       const ids = rows.map((r) => r.id);
       const anchorIdx = ids.indexOf(anchorRowId);
       const clickIdx = ids.indexOf(rowId);
       const [start, end] = anchorIdx < clickIdx ? [anchorIdx, clickIdx] : [clickIdx, anchorIdx];
-      setSelection({ kind, level, rowIds: new Set(ids.slice(start, end + 1)) });
+      const rowIds = new Set(ids.slice(start, end + 1));
+      if (kind === 'code') {
+        const [colStart, colEnd] = anchorLevel <= level ? [anchorLevel, level] : [level, anchorLevel];
+        setSelection({ kind, level: colStart, levelEnd: colEnd, rowIds });
+      } else {
+        setSelection({ kind, level: anchorLevel, rowIds });
+      }
       return;
     }
-    if ((e.ctrlKey || e.metaKey) && selection && selection.kind === kind && selection.level === level) {
+    if (
+      (e.ctrlKey || e.metaKey) &&
+      selection &&
+      selection.kind === kind &&
+      selection.level === level &&
+      !selection.levelEnd
+    ) {
       const rowIds = new Set(selection.rowIds);
       if (rowIds.has(rowId)) rowIds.delete(rowId);
       else rowIds.add(rowId);
@@ -497,33 +523,42 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     }
     setSelection({ kind, level, rowIds: new Set([rowId]) });
     setAnchorRowId(rowId);
+    setAnchorLevel(level);
     isDraggingRef.current = true;
   }
 
   // Extends the selection while a click-and-drag is in progress (Section 6.5's "drag cursor
-  // down column to highlight range"), matching shift-click's range-from-anchor behaviour.
-  // Dragging into a different column or row kind than the drag started in is ignored.
+  // down column to highlight range"), matching shift-click's range-from-anchor behaviour —
+  // including, for code cells, dragging sideways into a rectangular multi-column block.
   function handleCellMouseEnter(kind: CellKind, rowId: string, level: number) {
     if (!isDraggingRef.current || moveMode) return;
-    if (!selection || selection.kind !== kind || selection.level !== level || !anchorRowId) return;
+    if (!selection || selection.kind !== kind || anchorRowId === null || anchorLevel === null) return;
     const ids = rows.map((r) => r.id);
     const anchorIdx = ids.indexOf(anchorRowId);
     const hoverIdx = ids.indexOf(rowId);
     if (anchorIdx === -1 || hoverIdx === -1) return;
     const [start, end] = anchorIdx < hoverIdx ? [anchorIdx, hoverIdx] : [hoverIdx, anchorIdx];
-    setSelection({ kind, level, rowIds: new Set(ids.slice(start, end + 1)) });
+    const rowIds = new Set(ids.slice(start, end + 1));
+    if (kind === 'code') {
+      const [colStart, colEnd] = anchorLevel <= level ? [anchorLevel, level] : [level, anchorLevel];
+      setSelection({ kind, level: colStart, levelEnd: colEnd, rowIds });
+    } else {
+      setSelection({ kind, level: anchorLevel, rowIds });
+    }
   }
 
   function handleCellContextMenu(kind: CellKind, rowId: string, level: number, e: React.MouseEvent) {
     e.preventDefault();
-    if (
-      !selection ||
-      selection.kind !== kind ||
-      selection.level !== level ||
-      !selection.rowIds.has(rowId)
-    ) {
+    const inRange =
+      selection &&
+      selection.kind === kind &&
+      selection.rowIds.has(rowId) &&
+      level >= selection.level &&
+      level <= (selection.levelEnd ?? selection.level);
+    if (!inRange) {
       setSelection({ kind, level, rowIds: new Set([rowId]) });
       setAnchorRowId(rowId);
+      setAnchorLevel(level);
     }
     setContextMenu({ kind, x: e.clientX, y: e.clientY, level, rowId });
   }
@@ -566,25 +601,34 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
   // ascending-order check that would otherwise reject a duplicate of the row above.
   function handleReplicateAbove() {
     if (!contextMenu || contextMenu.kind !== 'code' || !selection) return;
-    const { level } = contextMenu;
+    const levelStart = selection.level;
+    const levelEnd = selection.levelEnd ?? selection.level;
     const selectedIndices = rows
       .map((r, i) => (selection.rowIds.has(r.id) ? i : -1))
       .filter((i) => i !== -1)
       .sort((a, b) => a - b);
     if (selectedIndices.length === 0) return;
     const topIndex = selectedIndices[0];
-    const sourceValue = topIndex > 0 ? (rows[topIndex - 1].codes[level] ?? '') : '';
-    if (!sourceValue) {
+    const updated = rows.map((row) => ({ ...row, codes: [...row.codes] }));
+    // For each column in the selected block, take the value from the row directly above the
+    // block's top row and roll it down through the block's own blank cells, stopping at the
+    // first cell that already holds something — never overwriting real content, and never
+    // reaching past the bottom of the selected block.
+    let anyReplicated = false;
+    for (let level = levelStart; level <= levelEnd; level++) {
+      const sourceValue = topIndex > 0 ? (rows[topIndex - 1].codes[level] ?? '') : '';
+      if (!sourceValue) continue;
+      for (const idx of selectedIndices) {
+        if ((updated[idx].codes[level] ?? '') !== '') break;
+        updated[idx].codes[level] = sourceValue;
+        anyReplicated = true;
+      }
+    }
+    if (!anyReplicated) {
       setValidationError('No code above to replicate from.');
       return;
     }
-    onChange(
-      rows.map((row) =>
-        selection.rowIds.has(row.id)
-          ? { ...row, codes: row.codes.map((c, i) => (i === level ? sourceValue : c)) }
-          : row,
-      ),
-    );
+    onChange(updated);
     setSelection(null);
     setContextMenu(null);
   }
@@ -799,7 +843,8 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
               {levels.map((level) => {
                 const isCodeSelected =
                   selection?.kind === 'code' &&
-                  selection.level === level &&
+                  level >= selection.level &&
+                  level <= (selection.levelEnd ?? selection.level) &&
                   selection.rowIds.has(row.id);
                 return (
                   <Fragment key={`code-${row.id}-${level}`}>
