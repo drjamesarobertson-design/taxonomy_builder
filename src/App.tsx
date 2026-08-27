@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { TaxonomyProject, TaxonomyRow } from './types';
 import { createEmptyRow, createProject } from './types';
 import { saveProjectToFile, loadProjectFromFile } from './storage';
@@ -12,6 +12,14 @@ export default function App() {
   const [dirty, setDirty] = useState(false);
   const [autoFocusFirstRow, setAutoFocusFirstRow] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // The sign-on (New Taxonomy) screen gets its own dark theme; the working grid keeps the
+  // existing light one. Toggled on the body so the theme covers the full page, not just the
+  // width-constrained .app box.
+  useEffect(() => {
+    document.body.classList.toggle('sign-on-theme', !project);
+    return () => document.body.classList.remove('sign-on-theme');
+  }, [project]);
 
   function handleCreate(
     title: string,
@@ -68,34 +76,50 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>Taxonomy Builder</h1>
-        <div className="toolbar">
-          {project && (
-            <button type="button" onClick={handleSave}>
-              Save to File
-            </button>
-          )}
-          <button type="button" onClick={handleLoadClick}>
-            Load from File
-          </button>
-          {project && (
-            <button type="button" onClick={handleNewTaxonomy}>
-              New Taxonomy
-            </button>
-          )}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="application/json"
-            style={{ display: 'none' }}
-            onChange={handleFileSelected}
-          />
+        <h1 className="app-heading">The ERP Doctor Taxonomy Builder</h1>
+        <div className="header-right">
+          <div className="toolbar">
+            {project && (
+              <button type="button" onClick={handleSave}>
+                Save to File
+              </button>
+            )}
+            {project && (
+              <button type="button" onClick={handleLoadClick}>
+                Load from File
+              </button>
+            )}
+            {project && (
+              <button type="button" onClick={handleNewTaxonomy}>
+                New Taxonomy
+              </button>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/json"
+              style={{ display: 'none' }}
+              onChange={handleFileSelected}
+            />
+          </div>
+          {/* Logo goes here, to the right of the heading, once the image asset is supplied. */}
+          <div className="app-logo-placeholder" aria-hidden="true">
+            Logo
+          </div>
         </div>
       </header>
 
       {loadError && <p className="load-error">{loadError}</p>}
 
-      {!project && <NewTaxonomyForm onCreate={handleCreate} />}
+      {!project && (
+        <>
+          <NewTaxonomyForm onCreate={handleCreate} onLoadClick={handleLoadClick} />
+          <footer className="app-footer">
+            The ERP Doctor Taxonomy Builder is the Intellectual Property of the ERP Doctor and
+            James A Robertson and Associates Limited, it is copyright © 2026
+          </footer>
+        </>
+      )}
 
       {project && (
         <>
