@@ -38,6 +38,11 @@ export function loadProjectFromFile(file: File): Promise<TaxonomyProject> {
           reject(new Error('This file does not look like a valid taxonomy project.'));
           return;
         }
+        // Migrate older project files: a single delimiterAfter position becomes an array.
+        const settings = data.settings as unknown as Record<string, unknown>;
+        if (!Array.isArray(settings.delimiterPositions) && typeof settings.delimiterAfter === 'number') {
+          settings.delimiterPositions = [settings.delimiterAfter];
+        }
         resolve(data);
       } catch {
         reject(new Error('Could not parse this file as JSON.'));

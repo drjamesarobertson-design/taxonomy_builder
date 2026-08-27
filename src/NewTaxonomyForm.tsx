@@ -2,8 +2,16 @@ import { useState } from 'react';
 import { DEFAULT_SETTINGS } from './types';
 
 interface NewTaxonomyFormProps {
-  onCreate: (title: string, tableName: string, purpose: string, maxDescriptionLength: number) => void;
+  onCreate: (
+    title: string,
+    tableName: string,
+    purpose: string,
+    maxDescriptionLength: number,
+    delimiterPositions: number[],
+  ) => void;
 }
+
+const numLevels = DEFAULT_SETTINGS.numLevels;
 
 export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
   const [title, setTitle] = useState('');
@@ -12,11 +20,31 @@ export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
   const [maxDescriptionLength, setMaxDescriptionLength] = useState(
     DEFAULT_SETTINGS.maxDescriptionLength,
   );
+  const [delimiterPositions, setDelimiterPositions] = useState<number[]>(
+    DEFAULT_SETTINGS.delimiterPositions,
+  );
+
+  function addDelimiter() {
+    // Default the new one to just after the last one, or after column 3 if there are none yet.
+    const last = delimiterPositions[delimiterPositions.length - 1] ?? 0;
+    const next = Math.min(numLevels - 1, last + 3 || 3);
+    setDelimiterPositions([...delimiterPositions, next]);
+  }
+
+  function updateDelimiter(index: number, value: number) {
+    const clamped = Math.max(1, Math.min(numLevels - 1, value));
+    setDelimiterPositions(delimiterPositions.map((p, i) => (i === index ? clamped : p)));
+  }
+
+  function removeDelimiter(index: number) {
+    setDelimiterPositions(delimiterPositions.filter((_, i) => i !== index));
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim() || !tableName.trim()) return;
-    onCreate(title.trim(), tableName.trim(), purpose.trim(), maxDescriptionLength);
+    const sorted = [...new Set(delimiterPositions)].sort((a, b) => a - b);
+    onCreate(title.trim(), tableName.trim(), purpose.trim(), maxDescriptionLength, sorted);
   }
 
   return (
@@ -43,6 +71,32 @@ export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
           onChange={(e) => setMaxDescriptionLength(Number(e.target.value))}
         />
       </label>
+
+      <fieldset className="delimiter-setup">
+        <legend>Code Delimiters ("-")</legend>
+        {delimiterPositions.length === 0 && <p className="delimiter-empty">No delimiters — Insert "-" Code Delimiter?</p>}
+        {delimiterPositions.map((position, index) => (
+          <div className="delimiter-row" key={index}>
+            <span>Insert "-" Code Delimiter — after how many code columns?</span>
+            <input
+              type="number"
+              min={1}
+              max={numLevels - 1}
+              value={position}
+              onChange={(e) => updateDelimiter(index, Number(e.target.value))}
+            />
+            <button type="button" onClick={() => removeDelimiter(index)}>
+              Remove
+            </button>
+          </div>
+        ))}
+        {delimiterPositions.length < numLevels - 1 && (
+          <button type="button" onClick={addDelimiter}>
+            + Insert {delimiterPositions.length > 0 ? 'Further ' : ''}Delimiter
+          </button>
+        )}
+      </fieldset>
+
       <button type="submit">Create Taxonomy</button>
     </form>
   );

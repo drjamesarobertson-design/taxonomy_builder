@@ -30,7 +30,7 @@ const codeInputId = (level: number, rowId: string) => `code-${level}-${rowId}`;
 const descInputId = (level: number, rowId: string) => `desc-${level}-${rowId}`;
 
 export default function Grid({ settings, rows, onChange }: GridProps) {
-  const { numLevels, delimiterAfter, maxDescriptionLength } = settings;
+  const { numLevels, delimiterPositions, maxDescriptionLength } = settings;
   const levels = Array.from({ length: numLevels }, (_, i) => i);
   const overflowChars = Math.max(10, maxDescriptionLength - numLevels);
 
@@ -490,7 +490,7 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
                 <th className="code-col" style={{ backgroundColor: getLevelColor(level) }}>
                   {level + 1}
                 </th>
-                {level + 1 === delimiterAfter && <th className="delim-col">&nbsp;</th>}
+                {delimiterPositions.includes(level + 1) && <th className="delim-col">&nbsp;</th>}
               </Fragment>
             ))}
             <th className="gap-col">&nbsp;</th>
@@ -536,7 +536,7 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
                         onFocus={(e) => e.currentTarget.select()}
                       />
                     </td>
-                    {level + 1 === delimiterAfter && <td className="delim-col">-</td>}
+                    {delimiterPositions.includes(level + 1) && <td className="delim-col">-</td>}
                   </Fragment>
                 );
               })}
