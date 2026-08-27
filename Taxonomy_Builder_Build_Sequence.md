@@ -118,6 +118,19 @@ A larger batch (refinements plus new functionality), split into three shippable 
 
 Each tranche was verified with its own targeted Playwright coverage plus a full re-run of the accumulated regression suite before merging — no regressions across any of the three.
 
+### Logo: two attempts, then James uploaded the real file to the repo
+
+The logo image James pasted into chat never reached this session as a retrievable file — twice, including via the paperclip attach control — so a first attempt recreated it as hand-drawn SVG from the visual alone. James caught that the recreation had dropped a quadrant (the real mark has all four corner shapes; the pasted preview had looked like the top-left one was empty). Rather than attempt a third recreation from a picture, James uploaded the actual file directly to the GitHub repo, which resolved the whole problem: the real PNG was moved into `src/assets/erp-doctor-logo.png` (cropped down from its original mostly-transparent 266×219 canvas to the visible mark plus a small margin, since otherwise it rendered tiny at the header's logo size), and `Logo.tsx` now renders it directly in place of the SVG.
+
+### Fourth feedback round — Undo, multi-column Replicate Codes Above, and more cosmetics
+
+- **Undo/Redo (Section 6.8), built as previously scoped.** Toolbar buttons plus Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z (or Ctrl+Y), taking priority over the browser's native per-field undo. Consecutive keystrokes into the same code or description field coalesce into a single undo step (Grid tags each `onChange` call with a `coalesceKey` identifying the field being edited; App.tsx only pushes a new undo checkpoint when that key changes from the last one); every other action — promote/demote, insert/delete row, case toggle, move, delete/replicate codes — always gets its own step regardless of what preceded it. History resets when starting a new taxonomy or loading a file.
+- **Replicate Codes Above, extended to a multi-column block.** Shift-click or drag sideways from a code cell now extends a rectangular selection across several columns, not just rows within one column (a description selection still stays single-column, since Toggle Case/Promote/Demote/Move are inherently column-scoped operations). Replicating now rolls each column's own source value (from the row above the block) down through that column's blank cells within the block, stopping at the first cell that already holds something — rather than the old behaviour of unconditionally overwriting every selected cell, which risked clobbering a code that had survived a promote/demote or been entered deliberately.
+- **Wording fix:** the "code has no corresponding description" error now reads "There are no descriptions in this column, codes can only be entered for columns covered by the description hierarchy".
+- **Cosmetic:** the sign-on screen's copyright footnote is 2pt larger; Create Taxonomy/Load from File (sign-on) and Save to File/Load from File/New Taxonomy/Undo/Redo (grid screen) now use the logo's bright blue with white text, since the sign-on buttons had been getting lost directly under the delimiter box.
+
+Verified with new Playwright coverage (multi-column drag-select and replicate, the stop-at-non-blank cascade specifically, and a full undo/redo round-trip covering coalescing, distinct structural steps, keyboard shortcuts, and history reset) plus a full re-run of the accumulated regression suite — no regressions.
+
 ---
 
 ## Stage 2 — Visual Conventions
