@@ -666,18 +666,34 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     // selection too — stopping at the first cell that already holds something. Never
     // overwrites real content; the selection only marks where the source row and the columns
     // to replicate come from, not how far down the cascade is allowed to reach.
+    //
+    // "A source exists above" and "something was actually filled in" are tracked separately:
+    // Add Row/Insert Row already duplicate the row above's codes into a new row, so the very
+    // cell a user right-clicks is often already holding that same value by the time they ask
+    // to replicate it — that's not a missing source, it's nothing left to do, and shouldn't
+    // be reported as the same error as a genuinely blank column with nothing above it at all.
+    let anySourceFound = false;
     let anyReplicated = false;
     for (let level = levelStart; level <= levelEnd; level++) {
       const sourceValue = topIndex > 0 ? (rows[topIndex - 1].codes[level] ?? '') : '';
       if (!sourceValue) continue;
+      anySourceFound = true;
       for (let idx = topIndex; idx < updated.length; idx++) {
         if ((updated[idx].codes[level] ?? '') !== '') break;
         updated[idx].codes[level] = sourceValue;
         anyReplicated = true;
       }
     }
-    if (!anyReplicated) {
+    if (!anySourceFound) {
       setValidationError('No code above to replicate from.');
+      return;
+    }
+    if (!anyReplicated) {
+      // Every selected cell already holds a value (most commonly because Add/Insert Row had
+      // already duplicated it in) — nothing needs filling in, so this is a silent no-op
+      // rather than an error.
+      setSelection(null);
+      setContextMenu(null);
       return;
     }
     onChange(updated);
