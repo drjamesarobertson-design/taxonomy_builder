@@ -37,6 +37,14 @@ James tested the Stage 1 build and raised the following, to be picked up at the 
 - The overflow column's width is derived from the taxonomy's "Maximum ERP Description Field Length" setting (captured at creation): `overflow column width = maxDescriptionLength − number of levels`, clamped to a sensible minimum. It has a visible dashed right boundary marking the "indicative width", while text is still allowed to visually overflow past it.
 - Enter and arrow keys now navigate between cells (Enter/↓ moves down, ↑ moves up, ←/→ move to the adjacent column when the text caret is already at that edge of the cell, otherwise they move the caret as normal).
 
+### Code validation, brought forward from Stage 4
+
+After trying fill-down, James asked for the following ahead of schedule (originally Section 6.7's hard rule, planned for Stage 4):
+
+- **Restricted character set.** Only `.`, `0`-`9`, `a`-`z`, `A`-`Z` are valid in a code cell; any other character is silently rejected (no popup — it just doesn't get typed).
+- **Ascending ASCII order, enforced.** Within a column, and scoped to rows sharing the same parent (the column to the left), a new code must sort strictly between its nearest non-blank neighbours above and below — e.g. if the row above holds `3`, only `4` or higher is accepted. A violation shows a popup: "Code must increase. Valid codes are: …", listing the actual valid characters/ranges. Comparison is case-sensitive per raw ASCII value, so uppercase (`A`-`Z`) sorts before lowercase (`a`-`z`).
+- **Changing a code clears codes to the right.** If a row's code at some level changes, every code at a deeper level (to its right) for that row is cleared, since those child-level codes were only meaningful relative to the old parent code. This applies to every row affected by a fill-down cascade triggered by the edit, not just the row directly typed into.
+
 ---
 
 ## Stage 2 — Visual Conventions

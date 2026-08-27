@@ -3,6 +3,7 @@ import type { TaxonomyRow, TaxonomySettings } from './types';
 import { createEmptyRow } from './types';
 import { getLevelColor } from './colors';
 import { toggleCase } from './caseUtils';
+import { formatCharRanges, isValidCodeChar, validCodesInRange } from './codeValidation';
 
 interface GridProps {
   settings: TaxonomySettings;
@@ -49,21 +50,69 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
     };
   }, [contextMenu]);
 
+  // Nearest enclosing values in this column, within the same parent group, that the new
+  // code must sort between (ASCII, ascending) per CLAUDE.md Section 4.4 / 6.7.
+  function findOrderBounds(editIndex: number, level: number) {
+    const parentValue = level > 0 ? (rows[editIndex].codes[level - 1] ?? '') : null;
+    const oldValue = rows[editIndex].codes[level] ?? '';
+
+    let upper: string | null = null;
+    for (let i = editIndex - 1; i >= 0; i--) {
+      if (parentValue !== null && (rows[i].codes[level - 1] ?? '') !== parentValue) break;
+      const v = rows[i].codes[level] ?? '';
+      if (v !== '') {
+        upper = v;
+        break;
+      }
+    }
+
+    let lower: string | null = null;
+    for (let i = editIndex + 1; i < rows.length; i++) {
+      if (parentValue !== null && (rows[i].codes[level - 1] ?? '') !== parentValue) break;
+      const v = rows[i].codes[level] ?? '';
+      if (v === oldValue) continue; // will be overwritten by the fill-down cascade
+      if (v !== '') {
+        lower = v;
+        break;
+      }
+    }
+
+    return { upper, lower };
+  }
+
   function updateCode(rowId: string, level: number, value: string) {
     const char = value.slice(-1);
     const editIndex = rows.findIndex((r) => r.id === rowId);
     if (editIndex === -1) return;
 
     const oldValue = rows[editIndex].codes[level] ?? '';
+    if (char === oldValue) return;
+
+    if (char !== '' && !isValidCodeChar(char)) return; // reject silently: not in "., 0-9, a-z, A-Z"
+
+    if (char !== '') {
+      const { upper, lower } = findOrderBounds(editIndex, level);
+      const tooLow = upper !== null && char.charCodeAt(0) <= upper.charCodeAt(0);
+      const tooHigh = lower !== null && char.charCodeAt(0) >= lower.charCodeAt(0);
+      if (tooLow || tooHigh) {
+        const validList = formatCharRanges(validCodesInRange(upper, lower));
+        window.alert(`Code must increase. Valid codes are: ${validList}`);
+        return;
+      }
+    }
+
     const parentValue = level > 0 ? (rows[editIndex].codes[level - 1] ?? '') : null;
     let cascadeActive = true;
+
+    function applyCode(row: TaxonomyRow): TaxonomyRow {
+      const codes = row.codes.map((c, i) => (i === level ? char : i > level ? '' : c));
+      return { ...row, codes };
+    }
 
     onChange(
       rows.map((row, idx) => {
         if (idx < editIndex) return row;
-        if (idx === editIndex) {
-          return { ...row, codes: row.codes.map((c, i) => (i === level ? char : c)) };
-        }
+        if (idx === editIndex) return applyCode(row);
         if (!cascadeActive) return row;
         const rowParent = level > 0 ? (row.codes[level - 1] ?? '') : null;
         const rowOwnOld = row.codes[level] ?? '';
@@ -71,7 +120,7 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
           cascadeActive = false;
           return row;
         }
-        return { ...row, codes: row.codes.map((c, i) => (i === level ? char : c)) };
+        return applyCode(row);
       }),
     );
   }
