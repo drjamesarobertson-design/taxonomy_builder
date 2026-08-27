@@ -141,7 +141,8 @@ body.sign-on-theme .delimiter-row {
   border-bottom-color: rgba(255, 255, 255, 0.15);
 }
 
-body.sign-on-theme .delimiter-setup {
+body.sign-on-theme .delimiter-setup,
+body.sign-on-theme .indent-char-setup {
   border-color: rgba(255, 255, 255, 0.3);
 }
 
@@ -154,7 +155,8 @@ body.sign-on-theme .delimiter-empty {
   color: #c9d6f5;
 }
 
-.delimiter-setup {
+.delimiter-setup,
+.indent-char-setup {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -163,9 +165,33 @@ body.sign-on-theme .delimiter-empty {
   padding: 0.75rem;
 }
 
-.delimiter-setup legend {
+.delimiter-setup legend,
+.indent-char-setup legend {
   font-weight: 600;
   padding: 0 0.3rem;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: normal;
+}
+
+.indent-char-setup input[type='text'],
+.indent-char-setup input:not([type='checkbox']) {
+  width: 3.5rem;
+  font: inherit;
+  padding: 0.3rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.field-error {
+  margin: 0;
+  color: #c0392b;
+  font-size: 0.85rem;
+  font-weight: normal;
 }
 
 .delimiter-empty {

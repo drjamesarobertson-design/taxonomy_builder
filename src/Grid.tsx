@@ -661,14 +661,16 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     const topIndex = selectedIndices[0];
     const updated = rows.map((row) => ({ ...row, codes: [...row.codes] }));
     // For each column in the selected block, take the value from the row directly above the
-    // block's top row and roll it down through the block's own blank cells, stopping at the
-    // first cell that already holds something — never overwriting real content, and never
-    // reaching past the bottom of the selected block.
+    // block's top row and roll it down through every blank cell below — not just the ones
+    // actually selected, but on through any further run of blanks immediately beneath the
+    // selection too — stopping at the first cell that already holds something. Never
+    // overwrites real content; the selection only marks where the source row and the columns
+    // to replicate come from, not how far down the cascade is allowed to reach.
     let anyReplicated = false;
     for (let level = levelStart; level <= levelEnd; level++) {
       const sourceValue = topIndex > 0 ? (rows[topIndex - 1].codes[level] ?? '') : '';
       if (!sourceValue) continue;
-      for (const idx of selectedIndices) {
+      for (let idx = topIndex; idx < updated.length; idx++) {
         if ((updated[idx].codes[level] ?? '') !== '') break;
         updated[idx].codes[level] = sourceValue;
         anyReplicated = true;

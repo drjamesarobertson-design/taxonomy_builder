@@ -5,7 +5,7 @@
 
 import type { TaxonomyProject, TaxonomyRow } from './types';
 import { getLevelColor } from './colors';
-import { downloadBlob } from './download';
+import { saveExportFile } from './exportFolder';
 
 type ExportColumn = { type: 'code' | 'desc'; level: number } | { type: 'delimiter' };
 
@@ -48,24 +48,34 @@ function levelOf(row: TaxonomyRow): number {
 // for it): one combined Code column and one combined Description column per posting-level
 // row, ready to feed an ERP import, rather than one column per level.
 //
-// Specifics James left to our judgement:
-// - Code: trimmed to the row's own significant depth (codes[0..level] joined with no
-//   delimiters or trailing padding), e.g. "1","2","3" becomes "123" — not the full
-//   configured column width.
+// - Code: the row's full, fixed-width code exactly as it appears in the grid — including
+//   any trailing padding characters the user has entered — not trimmed to the row's own
+//   depth, so a fixed-length ERP code field still lines up.
 // - Description: the row's own text only (not a breadcrumb of its ancestors'
-//   descriptions), indent-padded with one leading space per level above the top, so depth
-//   is visible at a glance — e.g. a level-3 entry becomes "  Sales Income".
+//   descriptions), indented with one leading copy of the taxonomy's configured indent
+//   character per level above the top (a space by default, or another ASCII character set
+//   on the New Taxonomy form), so depth is visible at a glance.
 // Rows with no description at all (level -1) are skipped — there's nothing to export.
 function buildConcatenatedGrid(project: TaxonomyProject): { header: string[]; rows: string[][] } {
+  const indentChar = project.settings.indentChar || ' ';
   const rows: string[][] = [];
   for (const row of project.rows) {
     const level = levelOf(row);
     if (level === -1) continue;
-    const code = row.codes.slice(0, level + 1).join('');
-    const description = ' '.repeat(level) + (row.descriptions[level] ?? '');
+    const code = row.codes.join('');
+    const description = indentChar.repeat(level) + (row.descriptions[level] ?? '');
     rows.push([code, description]);
   }
   return { header: ['Code', 'Description'], rows };
+}
+
+// Excel has no equivalent of the on-screen grid's text-overflow-into-the-next-cell trick, so
+// the closest match to "the column looks as wide as it needs to be, same as the grid" is an
+// auto-fit: each column sized to its own longest value (header included), clamped to a
+// sensible range.
+function autoFitWidth(header: string, values: string[], min: number, max: number): number {
+  const longest = values.reduce((longestSoFar, v) => Math.max(longestSoFar, v.length), header.length);
+  return Math.min(max, Math.max(min, longest + 2));
 }
 
 function csvEscape(value: string): string {
@@ -75,15 +85,20 @@ function csvEscape(value: string): string {
   return value;
 }
 
-function exportFilename(project: TaxonomyProject, extension: string): string {
-  return `${project.tableName || project.title || 'taxonomy'}.${extension}`;
+// File names carry a descriptor of which export they are, since a taxonomy typically ends
+// up with several files side by side in the same folder — e.g. "Further Milling.json" (the
+// save file, for reuse) alongside "Further Milling Per Column.csv" and "Further Milling
+// Concatenated.xlsx".
+function exportFilename(project: TaxonomyProject, descriptor: string, extension: string): string {
+  const base = project.tableName || project.title || 'taxonomy';
+  return `${base} ${descriptor}.${extension}`;
 }
 
-export function exportDiscreteCsv(project: TaxonomyProject): void {
+export async function exportDiscreteCsv(project: TaxonomyProject): Promise<void> {
   const { header, rows } = buildDiscreteGrid(project);
   const csv = [header, ...rows].map((line) => line.map(csvEscape).join(',')).join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  downloadBlob(blob, exportFilename(project, 'csv'));
+  await saveExportFile(blob, exportFilename(project, 'Per Column', 'csv'));
 }
 
 export async function exportDiscreteXlsx(project: TaxonomyProject): Promise<void> {
@@ -110,8 +125,14 @@ export async function exportDiscreteXlsx(project: TaxonomyProject): Promise<void
       });
       return;
     }
-    excelCol.width = col.type === 'code' ? 4 : 24;
-    excelCol.alignment = { horizontal: col.type === 'code' ? 'center' : 'left' };
+    const isCode = col.type === 'code';
+    excelCol.width = autoFitWidth(
+      header[colIndex],
+      rows.map((r) => r[colIndex]),
+      isCode ? 4 : 8,
+      isCode ? 4 : 60,
+    );
+    excelCol.alignment = { horizontal: isCode ? 'center' : 'left' };
     const hex = getLevelColor(col.level);
     if (!hex) return;
     const argb = `FF${hex.replace('#', '').toUpperCase()}`;
@@ -124,14 +145,14 @@ export async function exportDiscreteXlsx(project: TaxonomyProject): Promise<void
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });
-  downloadBlob(blob, exportFilename(project, 'xlsx'));
+  await saveExportFile(blob, exportFilename(project, 'Per Column', 'xlsx'));
 }
 
-export function exportConcatenatedCsv(project: TaxonomyProject): void {
+export async function exportConcatenatedCsv(project: TaxonomyProject): Promise<void> {
   const { header, rows } = buildConcatenatedGrid(project);
   const csv = [header, ...rows].map((line) => line.map(csvEscape).join(',')).join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  downloadBlob(blob, exportFilename(project, 'csv'));
+  await saveExportFile(blob, exportFilename(project, 'Concatenated', 'csv'));
 }
 
 export async function exportConcatenatedXlsx(project: TaxonomyProject): Promise<void> {
@@ -143,12 +164,12 @@ export async function exportConcatenatedXlsx(project: TaxonomyProject): Promise<
   const headerRow = sheet.addRow(header);
   headerRow.font = { bold: true };
   for (const rowValues of rows) sheet.addRow(rowValues);
-  sheet.getColumn(1).width = 14;
-  sheet.getColumn(2).width = 50;
+  sheet.getColumn(1).width = autoFitWidth(header[0], rows.map((r) => r[0]), 8, 30);
+  sheet.getColumn(2).width = autoFitWidth(header[1], rows.map((r) => r[1]), 20, 80);
 
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });
-  downloadBlob(blob, exportFilename(project, 'xlsx'));
+  await saveExportFile(blob, exportFilename(project, 'Concatenated', 'xlsx'));
 }
