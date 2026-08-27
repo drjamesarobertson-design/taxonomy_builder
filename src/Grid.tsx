@@ -3,7 +3,7 @@ import type { TaxonomyRow, TaxonomySettings } from './types';
 import { createEmptyRow } from './types';
 import { getLevelColor } from './colors';
 import { toggleCase } from './caseUtils';
-import { formatCharRanges, isValidCodeChar, validCodesInRange } from './codeValidation';
+import { isValidCodeChar } from './codeValidation';
 
 interface GridProps {
   settings: TaxonomySettings;
@@ -50,9 +50,11 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
   const [anchorLevel, setAnchorLevel] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(
-    null,
-  );
+  const [confirmDialog, setConfirmDialog] = useState<{
+    message: string;
+    confirmLabel?: string;
+    onConfirm: () => void;
+  } | null>(null);
   const [promoteDemoteChoice, setPromoteDemoteChoice] = useState<{
     direction: 'promote' | 'demote';
   } | null>(null);
@@ -98,6 +100,28 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     window.addEventListener('mouseup', endDrag);
     return () => window.removeEventListener('mouseup', endDrag);
   }, []);
+
+  useEffect(() => {
+    // Code cells are only 1 character wide, so a real (non-synthetic) mouse drag easily
+    // moves fast enough to skip straight over one without ever firing its own mouseenter —
+    // especially sideways, across several of them, to form a multi-column block. A mousemove
+    // listener that re-derives the cell under the cursor on every move (via elementFromPoint,
+    // keyed by the data-* attributes below) doesn't depend on "entering" any single narrow
+    // target, so it keeps up regardless of how fast the drag moves.
+    function handleMouseMove(e: MouseEvent) {
+      if (!isDraggingRef.current || moveMode) return;
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const cell = el instanceof Element ? el.closest('[data-cell-kind]') : null;
+      if (!cell) return;
+      const kind = cell.getAttribute('data-cell-kind') as CellKind | null;
+      const rowId = cell.getAttribute('data-row-id');
+      const levelAttr = cell.getAttribute('data-level');
+      if (!kind || !rowId || levelAttr === null) return;
+      extendDragSelection(kind, rowId, Number(levelAttr));
+    }
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  });
 
   useEffect(() => {
     if (!moveMode) return;
@@ -183,7 +207,12 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     return { upper, lower };
   }
 
-  function updateCode(rowId: string, level: number, value: string) {
+  function updateCode(
+    rowId: string,
+    level: number,
+    value: string,
+    options?: { skipOrderCheck?: boolean },
+  ) {
     if (value.length > 1) {
       setValidationError('Only one character permitted');
       return;
@@ -223,13 +252,20 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
       return;
     }
 
-    if (char !== '' && !isPadding && char !== oldValue) {
+    if (char !== '' && !isPadding && char !== oldValue && !options?.skipOrderCheck) {
       const { upper, lower } = findOrderBounds(editIndex, level, char);
       const tooLow = upper !== null && char.charCodeAt(0) <= upper.charCodeAt(0);
       const tooHigh = lower !== null && char.charCodeAt(0) >= lower.charCodeAt(0);
       if (tooLow || tooHigh) {
-        const validList = formatCharRanges(validCodesInRange(upper, lower));
-        setValidationError(`Code must increase. Valid codes are: ${validList}`);
+        // Section 4.4/6.7's ascending-order rule is a hard rule everywhere else, but James
+        // asked for an escape hatch here specifically — mid-restructure, a user may know a
+        // "backwards" value is exactly what they want for now. Override re-runs this same
+        // update bypassing only this check, not the others (charset, left-to-right, etc).
+        setConfirmDialog({
+          message: 'Codes should increase, lesser value is invalid—Override?',
+          confirmLabel: 'Override',
+          onConfirm: () => updateCode(rowId, level, value, { skipOrderCheck: true }),
+        });
         return;
       }
     }
@@ -399,7 +435,16 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     if (idx === -1) return;
     const refLevel = Math.max(0, levelOf(rows[idx]));
     const insertAt = position === 'above' ? idx : idx + 1;
-    const newRows = Array.from({ length: count }, () => createEmptyRow(numLevels));
+    // Each new row's codes are duplicated from whichever row ends up directly above it —
+    // the same "inherit, then recode manually" convention Add Row already uses — rather
+    // than left blank; only the descriptions start empty.
+    let previous = insertAt > 0 ? rows[insertAt - 1] : undefined;
+    const newRows: TaxonomyRow[] = [];
+    for (let i = 0; i < count; i++) {
+      const newRow = createRowInheritingFrom(previous);
+      newRows.push(newRow);
+      previous = newRow;
+    }
     onChange([...rows.slice(0, insertAt), ...newRows, ...rows.slice(insertAt)]);
     setSelection(null);
     setContextMenu(null);
@@ -527,11 +572,11 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     isDraggingRef.current = true;
   }
 
-  // Extends the selection while a click-and-drag is in progress (Section 6.5's "drag cursor
-  // down column to highlight range"), matching shift-click's range-from-anchor behaviour —
-  // including, for code cells, dragging sideways into a rectangular multi-column block.
-  function handleCellMouseEnter(kind: CellKind, rowId: string, level: number) {
-    if (!isDraggingRef.current || moveMode) return;
+  // Extends the selection to include (rowId, level) while a click-and-drag is in progress
+  // (Section 6.5's "drag cursor down column to highlight range"), matching shift-click's
+  // range-from-anchor behaviour — including, for code cells, dragging sideways into a
+  // rectangular multi-column block.
+  function extendDragSelection(kind: CellKind, rowId: string, level: number) {
     if (!selection || selection.kind !== kind || anchorRowId === null || anchorLevel === null) return;
     const ids = rows.map((r) => r.id);
     const anchorIdx = ids.indexOf(anchorRowId);
@@ -545,6 +590,11 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     } else {
       setSelection({ kind, level: anchorLevel, rowIds });
     }
+  }
+
+  function handleCellMouseEnter(kind: CellKind, rowId: string, level: number) {
+    if (!isDraggingRef.current || moveMode) return;
+    extendDragSelection(kind, rowId, level);
   }
 
   function handleCellContextMenu(kind: CellKind, rowId: string, level: number, e: React.MouseEvent) {
@@ -813,6 +863,16 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
       <table className="taxonomy-grid">
         <thead>
           <tr>
+            <th colSpan={numLevels + delimiterPositions.length} className="section-heading">
+              Code
+            </th>
+            <th className="gap-col">&nbsp;</th>
+            <th colSpan={numLevels + 1} className="section-heading">
+              Description
+            </th>
+            <th className="row-actions-col">&nbsp;</th>
+          </tr>
+          <tr>
             {levels.map((level) => (
               <Fragment key={`code-h-${level}`}>
                 <th className="code-col" style={{ backgroundColor: getLevelColor(level) }}>
@@ -851,6 +911,9 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
                     <td
                       className={`code-col${isCodeSelected ? ' code-col-selected' : ''}`}
                       style={{ backgroundColor: getLevelColor(level) }}
+                      data-cell-kind="code"
+                      data-row-id={row.id}
+                      data-level={level}
                       onMouseDown={(e) => handleCellMouseDown('code', row.id, level, e)}
                       onMouseEnter={() => handleCellMouseEnter('code', row.id, level)}
                       onContextMenu={(e) => handleCellContextMenu('code', row.id, level, e)}
@@ -881,6 +944,9 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
                     key={`desc-${row.id}-${level}`}
                     className={`desc-col${isSelected ? ' desc-col-selected' : ''}`}
                     style={{ backgroundColor: getLevelColor(level) }}
+                    data-cell-kind="desc"
+                    data-row-id={row.id}
+                    data-level={level}
                     onMouseDown={(e) => handleCellMouseDown('desc', row.id, level, e)}
                     onMouseEnter={() => handleCellMouseEnter('desc', row.id, level)}
                     onContextMenu={(e) => handleCellContextMenu('desc', row.id, level, e)}
@@ -979,7 +1045,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
                   setConfirmDialog(null);
                 }}
               >
-                Delete
+                {confirmDialog.confirmLabel ?? 'Delete'}
               </button>
             </div>
           </div>
