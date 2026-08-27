@@ -11,18 +11,20 @@ interface GridProps {
   onChange: (rows: TaxonomyRow[]) => void;
 }
 
+type CellKind = 'code' | 'desc';
+
 interface Selection {
+  kind: CellKind;
   level: number;
   rowIds: Set<string>;
 }
 
 interface ContextMenuState {
+  kind: CellKind;
   x: number;
   y: number;
   level: number;
 }
-
-type CellKind = 'code' | 'desc';
 
 const codeInputId = (level: number, rowId: string) => `code-${level}-${rowId}`;
 const descInputId = (level: number, rowId: string) => `desc-${level}-${rowId}`;
@@ -315,40 +317,46 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
     }
   }
 
-  function handleDescMouseDown(rowId: string, level: number, e: React.MouseEvent) {
-    if (e.button !== 0) return; // right/middle click: leave selection to handleDescContextMenu
-    if (e.shiftKey && selection && selection.level === level && anchorRowId) {
+  // Shift-click extends a contiguous range from the anchor; ctrl/cmd-click toggles one row
+  // in or out; a plain click starts a fresh single-cell selection. Shared by code and
+  // description cells — a selection is always scoped to one kind and one column.
+  function handleCellMouseDown(kind: CellKind, rowId: string, level: number, e: React.MouseEvent) {
+    if (e.button !== 0) return; // right/middle click: leave selection to handleCellContextMenu
+    if (e.shiftKey && selection && selection.kind === kind && selection.level === level && anchorRowId) {
       const ids = rows.map((r) => r.id);
       const anchorIdx = ids.indexOf(anchorRowId);
       const clickIdx = ids.indexOf(rowId);
       const [start, end] = anchorIdx < clickIdx ? [anchorIdx, clickIdx] : [clickIdx, anchorIdx];
-      setSelection({ level, rowIds: new Set(ids.slice(start, end + 1)) });
+      setSelection({ kind, level, rowIds: new Set(ids.slice(start, end + 1)) });
       return;
     }
-    if ((e.ctrlKey || e.metaKey) && selection && selection.level === level) {
+    if ((e.ctrlKey || e.metaKey) && selection && selection.kind === kind && selection.level === level) {
       const rowIds = new Set(selection.rowIds);
       if (rowIds.has(rowId)) rowIds.delete(rowId);
       else rowIds.add(rowId);
-      setSelection({ level, rowIds });
+      setSelection({ kind, level, rowIds });
       return;
     }
-    setSelection({ level, rowIds: new Set([rowId]) });
+    setSelection({ kind, level, rowIds: new Set([rowId]) });
     setAnchorRowId(rowId);
   }
 
-  function handleDescContextMenu(rowId: string, level: number, e: React.MouseEvent) {
+  function handleCellContextMenu(kind: CellKind, rowId: string, level: number, e: React.MouseEvent) {
     e.preventDefault();
-    let activeSelection = selection;
-    if (!selection || selection.level !== level || !selection.rowIds.has(rowId)) {
-      activeSelection = { level, rowIds: new Set([rowId]) };
-      setSelection(activeSelection);
+    if (
+      !selection ||
+      selection.kind !== kind ||
+      selection.level !== level ||
+      !selection.rowIds.has(rowId)
+    ) {
+      setSelection({ kind, level, rowIds: new Set([rowId]) });
       setAnchorRowId(rowId);
     }
-    setContextMenu({ x: e.clientX, y: e.clientY, level });
+    setContextMenu({ kind, x: e.clientX, y: e.clientY, level });
   }
 
   function handleToggleCase() {
-    if (!contextMenu || !selection) return;
+    if (!contextMenu || contextMenu.kind !== 'desc' || !selection) return;
     const { level } = contextMenu;
     onChange(
       rows.map((row) =>
@@ -360,6 +368,22 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
           : row,
       ),
     );
+    setContextMenu(null);
+  }
+
+  // Clears every selected code cell in this column, and blanks each affected row's deeper
+  // codes too, per the same rule as any other code change (Section 4.4/6.3).
+  function handleDeleteCodes() {
+    if (!contextMenu || contextMenu.kind !== 'code' || !selection) return;
+    const { level } = contextMenu;
+    onChange(
+      rows.map((row) =>
+        selection.rowIds.has(row.id)
+          ? { ...row, codes: row.codes.map((c, i) => (i >= level ? '' : c)) }
+          : row,
+      ),
+    );
+    setSelection(null);
     setContextMenu(null);
   }
 
@@ -382,7 +406,7 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
   }
 
   function handlePromoteDemote(direction: 'promote' | 'demote') {
-    if (!selection) return;
+    if (!selection || selection.kind !== 'desc') return;
     const offset = direction === 'promote' ? -1 : 1;
     const selectedIndices = rows
       .map((r, i) => (selection.rowIds.has(r.id) ? i : -1))
@@ -488,34 +512,47 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
         <tbody>
           {rows.map((row, rowIndex) => (
             <tr key={row.id}>
-              {levels.map((level) => (
-                <Fragment key={`code-${row.id}-${level}`}>
-                  <td className="code-col" style={{ backgroundColor: getLevelColor(level) }}>
-                    <input
-                      id={codeInputId(level, row.id)}
-                      className="code-cell"
-                      type="text"
-                      maxLength={1}
-                      value={row.codes[level] ?? ''}
-                      onChange={(e) => updateCode(row.id, level, e.target.value)}
-                      onKeyDown={(e) => handleCellKeyDown(e, 'code', level, rowIndex)}
-                      onFocus={(e) => e.currentTarget.select()}
-                    />
-                  </td>
-                  {level + 1 === delimiterAfter && <td className="delim-col">-</td>}
-                </Fragment>
-              ))}
+              {levels.map((level) => {
+                const isCodeSelected =
+                  selection?.kind === 'code' &&
+                  selection.level === level &&
+                  selection.rowIds.has(row.id);
+                return (
+                  <Fragment key={`code-${row.id}-${level}`}>
+                    <td
+                      className={`code-col${isCodeSelected ? ' code-col-selected' : ''}`}
+                      style={{ backgroundColor: getLevelColor(level) }}
+                      onMouseDown={(e) => handleCellMouseDown('code', row.id, level, e)}
+                      onContextMenu={(e) => handleCellContextMenu('code', row.id, level, e)}
+                    >
+                      <input
+                        id={codeInputId(level, row.id)}
+                        className="code-cell"
+                        type="text"
+                        maxLength={1}
+                        value={row.codes[level] ?? ''}
+                        onChange={(e) => updateCode(row.id, level, e.target.value)}
+                        onKeyDown={(e) => handleCellKeyDown(e, 'code', level, rowIndex)}
+                        onFocus={(e) => e.currentTarget.select()}
+                      />
+                    </td>
+                    {level + 1 === delimiterAfter && <td className="delim-col">-</td>}
+                  </Fragment>
+                );
+              })}
               <td className="gap-col">&nbsp;</td>
               {levels.map((level) => {
                 const isSelected =
-                  selection?.level === level && selection.rowIds.has(row.id);
+                  selection?.kind === 'desc' &&
+                  selection.level === level &&
+                  selection.rowIds.has(row.id);
                 return (
                   <td
                     key={`desc-${row.id}-${level}`}
                     className={`desc-col${isSelected ? ' desc-col-selected' : ''}`}
                     style={{ backgroundColor: getLevelColor(level) }}
-                    onMouseDown={(e) => handleDescMouseDown(row.id, level, e)}
-                    onContextMenu={(e) => handleDescContextMenu(row.id, level, e)}
+                    onMouseDown={(e) => handleCellMouseDown('desc', row.id, level, e)}
+                    onContextMenu={(e) => handleCellContextMenu('desc', row.id, level, e)}
                   >
                     <input
                       id={descInputId(level, row.id)}
@@ -556,9 +593,14 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(e) => e.stopPropagation()}
         >
-          <li onClick={handleToggleCase}>Toggle Case</li>
-          <li onClick={() => handlePromoteDemote('promote')}>Promote</li>
-          <li onClick={() => handlePromoteDemote('demote')}>Demote</li>
+          {contextMenu.kind === 'desc' && (
+            <>
+              <li onClick={handleToggleCase}>Toggle Case</li>
+              <li onClick={() => handlePromoteDemote('promote')}>Promote</li>
+              <li onClick={() => handlePromoteDemote('demote')}>Demote</li>
+            </>
+          )}
+          {contextMenu.kind === 'code' && <li onClick={handleDeleteCodes}>Delete</li>}
         </ul>
       )}
 

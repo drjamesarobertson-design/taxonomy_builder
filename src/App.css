@@ -143,7 +143,8 @@
   box-sizing: border-box;
 }
 
-.desc-col-selected {
+.desc-col-selected,
+.code-col-selected {
   outline: 2px dashed #333;
   outline-offset: -2px;
 }
