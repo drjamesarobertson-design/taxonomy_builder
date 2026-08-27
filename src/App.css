@@ -2,7 +2,7 @@
   max-width: 1400px;
   margin: 0 auto;
   padding: 1.5rem;
-  font-family: system-ui, sans-serif;
+  font-family: 'Courier New', Courier, monospace;
   color: #1a1a1a;
 }
 
@@ -83,7 +83,7 @@
 
 .grid-wrapper {
   overflow-x: auto;
-  padding-right: 30ch; /* room for description text to overflow past the last column */
+  padding-right: 20ch; /* room for description text that overflows past the indicative width */
 }
 
 .taxonomy-grid {
@@ -95,6 +95,7 @@
   border: 1px solid #ccc;
   padding: 0;
   text-align: center;
+  height: 1.7rem;
 }
 
 .taxonomy-grid th {
@@ -108,7 +109,7 @@
 }
 
 .code-cell {
-  width: 1.2em;
+  width: 1ch;
   padding: 0 2px;
   text-align: center;
   border: none;
@@ -117,29 +118,39 @@
   box-sizing: content-box;
 }
 
+.gap-col {
+  width: 3ch;
+  background: transparent;
+}
+
 .desc-col {
   position: relative;
-  width: 6rem;
-  height: 1.7rem;
+  width: calc(1ch + 2px);
   overflow: visible;
   text-align: left;
+  padding: 0;
 }
 
 .desc-cell {
   position: absolute;
   inset: 0;
   z-index: 1;
-  width: 32ch;
+  min-width: 100%;
   border: none;
   background: transparent;
   font: inherit;
-  padding: 2px 4px;
+  padding: 2px 2px;
   box-sizing: border-box;
 }
 
 .desc-col-selected {
   outline: 2px dashed #333;
   outline-offset: -2px;
+}
+
+.taxonomy-grid .overflow-col {
+  border-right: 2px dashed #999;
+  background: #fbfbfb;
 }
 
 .delim-col {

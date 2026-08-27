@@ -22,11 +22,20 @@ Gets a working grid on screen holding the core data correctly, with save and loa
 
 James tested the Stage 1 build and raised the following, to be picked up at the noted later stage rather than now:
 
-1. **Description text overflow.** Description cells should visually overlap into empty adjacent description columns, indented one character width per level, so the hierarchy reads as a tight, indented tree rather than columns of blank cells. → Proposed for **Stage 2** (visual presentation).
-2. **One description cell per row, enforced.** Only the description column matching a row's deepest occupied level should be enterable (Section 4.1's rule made real, not just a convention). Clarified: once a row has an entry in any description cell, entering text to its left or right is not permitted — moving it to a different level requires Promote/Demote. → **Stage 3** (ties to promote/demote redefining a row's level).
-3. **Code cell width.** Code cells should be sized to the width of a capital "O" plus 2px padding either side, rather than a generic input width. → **Stage 2**.
-4. **Code column headers.** Header labels should be short numerals ("1", "2", …) rather than "Code 1", "Code 2", to fit the narrow code columns. → **Stage 2**.
-5. **Code fill-down.** Entering a code should replicate it down the column to subsequent rows until a different code is entered, at which point the new value replicates from there. Clarified: fill-down stops when the code in the column to its left changes (i.e. a shallower/higher level in the hierarchy) — it does not wait for a change in its own column. → **Stage 3**.
+1. **Description text overflow.** Description cells should visually overlap into empty adjacent description columns, indented one character width per level, so the hierarchy reads as a tight, indented tree rather than columns of blank cells. → Done in **Stage 2**; refined further after testing (see below) so each description column is narrow and text overflows into a dedicated overflow column instead of adjacent description columns.
+2. **One description cell per row, enforced.** Only the description column matching a row's deepest occupied level should be enterable (Section 4.1's rule made real, not just a convention). Clarified: once a row has an entry in any description cell, entering text to its left or right is not permitted — moving it to a different level requires Promote/Demote. → **Stage 3** (ties to promote/demote redefining a row's level). Still outstanding.
+3. **Code cell width.** Code cells should be sized to the width of a capital "O" plus 2px padding either side, rather than a generic input width. → Done in **Stage 2**.
+4. **Code column headers.** Header labels should be short numerals ("1", "2", …) rather than "Code 1", "Code 2", to fit the narrow code columns. → Done in **Stage 2**.
+5. **Code fill-down.** Entering a code should replicate it down the column to subsequent rows until a different code is entered, at which point the new value replicates from there. Clarified: fill-down stops when the code in the column to its left changes (i.e. a shallower/higher level in the hierarchy) — it does not wait for a change in its own column. → Originally proposed for Stage 3, but **built ahead of schedule** after Stage 2 testing, since James asked for it directly. Implemented as: new rows inherit the full code path of the row above when added, and editing a code propagates forward through the contiguous run of rows that shared the old value, stopping at the first row whose value already differed or whose parent (column-to-the-left) differs.
+
+### Further refinements requested after Stage 2 testing (implemented, not deferred)
+
+- Monospace font (Courier New) throughout, which also makes "character width" (e.g. "O" width) sizing exact via CSS `ch` units.
+- A blank spacer column (~3 characters wide) between the code block and the description block.
+- Description column headers shortened to plain numerals ("1".."8"), matching the code columns.
+- Description columns narrowed to "O" width + 2px each (matching code columns' tightness), with overflow now flowing across these narrow columns into a dedicated final overflow column rather than just the next column.
+- The overflow column's width is derived from the taxonomy's "Maximum ERP Description Field Length" setting (captured at creation): `overflow column width = maxDescriptionLength − number of levels`, clamped to a sensible minimum. It has a visible dashed right boundary marking the "indicative width", while text is still allowed to visually overflow past it.
+- Enter and arrow keys now navigate between cells (Enter/↓ moves down, ↑ moves up, ←/→ move to the adjacent column when the text caret is already at that edge of the cell, otherwise they move the caret as normal).
 
 ---
 

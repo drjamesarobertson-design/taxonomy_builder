@@ -21,9 +21,15 @@ interface ContextMenuState {
   level: number;
 }
 
+type CellKind = 'code' | 'desc';
+
+const codeInputId = (level: number, rowId: string) => `code-${level}-${rowId}`;
+const descInputId = (level: number, rowId: string) => `desc-${level}-${rowId}`;
+
 export default function Grid({ settings, rows, onChange }: GridProps) {
-  const { numLevels, delimiterAfter } = settings;
+  const { numLevels, delimiterAfter, maxDescriptionLength } = settings;
   const levels = Array.from({ length: numLevels }, (_, i) => i);
+  const overflowChars = Math.max(10, maxDescriptionLength - numLevels);
 
   const [selection, setSelection] = useState<Selection | null>(null);
   const [anchorRowId, setAnchorRowId] = useState<string | null>(null);
@@ -45,12 +51,28 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
 
   function updateCode(rowId: string, level: number, value: string) {
     const char = value.slice(-1);
+    const editIndex = rows.findIndex((r) => r.id === rowId);
+    if (editIndex === -1) return;
+
+    const oldValue = rows[editIndex].codes[level] ?? '';
+    const parentValue = level > 0 ? (rows[editIndex].codes[level - 1] ?? '') : null;
+    let cascadeActive = true;
+
     onChange(
-      rows.map((row) =>
-        row.id === rowId
-          ? { ...row, codes: row.codes.map((c, i) => (i === level ? char : c)) }
-          : row,
-      ),
+      rows.map((row, idx) => {
+        if (idx < editIndex) return row;
+        if (idx === editIndex) {
+          return { ...row, codes: row.codes.map((c, i) => (i === level ? char : c)) };
+        }
+        if (!cascadeActive) return row;
+        const rowParent = level > 0 ? (row.codes[level - 1] ?? '') : null;
+        const rowOwnOld = row.codes[level] ?? '';
+        if ((parentValue !== null && rowParent !== parentValue) || rowOwnOld !== oldValue) {
+          cascadeActive = false;
+          return row;
+        }
+        return { ...row, codes: row.codes.map((c, i) => (i === level ? char : c)) };
+      }),
     );
   }
 
@@ -65,11 +87,56 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
   }
 
   function addRow() {
-    onChange([...rows, createEmptyRow(numLevels)]);
+    const previous = rows[rows.length - 1];
+    const newRow = createEmptyRow(numLevels);
+    if (previous) newRow.codes = [...previous.codes];
+    onChange([...rows, newRow]);
   }
 
   function removeRow(rowId: string) {
     onChange(rows.filter((row) => row.id !== rowId));
+  }
+
+  function focusCell(kind: CellKind, level: number, rowIndex: number) {
+    if (level < 0 || level >= numLevels) return;
+    const row = rows[rowIndex];
+    if (!row) return;
+    const id = kind === 'code' ? codeInputId(level, row.id) : descInputId(level, row.id);
+    document.getElementById(id)?.focus();
+  }
+
+  function handleCellKeyDown(
+    e: React.KeyboardEvent<HTMLInputElement>,
+    kind: CellKind,
+    level: number,
+    rowIndex: number,
+  ) {
+    const input = e.currentTarget;
+    switch (e.key) {
+      case 'Enter':
+      case 'ArrowDown':
+        e.preventDefault();
+        focusCell(kind, level, rowIndex + 1);
+        return;
+      case 'ArrowUp':
+        e.preventDefault();
+        focusCell(kind, level, rowIndex - 1);
+        return;
+      case 'ArrowLeft':
+        if (input.selectionStart === 0 && input.selectionEnd === 0) {
+          e.preventDefault();
+          focusCell(kind, level - 1, rowIndex);
+        }
+        return;
+      case 'ArrowRight':
+        if (input.selectionStart === input.value.length && input.selectionEnd === input.value.length) {
+          e.preventDefault();
+          focusCell(kind, level + 1, rowIndex);
+        }
+        return;
+      default:
+        return;
+    }
   }
 
   function handleDescMouseDown(rowId: string, level: number, e: React.MouseEvent) {
@@ -133,35 +200,42 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
                 {level + 1 === delimiterAfter && <th className="delim-col">&nbsp;</th>}
               </Fragment>
             ))}
+            <th className="gap-col">&nbsp;</th>
             {levels.map((level) => (
               <th
                 key={`desc-h-${level}`}
                 className="desc-col"
                 style={{ backgroundColor: getLevelColor(level) }}
               >
-                Description {level + 1}
+                {level + 1}
               </th>
             ))}
+            <th className="overflow-col" style={{ width: `${overflowChars}ch` }}>
+              &nbsp;
+            </th>
             <th className="row-actions-col">&nbsp;</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {rows.map((row, rowIndex) => (
             <tr key={row.id}>
               {levels.map((level) => (
                 <Fragment key={`code-${row.id}-${level}`}>
                   <td className="code-col" style={{ backgroundColor: getLevelColor(level) }}>
                     <input
+                      id={codeInputId(level, row.id)}
                       className="code-cell"
                       type="text"
                       maxLength={1}
                       value={row.codes[level] ?? ''}
                       onChange={(e) => updateCode(row.id, level, e.target.value)}
+                      onKeyDown={(e) => handleCellKeyDown(e, 'code', level, rowIndex)}
                     />
                   </td>
                   {level + 1 === delimiterAfter && <td className="delim-col">-</td>}
                 </Fragment>
               ))}
+              <td className="gap-col">&nbsp;</td>
               {levels.map((level) => {
                 const isSelected =
                   selection?.level === level && selection.rowIds.has(row.id);
@@ -174,18 +248,20 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
                     onContextMenu={(e) => handleDescContextMenu(row.id, level, e)}
                   >
                     <input
+                      id={descInputId(level, row.id)}
                       className="desc-cell"
                       style={{
-                        paddingLeft: `calc(4px + ${level}ch)`,
-                        width: `${Math.max(24, level + (row.descriptions[level]?.length ?? 0) + 4)}ch`,
+                        width: `${Math.max(1, (row.descriptions[level]?.length ?? 0) + 2)}ch`,
                       }}
                       type="text"
                       value={row.descriptions[level] ?? ''}
                       onChange={(e) => updateDescription(row.id, level, e.target.value)}
+                      onKeyDown={(e) => handleCellKeyDown(e, 'desc', level, rowIndex)}
                     />
                   </td>
                 );
               })}
+              <td className="overflow-col" style={{ width: `${overflowChars}ch` }} />
               <td className="row-actions-col">
                 <button
                   type="button"
