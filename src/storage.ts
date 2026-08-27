@@ -1,18 +1,10 @@
 import type { TaxonomyProject } from './types';
+import { downloadBlob } from './download';
 
 export function saveProjectToFile(project: TaxonomyProject): void {
   const json = JSON.stringify(project, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-
-  const filename = `${project.tableName || project.title || 'taxonomy'}.json`;
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  downloadBlob(blob, `${project.tableName || project.title || 'taxonomy'}.json`);
 }
 
 function isTaxonomyProject(data: unknown): data is TaxonomyProject {

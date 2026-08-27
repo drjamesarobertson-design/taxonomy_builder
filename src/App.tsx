@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { TaxonomyProject, TaxonomyRow } from './types';
 import { createEmptyRow, createProject } from './types';
 import { saveProjectToFile, loadProjectFromFile } from './storage';
+import { exportDiscreteCsv, exportDiscreteXlsx } from './gridExport';
 import NewTaxonomyForm from './NewTaxonomyForm';
 import Grid from './Grid';
 import Logo from './Logo';
@@ -106,6 +107,16 @@ export default function App() {
     fileInputRef.current?.click();
   }
 
+  function handleExportCsv() {
+    if (!project) return;
+    exportDiscreteCsv(project);
+  }
+
+  function handleExportXlsx() {
+    if (!project) return;
+    exportDiscreteXlsx(project);
+  }
+
   async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -149,6 +160,16 @@ export default function App() {
             {project && (
               <button type="button" onClick={handleSave}>
                 Save to File
+              </button>
+            )}
+            {project && (
+              <button type="button" onClick={handleExportCsv}>
+                Export to CSV
+              </button>
+            )}
+            {project && (
+              <button type="button" onClick={handleExportXlsx}>
+                Export to Excel
               </button>
             )}
             {project && (
