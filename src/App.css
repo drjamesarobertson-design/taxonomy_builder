@@ -84,12 +84,25 @@
 
 .delimiter-row {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  flex-direction: column;
+  gap: 0.4rem;
   font-weight: normal;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #eee;
 }
 
-.delimiter-row span {
+.delimiter-row:last-of-type {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.delimiter-row-fields {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.delimiter-row-fields span {
   flex: 1;
 }
 
@@ -99,6 +112,16 @@
   padding: 0.3rem;
   border: 1px solid #ccc;
   border-radius: 4px;
+}
+
+.delimiter-remove-btn {
+  align-self: flex-end;
+  background: none;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 0.25rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.85rem;
 }
 
 .delimiter-setup > button {
@@ -241,6 +264,12 @@
   background: #f0f0f0;
 }
 
+.context-menu li.context-menu-separator {
+  border-top: 1px solid #eee;
+  margin-top: 4px;
+  padding-top: 8px;
+}
+
 .validation-overlay {
   position: fixed;
   inset: 0;
@@ -268,6 +297,12 @@
 .validation-dialog button {
   padding: 0.4rem 1.5rem;
   cursor: pointer;
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
 }
 
 .remove-row-btn {
