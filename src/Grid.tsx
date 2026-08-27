@@ -88,7 +88,10 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
     const oldValue = rows[editIndex].codes[level] ?? '';
     if (char === oldValue) return;
 
-    if (char !== '' && !isValidCodeChar(char)) return; // reject silently: not in "., 0-9, a-z, A-Z"
+    if (char !== '' && !isValidCodeChar(char)) {
+      window.alert('Invalid code. Valid codes are: ".", 0 to 9, A to Z, a to z');
+      return;
+    }
 
     if (char !== '') {
       const { upper, lower } = findOrderBounds(editIndex, level);
@@ -172,13 +175,19 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
         focusCell(kind, level, rowIndex - 1);
         return;
       case 'ArrowLeft':
-        if (input.selectionStart === 0 && input.selectionEnd === 0) {
+        // Code cells hold a single character, so there's no meaningful mid-text caret
+        // position to preserve — always move to the adjacent cell. Description cells only
+        // move when the caret is already at that edge, so normal text navigation still works.
+        if (kind === 'code' || (input.selectionStart === 0 && input.selectionEnd === 0)) {
           e.preventDefault();
           focusCell(kind, level - 1, rowIndex);
         }
         return;
       case 'ArrowRight':
-        if (input.selectionStart === input.value.length && input.selectionEnd === input.value.length) {
+        if (
+          kind === 'code' ||
+          (input.selectionStart === input.value.length && input.selectionEnd === input.value.length)
+        ) {
           e.preventDefault();
           focusCell(kind, level + 1, rowIndex);
         }
@@ -279,6 +288,7 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
                       value={row.codes[level] ?? ''}
                       onChange={(e) => updateCode(row.id, level, e.target.value)}
                       onKeyDown={(e) => handleCellKeyDown(e, 'code', level, rowIndex)}
+                      onFocus={(e) => e.currentTarget.select()}
                     />
                   </td>
                   {level + 1 === delimiterAfter && <td className="delim-col">-</td>}
