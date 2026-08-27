@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import type { TaxonomyRow, TaxonomySettings } from './types';
 import { createEmptyRow } from './types';
 import { getLevelColor } from './colors';
@@ -35,6 +35,17 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [anchorRowId, setAnchorRowId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // A native window.alert() can be dismissed by keystrokes the user is still buffering
+    // in from typing (e.g. a focused OK button treats a buffered Enter as a click), so it
+    // can flash and vanish before it's read. This dialog closes only on an explicit mouse
+    // click: focus goes to the (non-interactive) dialog itself, not the OK button, so no
+    // keystroke — buffered or otherwise — can activate anything.
+    if (validationError) dialogRef.current?.focus();
+  }, [validationError]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -49,6 +60,22 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
       window.removeEventListener('keydown', closeOnEscape);
     };
   }, [contextMenu]);
+
+  // The rightmost description column used anywhere in the taxonomy. A code (real or "."
+  // padding) can only exist at or to the left of this column — there's no level of the
+  // hierarchy deeper than the deepest description anyone has actually written yet.
+  function getMaxDescriptionColumn(): number {
+    let max = -1;
+    for (const row of rows) {
+      for (let i = row.descriptions.length - 1; i > max; i--) {
+        if ((row.descriptions[i] ?? '').trim()) {
+          max = i;
+          break;
+        }
+      }
+    }
+    return max;
+  }
 
   // Nearest enclosing values in this column, within the same parent group, that the new
   // code must sort between (ASCII, ascending) per CLAUDE.md Section 4.4 / 6.7.
@@ -91,14 +118,15 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
     const isPadding = char === '.';
 
     if (char !== '' && !isValidCodeChar(char)) {
-      window.alert('Invalid code. Valid codes are: ".", 0 to 9, A to Z, a to z');
+      setValidationError('Invalid code. Valid codes are: ".", 0 to 9, A to Z, a to z');
       return;
     }
 
-    // "." marks "no description / unused from here on" (Section 4.4), so it's exempt from
-    // both the ordering rule and the description-correspondence rule below.
-    if (char !== '' && !isPadding && !(rows[editIndex].descriptions[level] ?? '').trim()) {
-      window.alert(
+    // No code — real or "." padding — can exist to the right of the deepest description
+    // written anywhere in the taxonomy; there's no level of hierarchy deeper than that yet.
+    const maxDescCol = getMaxDescriptionColumn();
+    if (char !== '' && level > maxDescCol) {
+      setValidationError(
         'There is no corresponding description, codes can only be entered for columns with a corresponding description entry',
       );
       return;
@@ -110,7 +138,7 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
       const tooHigh = lower !== null && char.charCodeAt(0) >= lower.charCodeAt(0);
       if (tooLow || tooHigh) {
         const validList = formatCharRanges(validCodesInRange(upper, lower));
-        window.alert(`Code must increase. Valid codes are: ${validList}`);
+        setValidationError(`Code must increase. Valid codes are: ${validList}`);
         return;
       }
     }
@@ -118,10 +146,13 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
     const parentValue = level > 0 ? (rows[editIndex].codes[level - 1] ?? '') : null;
     let cascadeActive = true;
 
-    // "." fills every column to the right with "." too (padding runs to the end of the
-    // row); any other value simply clears the columns to the right, per Section 4.4/6.3.
+    // "." fills every column to the right with "." too, but no further than the deepest
+    // description written anywhere (Section 4.4); any other value simply clears the
+    // columns to the right, per Section 4.4/6.3.
     function applyCode(row: TaxonomyRow): TaxonomyRow {
-      const codes = row.codes.map((c, i) => (i === level ? char : i > level ? (isPadding ? '.' : '') : c));
+      const codes = row.codes.map((c, i) =>
+        i === level ? char : i > level ? (isPadding && i <= maxDescCol ? '.' : '') : c,
+      );
       return { ...row, codes };
     }
 
@@ -142,6 +173,28 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
   }
 
   function updateDescription(rowId: string, level: number, value: string) {
+    const editIndex = rows.findIndex((r) => r.id === rowId);
+    if (editIndex === -1) return;
+
+    // A description can move left any number of columns, but rightward only one column
+    // at a time — it can't skip a level of the hierarchy that was never established.
+    const wasEmpty = !(rows[editIndex].descriptions[level] ?? '').trim();
+    if (wasEmpty && value.trim()) {
+      let prevDepth: number | null = null;
+      for (let i = editIndex - 1; i >= 0 && prevDepth === null; i--) {
+        for (let j = rows[i].descriptions.length - 1; j >= 0; j--) {
+          if ((rows[i].descriptions[j] ?? '').trim()) {
+            prevDepth = j;
+            break;
+          }
+        }
+      }
+      if (prevDepth !== null && level > prevDepth + 1) {
+        setValidationError('Descriptions must cascade no more than one column right');
+        return;
+      }
+    }
+
     onChange(
       rows.map((row) =>
         row.id === rowId
@@ -373,6 +426,29 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
         >
           <li onClick={handleToggleCase}>Toggle Case</li>
         </ul>
+      )}
+
+      {validationError && (
+        <div className="validation-overlay" onClick={() => setValidationError(null)}>
+          <div
+            ref={dialogRef}
+            className="validation-dialog"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              // Absorb every keystroke while the dialog is up — including a buffered
+              // Enter from typing that hasn't reached the browser yet — so nothing can
+              // dismiss it or leak through to the grid underneath except a real click.
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <p>{validationError}</p>
+            <button type="button" onClick={() => setValidationError(null)}>
+              OK
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

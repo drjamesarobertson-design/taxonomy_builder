@@ -54,8 +54,20 @@ James found that changing an existing code required deleting it first before typ
 Further feedback after trying overtype:
 
 - **Retyping the same character now still applies.** The browser genuinely never fires a change event when a text input's value doesn't actually change (true for both real keystrokes and programmatic fill, confirmed by tracing it directly) — so retyping "." (or any code) to deliberately re-trigger the cascade/padding-fill below was silently doing nothing. Fixed by detecting this exact case in the key handler and applying the same update logic directly, since the normal change event never arrives.
-- **"." is the Section 4.4 padding character**, so it's now exempt from the ascending-order rule (padding isn't a real sibling code) and, when entered at some level, automatically fills every column to its right with "." too, out to the last level — rather than clearing them to blank as any other code change does.
-- **A real (non-".") code can only be entered in a column that has a corresponding description at that exact level, for that row.** Attempting one where the row's own description at that level is empty is rejected with a popup: "There is no corresponding description, codes can only be entered for columns with a corresponding description entry". "." is exempt from this too, since it explicitly marks "no description here". This only gates direct typing — a value arriving through the fill-down cascade or the "." rightward-fill is unaffected, since those rows are inheriting an ancestor's code rather than asserting their own.
+- **"." is the Section 4.4 padding character**, so it's exempt from the ascending-order rule (padding isn't a real sibling code) and, when entered at some level, fills every column to its right with "." too — rather than clearing them to blank as any other code change does. (The exact rightward extent of this fill was corrected below, after James supplied a working file.)
+- ~~A real code can only be entered in a column with a corresponding description at that exact level, for that row.~~ **Superseded — see below.** James's working file showed this same-row-same-column reading was wrong: e.g. its first row has a real code at column 2 even though that row's own description is only at column 1.
+
+### Corrected description/code correspondence rule, from James's working file
+
+James attached a real working file (`Milling_Test_Taxonomy_5.json`) and clarified the actual rule, which replaces the same-row check above:
+
+- **Descriptions cascade rightward by at most one column per row.** Looking at the nearest row above with any description, the current row's description can be in the same column, any column to its left (unlimited), or exactly one column to its right — never more than one to the right. Violating this shows a popup: "Descriptions must cascade no more than one column right". This is checked at the moment a description cell goes from empty to non-empty (editing an already-populated one doesn't re-check its column).
+- **Track the rightmost description column used anywhere in the taxonomy** (across every row, not just nearby ones) — call it R. In the sample file, descriptions reach column 5 (1-indexed), so R = 5.
+- **No code — real or "." padding — can exist to the right of column R.** A real code there is rejected with the existing popup ("There is no corresponding description…"); the "." rightward-fill now stops at R instead of running to the last configured level.
+
+### Popup reliability fix
+
+James reported the invalid-code popup "flashes and disappears" — reliably reproduced: a browser's native `window.alert()` can be silently dismissed by keystrokes the user is still buffering in from typing (e.g. a subsequent Enter reaches the alert as its dismiss action before the user has read it). All validation popups (invalid character, ordering, description-correspondence, description-cascade) now use a custom on-screen dialog instead of `window.alert()`. It captures keyboard focus on itself (not the OK button) and swallows every keystroke while open, so no keystroke — buffered or otherwise — can dismiss it; only an explicit click on OK or the backdrop closes it. Verified directly: typing an invalid character followed immediately by more keystrokes and two Enter presses (simulating a fast typist not noticing the popup) no longer dismisses it.
 
 ---
 
