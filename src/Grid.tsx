@@ -347,6 +347,20 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     const editIndex = rows.findIndex((r) => r.id === rowId);
     if (editIndex === -1) return;
 
+    // A row has exactly one populated description column — the one matching its level
+    // (Section 4.1). Typing into a second column while another already holds text would
+    // leave the row with two simultaneous descriptions, which breaks that invariant, so it's
+    // blocked outright; the existing entry must be cleared first.
+    if (value.trim()) {
+      const otherFilledLevel = rows[editIndex].descriptions.findIndex(
+        (d, i) => i !== level && (d ?? '').trim(),
+      );
+      if (otherFilledLevel !== -1) {
+        setValidationError('A row can only have one description — clear the existing entry first.');
+        return;
+      }
+    }
+
     // A description can move left any number of columns, but rightward only one column
     // at a time — it can't skip a level of the hierarchy that was never established.
     const wasEmpty = !(rows[editIndex].descriptions[level] ?? '').trim();
