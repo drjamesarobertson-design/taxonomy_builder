@@ -41,9 +41,13 @@ James tested the Stage 1 build and raised the following, to be picked up at the 
 
 After trying fill-down, James asked for the following ahead of schedule (originally Section 6.7's hard rule, planned for Stage 4):
 
-- **Restricted character set.** Only `.`, `0`-`9`, `a`-`z`, `A`-`Z` are valid in a code cell; any other character is silently rejected (no popup — it just doesn't get typed).
+- **Restricted character set.** Only `.`, `0`-`9`, `a`-`z`, `A`-`Z` are valid in a code cell; any other character is rejected with a popup: `Invalid code. Valid codes are: ".", 0 to 9, A to Z, a to z`.
 - **Ascending ASCII order, enforced.** Within a column, and scoped to rows sharing the same parent (the column to the left), a new code must sort strictly between its nearest non-blank neighbours above and below — e.g. if the row above holds `3`, only `4` or higher is accepted. A violation shows a popup: "Code must increase. Valid codes are: …", listing the actual valid characters/ranges. Comparison is case-sensitive per raw ASCII value, so uppercase (`A`-`Z`) sorts before lowercase (`a`-`z`).
 - **Changing a code clears codes to the right.** If a row's code at some level changes, every code at a deeper level (to its right) for that row is cleared, since those child-level codes were only meaningful relative to the old parent code. This applies to every row affected by a fill-down cascade triggered by the edit, not just the row directly typed into.
+
+### Code entry fix, after further testing
+
+James found that changing an existing code required deleting it first before typing the replacement, and that this two-step interaction was breaking the clear-to-the-right and cascade behaviour above (since the delete and the retype landed as two separate edits, losing the cascade's reference to the value being replaced). Root-caused to overtype not being supported: a code cell now selects its existing character on focus, so typing directly replaces it in one step, matching the two rules above correctly in the common case. Verified with the exact scenario James described (a column reading `2, 3, 6`; changing `3` to `4` clears only that row's deeper codes and leaves the `6` row's own codes untouched) and confirmed a genuine two-step delete-then-retype still cascades correctly too.
 
 ---
 
