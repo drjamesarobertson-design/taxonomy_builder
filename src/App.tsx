@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import type { TaxonomyProject, TaxonomyRow } from './types';
-import { createProject } from './types';
+import { createEmptyRow, createProject } from './types';
 import { saveProjectToFile, loadProjectFromFile } from './storage';
 import NewTaxonomyForm from './NewTaxonomyForm';
 import Grid from './Grid';
@@ -10,6 +10,7 @@ export default function App() {
   const [project, setProject] = useState<TaxonomyProject | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [autoFocusFirstRow, setAutoFocusFirstRow] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function handleCreate(
@@ -19,8 +20,12 @@ export default function App() {
     maxDescriptionLength: number,
     delimiterPositions: number[],
   ) {
-    setProject(createProject(title, tableName, purpose, maxDescriptionLength, delimiterPositions));
+    const newProject = createProject(title, tableName, purpose, maxDescriptionLength, delimiterPositions);
+    // Start the user off with a row already in place, cursor ready, rather than an empty grid.
+    newProject.rows = [createEmptyRow(newProject.settings.numLevels)];
+    setProject(newProject);
     setDirty(true);
+    setAutoFocusFirstRow(true);
   }
 
   function handleRowsChange(rows: TaxonomyRow[]) {
@@ -47,6 +52,7 @@ export default function App() {
       const loaded = await loadProjectFromFile(file);
       setProject(loaded);
       setDirty(false);
+      setAutoFocusFirstRow(false);
       setLoadError(null);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Could not load this file.');
@@ -98,7 +104,12 @@ export default function App() {
             <p className="table-name">Table: {project.tableName}</p>
             {project.purpose && <p className="purpose">{project.purpose}</p>}
           </section>
-          <Grid settings={project.settings} rows={project.rows} onChange={handleRowsChange} />
+          <Grid
+            settings={project.settings}
+            rows={project.rows}
+            onChange={handleRowsChange}
+            autoFocusFirstRow={autoFocusFirstRow}
+          />
         </>
       )}
     </div>

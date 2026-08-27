@@ -17,8 +17,11 @@ export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
   const [title, setTitle] = useState('');
   const [tableName, setTableName] = useState('');
   const [purpose, setPurpose] = useState('');
-  const [maxDescriptionLength, setMaxDescriptionLength] = useState(
-    DEFAULT_SETTINGS.maxDescriptionLength,
+  // Kept as free text while editing (not coerced to a number on every keystroke) so that
+  // backspacing the field to empty doesn't get immediately replaced by a stray "0" that then
+  // sits in front of the next digit typed.
+  const [maxDescriptionLengthText, setMaxDescriptionLengthText] = useState(
+    String(DEFAULT_SETTINGS.maxDescriptionLength),
   );
   const [delimiterPositions, setDelimiterPositions] = useState<number[]>(
     DEFAULT_SETTINGS.delimiterPositions,
@@ -44,6 +47,7 @@ export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
     e.preventDefault();
     if (!title.trim() || !tableName.trim()) return;
     const sorted = [...new Set(delimiterPositions)].sort((a, b) => a - b);
+    const maxDescriptionLength = Math.max(1, Number(maxDescriptionLengthText) || DEFAULT_SETTINGS.maxDescriptionLength);
     onCreate(title.trim(), tableName.trim(), purpose.trim(), maxDescriptionLength, sorted);
   }
 
@@ -67,8 +71,14 @@ export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
         <input
           type="number"
           min={1}
-          value={maxDescriptionLength}
-          onChange={(e) => setMaxDescriptionLength(Number(e.target.value))}
+          value={maxDescriptionLengthText}
+          onChange={(e) => setMaxDescriptionLengthText(e.target.value)}
+          onBlur={() => {
+            const n = Number(maxDescriptionLengthText);
+            if (!maxDescriptionLengthText || Number.isNaN(n) || n < 1) {
+              setMaxDescriptionLengthText(String(DEFAULT_SETTINGS.maxDescriptionLength));
+            }
+          }}
         />
       </label>
 
@@ -77,15 +87,17 @@ export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
         {delimiterPositions.length === 0 && <p className="delimiter-empty">No delimiters — Insert "-" Code Delimiter?</p>}
         {delimiterPositions.map((position, index) => (
           <div className="delimiter-row" key={index}>
-            <span>Insert "-" Code Delimiter — after how many code columns?</span>
-            <input
-              type="number"
-              min={1}
-              max={numLevels - 1}
-              value={position}
-              onChange={(e) => updateDelimiter(index, Number(e.target.value))}
-            />
-            <button type="button" onClick={() => removeDelimiter(index)}>
+            <div className="delimiter-row-fields">
+              <span>Insert "-" Code Delimiter — after how many code columns?</span>
+              <input
+                type="number"
+                min={1}
+                max={numLevels - 1}
+                value={position}
+                onChange={(e) => updateDelimiter(index, Number(e.target.value))}
+              />
+            </div>
+            <button type="button" className="delimiter-remove-btn" onClick={() => removeDelimiter(index)}>
               Remove
             </button>
           </div>

@@ -9,6 +9,8 @@ interface GridProps {
   settings: TaxonomySettings;
   rows: TaxonomyRow[];
   onChange: (rows: TaxonomyRow[]) => void;
+  /** Focus the first row's first description cell once, on mount (freshly created taxonomy). */
+  autoFocusFirstRow?: boolean;
 }
 
 type CellKind = 'code' | 'desc';
@@ -24,12 +26,13 @@ interface ContextMenuState {
   x: number;
   y: number;
   level: number;
+  rowId: string;
 }
 
 const codeInputId = (level: number, rowId: string) => `code-${level}-${rowId}`;
 const descInputId = (level: number, rowId: string) => `desc-${level}-${rowId}`;
 
-export default function Grid({ settings, rows, onChange }: GridProps) {
+export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: GridProps) {
   const { numLevels, delimiterPositions, maxDescriptionLength } = settings;
   const levels = Array.from({ length: numLevels }, (_, i) => i);
   const overflowChars = Math.max(10, maxDescriptionLength - numLevels);
@@ -38,7 +41,11 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
   const [anchorRowId, setAnchorRowId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(
+    null,
+  );
   const dialogRef = useRef<HTMLDivElement>(null);
+  const confirmDialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // A native window.alert() can be dismissed by keystrokes the user is still buffering
@@ -48,6 +55,23 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
     // keystroke — buffered or otherwise — can activate anything.
     if (validationError) dialogRef.current?.focus();
   }, [validationError]);
+
+  useEffect(() => {
+    if (confirmDialog) confirmDialogRef.current?.focus();
+  }, [confirmDialog]);
+
+  useEffect(() => {
+    // A freshly created taxonomy starts with one empty row already in place — put the
+    // cursor straight on it instead of leaving the user to click in.
+    if (autoFocusFirstRow && rows.length > 0) {
+      const firstRowId = rows[0].id;
+      requestAnimationFrame(() => {
+        document.getElementById(descInputId(0, firstRowId))?.focus();
+      });
+    }
+    // Mount-only: this is meant to fire once for the row the taxonomy was created with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -171,6 +195,35 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
       return { ...row, codes };
     }
 
+    if (isPadding) {
+      // "." replicates right across every column up to the deepest description (applied to
+      // the edited row via applyCode), then cascades down through blank cells below — but
+      // each of those replicated columns cascades independently, stopping only when THAT
+      // column hits a non-blank cell, not the moment any other column happens to.
+      let end = rows.length;
+      for (let i = editIndex + 1; i < rows.length; i++) {
+        const rowParent = level > 0 ? (rows[i].codes[level - 1] ?? '') : null;
+        if (parentValue !== null && rowParent !== parentValue) {
+          end = i;
+          break;
+        }
+      }
+      const updated = rows.map((row, idx) =>
+        idx === editIndex ? applyCode(row) : { ...row, codes: [...row.codes] },
+      );
+      for (let c = level; c <= maxDescCol; c++) {
+        for (let i = editIndex + 1; i < end; i++) {
+          if ((updated[i].codes[c] ?? '') === '') {
+            updated[i].codes[c] = '.';
+          } else {
+            break;
+          }
+        }
+      }
+      onChange(updated);
+      return;
+    }
+
     let cascadeActive = true;
     onChange(
       rows.map((row, idx) => {
@@ -183,14 +236,7 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
           return row;
         }
         const rowOwnOld = row.codes[level] ?? '';
-        if (isPadding) {
-          // "." only fills blanks below, stopping at (and never overwriting) the first
-          // non-blank cell it meets.
-          if (rowOwnOld !== '') {
-            cascadeActive = false;
-            return row;
-          }
-        } else if (char === '') {
+        if (char === '') {
           // Clearing propagates only through rows that held the exact value being cleared.
           if (rowOwnOld !== oldValue) {
             cascadeActive = false;
@@ -251,8 +297,46 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
     onChange([...rows, createRowInheritingFrom(rows[rows.length - 1])]);
   }
 
-  function removeRow(rowId: string) {
-    onChange(rows.filter((row) => row.id !== rowId));
+  // Deletes a row (Section 6.5). If it has children, warns first — they'd be deleted along
+  // with it — via a confirm dialog rather than the immediate delete used for a childless row.
+  function deleteRow(rowId: string) {
+    const idx = rows.findIndex((r) => r.id === rowId);
+    if (idx === -1) return;
+    const level = levelOf(rows[idx]);
+    const end = level === -1 ? idx + 1 : getDescendantEndIndex(idx);
+    const hasChildren = end > idx + 1;
+    const doDelete = () => onChange(rows.filter((_, i) => i < idx || i >= end));
+    if (hasChildren) {
+      setConfirmDialog({
+        message: 'This entry has child entries — deleting it will delete its children too. Continue?',
+        onConfirm: doDelete,
+      });
+    } else {
+      doDelete();
+    }
+  }
+
+  // Right-click "Insert Row Above" / "Insert Row Below" (Section 6.5) — a blank new entry
+  // positioned relative to whichever row the context menu was opened on.
+  function handleInsertRow(position: 'above' | 'below') {
+    if (!contextMenu) return;
+    const idx = rows.findIndex((r) => r.id === contextMenu.rowId);
+    if (idx === -1) return;
+    const refLevel = Math.max(0, levelOf(rows[idx]));
+    const insertAt = position === 'above' ? idx : idx + 1;
+    const newRow = createEmptyRow(numLevels);
+    onChange([...rows.slice(0, insertAt), newRow, ...rows.slice(insertAt)]);
+    setContextMenu(null);
+    requestAnimationFrame(() => {
+      document.getElementById(descInputId(refLevel, newRow.id))?.focus();
+    });
+  }
+
+  function handleDeleteRowFromMenu() {
+    if (!contextMenu) return;
+    const rowId = contextMenu.rowId;
+    setContextMenu(null);
+    deleteRow(rowId);
   }
 
   function focusCell(kind: CellKind, level: number, rowIndex: number) {
@@ -352,7 +436,7 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
       setSelection({ kind, level, rowIds: new Set([rowId]) });
       setAnchorRowId(rowId);
     }
-    setContextMenu({ kind, x: e.clientX, y: e.clientY, level });
+    setContextMenu({ kind, x: e.clientX, y: e.clientY, level, rowId });
   }
 
   function handleToggleCase() {
@@ -467,13 +551,17 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
         const oldLevel = levelOf(row);
         const newLevel = oldLevel + offset;
         // Only the description moves; colour follows the column automatically since it's
-        // never stored per-row. The code is blanked, not carried over (Section 6.3).
+        // never stored per-row. Only the code cell at the entry's new column is blanked —
+        // that's the one whose value is no longer trustworthy at the new level and needs a
+        // fresh code — every other code cell on the row (its ancestor path) is left alone
+        // (Section 6.3).
         const descriptions = row.descriptions.map((d, idx) => {
           if (idx === newLevel) return row.descriptions[oldLevel];
           if (idx === oldLevel) return '';
           return d;
         });
-        return { ...row, descriptions, codes: row.codes.map(() => '') };
+        const codes = row.codes.map((c, idx) => (idx === newLevel ? '' : c));
+        return { ...row, descriptions, codes };
       }),
     );
     setSelection(null);
@@ -573,7 +661,7 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
                 <button
                   type="button"
                   className="remove-row-btn"
-                  onClick={() => removeRow(row.id)}
+                  onClick={() => deleteRow(row.id)}
                   title="Remove row"
                 >
                   ×
@@ -600,8 +688,44 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
               <li onClick={() => handlePromoteDemote('demote')}>Demote</li>
             </>
           )}
-          {contextMenu.kind === 'code' && <li onClick={handleDeleteCodes}>Delete</li>}
+          {contextMenu.kind === 'code' && <li onClick={handleDeleteCodes}>Delete Codes</li>}
+          <li className="context-menu-separator" onClick={() => handleInsertRow('above')}>
+            Insert Row Above
+          </li>
+          <li onClick={() => handleInsertRow('below')}>Insert Row Below</li>
+          <li onClick={handleDeleteRowFromMenu}>Delete Row</li>
         </ul>
+      )}
+
+      {confirmDialog && (
+        <div className="validation-overlay" onClick={() => setConfirmDialog(null)}>
+          <div
+            ref={confirmDialogRef}
+            className="validation-dialog"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <p>{confirmDialog.message}</p>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setConfirmDialog(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  confirmDialog.onConfirm();
+                  setConfirmDialog(null);
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {validationError && (
