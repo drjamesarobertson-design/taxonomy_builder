@@ -4,6 +4,7 @@ import { createEmptyRow, createProject } from './types';
 import { saveProjectToFile, loadProjectFromFile } from './storage';
 import NewTaxonomyForm from './NewTaxonomyForm';
 import Grid from './Grid';
+import Logo from './Logo';
 import './App.css';
 
 export default function App() {
@@ -102,10 +103,7 @@ export default function App() {
               onChange={handleFileSelected}
             />
           </div>
-          {/* Logo goes here, to the right of the heading, once the image asset is supplied. */}
-          <div className="app-logo-placeholder" aria-hidden="true">
-            Logo
-          </div>
+          <Logo className="app-logo" />
         </div>
       </header>
 
