@@ -69,6 +69,28 @@ James attached a real working file (`Milling_Test_Taxonomy_5.json`) and clarifie
 
 James reported the invalid-code popup "flashes and disappears" — reliably reproduced: a browser's native `window.alert()` can be silently dismissed by keystrokes the user is still buffering in from typing (e.g. a subsequent Enter reaches the alert as its dismiss action before the user has read it). All validation popups (invalid character, ordering, description-correspondence, description-cascade) now use a custom on-screen dialog instead of `window.alert()`. It captures keyboard focus on itself (not the OK button) and swallows every keystroke while open, so no keystroke — buffered or otherwise — can dismiss it; only an explicit click on OK or the backdrop closes it. Verified directly: typing an invalid character followed immediately by more keystrokes and two Enter presses (simulating a fast typist not noticing the popup) no longer dismisses it.
 
+### Grid-editing refinement batch
+
+James sent a long list of further feedback and suggested splitting it up. The following were done together as one batch of closely-related grid-editing fixes:
+
+- **Keyboard exit from a description cell.** Enter and all arrow keys now always move to the adjacent cell from a description, matching code cells, rather than only when the text caret was already at that edge.
+- **Auto-add row at the bottom.** Pressing Enter or ↓ in a description cell on the last row now adds a new row (inheriting the row above's codes, as `+ Add Row` already does) and moves focus into its same column, instead of doing nothing.
+- **Corrected code cascade.** Overtyping a code with a *larger* value now sweeps every row below it that's blank or holds a smaller value, stopping at the first row that already holds an equal-or-greater one — rather than only propagating to rows that exactly matched the old value. Clearing a code still only propagates through rows that held the exact value being cleared. "." now cascades down through blank rows too (in addition to its existing rightward fill), stopping at — and never overwriting — the first non-blank cell.
+- **Root-caused a real bug this surfaced:** clicking a code cell that already has keyboard focus doesn't re-fire its focus event, so the existing "select on focus" overtype fix didn't reselect the character, and the browser's native `maxLength=1` then silently swallowed the next keystroke before any code ever ran. Fixed by having code cells handle every printable keystroke directly in the key handler instead of relying on the browser's native text-input behaviour at all.
+- **Codes must populate left to right.** Entering a code where any column to its left (for that row) is still blank is now rejected: "Code to left is blank, codes must populate from left to right".
+- **Single-character enforcement.** A paste or programmatic value longer than one character into a code cell is now rejected with a popup ("Only one character permitted") instead of silently keeping just the last character.
+- **Discard-prompt fix.** "New Taxonomy" now only asks to confirm discarding when something has actually changed since the last save (or load) — a `dirty` flag is set on any edit and cleared by a successful save or load.
+
+Verified against a mix of targeted new tests and the full existing regression suite (save/load, case toggle, keyboard navigation, ASCII ordering, description-correspondence, the earlier 2/3/6 boundary scenario) — no regressions. Note: reloading James's own sample file and trying to extend a code further right on rows 3 or 4 now also triggers the new left-to-right rule, since those rows have a deeper description than their populated codes reach — expected given today's new rule, not a bug.
+
+### Deferred as separate follow-up work
+
+James suggested splitting the list further; these three are substantial enough to be their own pieces of work rather than quick fixes:
+
+1. **Optional/multiple delimiters with a setup wizard.** Replacing the single fixed `delimiterAfter` setting with a sequential "Insert delimiter? / after how many columns? / another one?" setup flow, and extending the data model to support zero or more delimiter positions. Also notes wanting more than 8 columns as a future setup option.
+2. **Shift-select and delete a range of codes.** Extending the existing shift-click multi-select (already built for description Toggle Case) to code cells, with a way to clear the selected range.
+3. **Promote/demote with children** — this is Stage 3's core feature from the original build plan (Section 6.3), not yet built at all.
+
 ---
 
 ## Stage 2 — Visual Conventions

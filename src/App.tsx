@@ -9,6 +9,7 @@ import './App.css';
 export default function App() {
   const [project, setProject] = useState<TaxonomyProject | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function handleCreate(
@@ -18,16 +19,19 @@ export default function App() {
     maxDescriptionLength: number,
   ) {
     setProject(createProject(title, tableName, purpose, maxDescriptionLength));
+    setDirty(true);
   }
 
   function handleRowsChange(rows: TaxonomyRow[]) {
     if (!project) return;
     setProject({ ...project, rows });
+    setDirty(true);
   }
 
   function handleSave() {
     if (!project) return;
     saveProjectToFile(project);
+    setDirty(false);
   }
 
   function handleLoadClick() {
@@ -41,6 +45,7 @@ export default function App() {
     try {
       const loaded = await loadProjectFromFile(file);
       setProject(loaded);
+      setDirty(false);
       setLoadError(null);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Could not load this file.');
@@ -48,7 +53,7 @@ export default function App() {
   }
 
   function handleNewTaxonomy() {
-    if (project && !confirm('Discard the current taxonomy and start a new one?')) return;
+    if (project && dirty && !confirm('Discard the current taxonomy and start a new one?')) return;
     setProject(null);
     setLoadError(null);
   }

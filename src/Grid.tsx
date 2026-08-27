@@ -78,10 +78,11 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
   }
 
   // Nearest enclosing values in this column, within the same parent group, that the new
-  // code must sort between (ASCII, ascending) per CLAUDE.md Section 4.4 / 6.7.
-  function findOrderBounds(editIndex: number, level: number) {
+  // code must sort between (ASCII, ascending) per CLAUDE.md Section 4.4 / 6.7. The lower
+  // bound skips any row that the cascade below will sweep up (blank, or smaller than char)
+  // since those aren't real boundaries — only a row that will survive the cascade is.
+  function findOrderBounds(editIndex: number, level: number, char: string) {
     const parentValue = level > 0 ? (rows[editIndex].codes[level - 1] ?? '') : null;
-    const oldValue = rows[editIndex].codes[level] ?? '';
 
     let upper: string | null = null;
     for (let i = editIndex - 1; i >= 0; i--) {
@@ -97,18 +98,20 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
     for (let i = editIndex + 1; i < rows.length; i++) {
       if (parentValue !== null && (rows[i].codes[level - 1] ?? '') !== parentValue) break;
       const v = rows[i].codes[level] ?? '';
-      if (v === oldValue) continue; // will be overwritten by the fill-down cascade
-      if (v !== '') {
-        lower = v;
-        break;
-      }
+      if (v === '' || v.charCodeAt(0) < char.charCodeAt(0)) continue; // will be swept up by the cascade
+      lower = v;
+      break;
     }
 
     return { upper, lower };
   }
 
   function updateCode(rowId: string, level: number, value: string) {
-    const char = value.slice(-1);
+    if (value.length > 1) {
+      setValidationError('Only one character permitted');
+      return;
+    }
+    const char = value;
     const editIndex = rows.findIndex((r) => r.id === rowId);
     if (editIndex === -1) return;
 
@@ -122,6 +125,17 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
       return;
     }
 
+    // Codes must populate left to right — every column before this one must already hold
+    // a value (real or padding) before this one can.
+    if (char !== '') {
+      for (let i = 0; i < level; i++) {
+        if (!(rows[editIndex].codes[i] ?? '')) {
+          setValidationError('Code to left is blank, codes must populate from left to right');
+          return;
+        }
+      }
+    }
+
     // No code — real or "." padding — can exist to the right of the deepest description
     // written anywhere in the taxonomy; there's no level of hierarchy deeper than that yet.
     const maxDescCol = getMaxDescriptionColumn();
@@ -133,7 +147,7 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
     }
 
     if (char !== '' && !isPadding && char !== oldValue) {
-      const { upper, lower } = findOrderBounds(editIndex, level);
+      const { upper, lower } = findOrderBounds(editIndex, level, char);
       const tooLow = upper !== null && char.charCodeAt(0) <= upper.charCodeAt(0);
       const tooHigh = lower !== null && char.charCodeAt(0) >= lower.charCodeAt(0);
       if (tooLow || tooHigh) {
@@ -144,7 +158,6 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
     }
 
     const parentValue = level > 0 ? (rows[editIndex].codes[level - 1] ?? '') : null;
-    let cascadeActive = true;
 
     // "." fills every column to the right with "." too, but no further than the deepest
     // description written anywhere (Section 4.4); any other value simply clears the
@@ -156,16 +169,38 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
       return { ...row, codes };
     }
 
+    let cascadeActive = true;
     onChange(
       rows.map((row, idx) => {
         if (idx < editIndex) return row;
         if (idx === editIndex) return applyCode(row);
         if (!cascadeActive) return row;
         const rowParent = level > 0 ? (row.codes[level - 1] ?? '') : null;
-        const rowOwnOld = row.codes[level] ?? '';
-        if ((parentValue !== null && rowParent !== parentValue) || rowOwnOld !== oldValue) {
+        if (parentValue !== null && rowParent !== parentValue) {
           cascadeActive = false;
           return row;
+        }
+        const rowOwnOld = row.codes[level] ?? '';
+        if (isPadding) {
+          // "." only fills blanks below, stopping at (and never overwriting) the first
+          // non-blank cell it meets.
+          if (rowOwnOld !== '') {
+            cascadeActive = false;
+            return row;
+          }
+        } else if (char === '') {
+          // Clearing propagates only through rows that held the exact value being cleared.
+          if (rowOwnOld !== oldValue) {
+            cascadeActive = false;
+            return row;
+          }
+        } else {
+          // A real code sweeps through blank cells and any smaller value below it, and
+          // stops at the first cell that already holds an equal or greater one.
+          if (rowOwnOld !== '' && rowOwnOld.charCodeAt(0) >= char.charCodeAt(0)) {
+            cascadeActive = false;
+            return row;
+          }
         }
         return applyCode(row);
       }),
@@ -204,11 +239,14 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
     );
   }
 
-  function addRow() {
-    const previous = rows[rows.length - 1];
+  function createRowInheritingFrom(previous?: TaxonomyRow): TaxonomyRow {
     const newRow = createEmptyRow(numLevels);
     if (previous) newRow.codes = [...previous.codes];
-    onChange([...rows, newRow]);
+    return newRow;
+  }
+
+  function addRow() {
+    onChange([...rows, createRowInheritingFrom(rows[rows.length - 1])]);
   }
 
   function removeRow(rowId: string) {
@@ -229,47 +267,48 @@ export default function Grid({ settings, rows, onChange }: GridProps) {
     level: number,
     rowIndex: number,
   ) {
-    const input = e.currentTarget;
-
-    // Retyping the exact character a code cell already holds is a deliberate re-entry
-    // (e.g. re-cascading "." padding), but the browser never fires onChange when the
-    // resulting value is unchanged — so handle that case here instead.
+    // Code cells handle every printable keystroke here directly, rather than letting the
+    // browser insert it natively and relying on onChange: a maxLength=1 field that's
+    // already focused (no fresh focus event, so nothing gets selected) silently blocks a
+    // second character at the native level, and separately, retyping the exact character
+    // already there (e.g. re-cascading "." padding) never fires a change event because the
+    // value doesn't change. Handling the key ourselves sidesteps both.
     if (kind === 'code' && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
       const row = rows[rowIndex];
-      if (row && (row.codes[level] ?? '') === e.key) {
-        e.preventDefault();
-        updateCode(row.id, level, e.key);
-        return;
-      }
+      if (row) updateCode(row.id, level, e.key);
+      return;
     }
 
     switch (e.key) {
       case 'Enter':
-      case 'ArrowDown':
+      case 'ArrowDown': {
         e.preventDefault();
+        const isLastRow = rowIndex === rows.length - 1;
+        if (kind === 'desc' && isLastRow) {
+          const newRow = createRowInheritingFrom(rows[rowIndex]);
+          onChange([...rows, newRow]);
+          requestAnimationFrame(() => {
+            document.getElementById(descInputId(level, newRow.id))?.focus();
+          });
+          return;
+        }
         focusCell(kind, level, rowIndex + 1);
         return;
+      }
       case 'ArrowUp':
         e.preventDefault();
         focusCell(kind, level, rowIndex - 1);
         return;
       case 'ArrowLeft':
-        // Code cells hold a single character, so there's no meaningful mid-text caret
-        // position to preserve — always move to the adjacent cell. Description cells only
-        // move when the caret is already at that edge, so normal text navigation still works.
-        if (kind === 'code' || (input.selectionStart === 0 && input.selectionEnd === 0)) {
-          e.preventDefault();
-          focusCell(kind, level - 1, rowIndex);
-        }
+        // Cells always exit to the adjacent one on arrow keys, rather than moving a text
+        // caret within the field — consistent, spreadsheet-style navigation.
+        e.preventDefault();
+        focusCell(kind, level - 1, rowIndex);
         return;
       case 'ArrowRight':
-        if (
-          kind === 'code' ||
-          (input.selectionStart === input.value.length && input.selectionEnd === input.value.length)
-        ) {
-          e.preventDefault();
-          focusCell(kind, level + 1, rowIndex);
-        }
+        e.preventDefault();
+        focusCell(kind, level + 1, rowIndex);
         return;
       default:
         return;
