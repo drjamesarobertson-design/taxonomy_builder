@@ -3,8 +3,12 @@
 export interface TaxonomySettings {
   /** Number of hierarchy levels (code columns / description columns). Default 8. */
   numLevels: number;
-  /** How many code columns appear before the single fixed delimiter column. Default 3. */
-  delimiterAfter: number;
+  /**
+   * Code-column counts after which a delimiter appears (e.g. [3, 6] puts one after the
+   * 3rd and another after the 6th code column). Delimiters are optional — an empty array
+   * means none. Set at taxonomy creation via a sequence of "insert a delimiter?" prompts.
+   */
+  delimiterPositions: number[];
   /** Character used to pad unused code positions. Default '.'. */
   paddingChar: string;
   /** Maximum ERP description field length, captured at taxonomy creation (Section 6.7). */
@@ -31,7 +35,7 @@ export interface TaxonomyProject {
 
 export const DEFAULT_SETTINGS: TaxonomySettings = {
   numLevels: 8,
-  delimiterAfter: 3,
+  delimiterPositions: [3],
   paddingChar: '.',
   maxDescriptionLength: 40,
 };
@@ -49,13 +53,14 @@ export function createProject(
   tableName: string,
   purpose: string,
   maxDescriptionLength: number,
+  delimiterPositions: number[],
 ): TaxonomyProject {
   return {
     version: 1,
     title,
     tableName,
     purpose,
-    settings: { ...DEFAULT_SETTINGS, maxDescriptionLength },
+    settings: { ...DEFAULT_SETTINGS, maxDescriptionLength, delimiterPositions },
     rows: [],
   };
 }

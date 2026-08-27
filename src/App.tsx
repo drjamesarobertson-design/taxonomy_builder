@@ -17,8 +17,9 @@ export default function App() {
     tableName: string,
     purpose: string,
     maxDescriptionLength: number,
+    delimiterPositions: number[],
   ) {
-    setProject(createProject(title, tableName, purpose, maxDescriptionLength));
+    setProject(createProject(title, tableName, purpose, maxDescriptionLength, delimiterPositions));
     setDirty(true);
   }
 

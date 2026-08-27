@@ -62,6 +62,51 @@
   cursor: pointer;
 }
 
+.delimiter-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 0.75rem;
+}
+
+.delimiter-setup legend {
+  font-weight: 600;
+  padding: 0 0.3rem;
+}
+
+.delimiter-empty {
+  margin: 0;
+  color: #666;
+  font-weight: normal;
+}
+
+.delimiter-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: normal;
+}
+
+.delimiter-row span {
+  flex: 1;
+}
+
+.delimiter-row input {
+  width: 3.5rem;
+  font: inherit;
+  padding: 0.3rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.delimiter-setup > button {
+  align-self: flex-start;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+}
+
 .taxonomy-meta {
   margin-bottom: 1rem;
 }
