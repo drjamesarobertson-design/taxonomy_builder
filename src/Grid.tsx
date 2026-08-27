@@ -47,9 +47,18 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
   const [promoteDemoteChoice, setPromoteDemoteChoice] = useState<{
     direction: 'promote' | 'demote';
   } | null>(null);
+  // "Move" mode (click a cell, choose Move, then click a target row): the set of row ids
+  // being relocated, and — once a target row has been clicked — that target, awaiting an
+  // above/below choice.
+  const [moveMode, setMoveMode] = useState<{ rowIds: Set<string> } | null>(null);
+  const [moveTarget, setMoveTarget] = useState<{ rowId: string } | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const confirmDialogRef = useRef<HTMLDivElement>(null);
   const promoteDemoteDialogRef = useRef<HTMLDivElement>(null);
+  const moveDialogRef = useRef<HTMLDivElement>(null);
+  // Tracks a click-and-drag range-select in progress; a ref (not state) since it doesn't
+  // itself need to trigger a render, only the selection it produces does.
+  const isDraggingRef = useRef(false);
 
   useEffect(() => {
     // A native window.alert() can be dismissed by keystrokes the user is still buffering
@@ -67,6 +76,31 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
   useEffect(() => {
     if (promoteDemoteChoice) promoteDemoteDialogRef.current?.focus();
   }, [promoteDemoteChoice]);
+
+  useEffect(() => {
+    if (moveTarget) moveDialogRef.current?.focus();
+  }, [moveTarget]);
+
+  useEffect(() => {
+    // Ends a click-and-drag range-select no matter where the mouse is released.
+    const endDrag = () => {
+      isDraggingRef.current = false;
+    };
+    window.addEventListener('mouseup', endDrag);
+    return () => window.removeEventListener('mouseup', endDrag);
+  }, []);
+
+  useEffect(() => {
+    if (!moveMode) return;
+    const cancelOnEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setMoveMode(null);
+        setMoveTarget(null);
+      }
+    };
+    window.addEventListener('keydown', cancelOnEscape);
+    return () => window.removeEventListener('keydown', cancelOnEscape);
+  }, [moveMode]);
 
   useEffect(() => {
     // A freshly created taxonomy starts with one empty row already in place — put the
@@ -324,19 +358,42 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     }
   }
 
-  // Right-click "Insert Row Above" / "Insert Row Below" (Section 6.5) — a blank new entry
-  // positioned relative to whichever row the context menu was opened on.
+  // How many rows "Insert Row Above/Below" would add for the current context menu: more
+  // than one when the row it was opened on is part of a multi-row drag/shift-click
+  // selection — dragging down a column to highlight a range is how many rows to insert.
+  function pendingInsertCount(): number {
+    if (!contextMenu) return 1;
+    if (selection && selection.rowIds.has(contextMenu.rowId) && selection.rowIds.size > 1) {
+      return selection.rowIds.size;
+    }
+    return 1;
+  }
+
+  // Right-click "Insert Row(s) Above" / "Insert Row(s) Below" (Section 6.5) — one or more
+  // blank new entries. For a single row, relative to whichever row the context menu was
+  // opened on; for a multi-row drag/shift-click selection, relative to the top (Above) or
+  // bottom (Below) of the whole selected range, not wherever within it was right-clicked.
   function handleInsertRow(position: 'above' | 'below') {
     if (!contextMenu) return;
-    const idx = rows.findIndex((r) => r.id === contextMenu.rowId);
+    const count = pendingInsertCount();
+    let idx: number;
+    if (count > 1 && selection) {
+      const selectedIndices = rows
+        .map((r, i) => (selection.rowIds.has(r.id) ? i : -1))
+        .filter((i) => i !== -1);
+      idx = position === 'above' ? Math.min(...selectedIndices) : Math.max(...selectedIndices);
+    } else {
+      idx = rows.findIndex((r) => r.id === contextMenu.rowId);
+    }
     if (idx === -1) return;
     const refLevel = Math.max(0, levelOf(rows[idx]));
     const insertAt = position === 'above' ? idx : idx + 1;
-    const newRow = createEmptyRow(numLevels);
-    onChange([...rows.slice(0, insertAt), newRow, ...rows.slice(insertAt)]);
+    const newRows = Array.from({ length: count }, () => createEmptyRow(numLevels));
+    onChange([...rows.slice(0, insertAt), ...newRows, ...rows.slice(insertAt)]);
+    setSelection(null);
     setContextMenu(null);
     requestAnimationFrame(() => {
-      document.getElementById(descInputId(refLevel, newRow.id))?.focus();
+      document.getElementById(descInputId(refLevel, newRows[0].id))?.focus();
     });
   }
 
@@ -410,10 +467,19 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
   }
 
   // Shift-click extends a contiguous range from the anchor; ctrl/cmd-click toggles one row
-  // in or out; a plain click starts a fresh single-cell selection. Shared by code and
+  // in or out; a plain click starts a fresh single-cell selection (and arms drag-select, so
+  // dragging down the column extends it the same way shift-click would). Shared by code and
   // description cells — a selection is always scoped to one kind and one column.
   function handleCellMouseDown(kind: CellKind, rowId: string, level: number, e: React.MouseEvent) {
     if (e.button !== 0) return; // right/middle click: leave selection to handleCellContextMenu
+    if (moveMode) {
+      if (moveMode.rowIds.has(rowId)) {
+        setValidationError('Cannot move an entry into itself or its own children.');
+        return;
+      }
+      setMoveTarget({ rowId });
+      return;
+    }
     if (e.shiftKey && selection && selection.kind === kind && selection.level === level && anchorRowId) {
       const ids = rows.map((r) => r.id);
       const anchorIdx = ids.indexOf(anchorRowId);
@@ -431,6 +497,21 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     }
     setSelection({ kind, level, rowIds: new Set([rowId]) });
     setAnchorRowId(rowId);
+    isDraggingRef.current = true;
+  }
+
+  // Extends the selection while a click-and-drag is in progress (Section 6.5's "drag cursor
+  // down column to highlight range"), matching shift-click's range-from-anchor behaviour.
+  // Dragging into a different column or row kind than the drag started in is ignored.
+  function handleCellMouseEnter(kind: CellKind, rowId: string, level: number) {
+    if (!isDraggingRef.current || moveMode) return;
+    if (!selection || selection.kind !== kind || selection.level !== level || !anchorRowId) return;
+    const ids = rows.map((r) => r.id);
+    const anchorIdx = ids.indexOf(anchorRowId);
+    const hoverIdx = ids.indexOf(rowId);
+    if (anchorIdx === -1 || hoverIdx === -1) return;
+    const [start, end] = anchorIdx < hoverIdx ? [anchorIdx, hoverIdx] : [hoverIdx, anchorIdx];
+    setSelection({ kind, level, rowIds: new Set(ids.slice(start, end + 1)) });
   }
 
   function handleCellContextMenu(kind: CellKind, rowId: string, level: number, e: React.MouseEvent) {
@@ -642,6 +723,47 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     setContextMenu(null);
   }
 
+  // Right-click "Move" — arms move mode with the selected entry (or entries) and all of
+  // their descendants (always the whole hierarchy; unlike promote/demote there's no "just
+  // this one" here, since detaching a moved entry from its children mid-move would leave
+  // them stranded at the old position). The next plain click on any row picks the target.
+  function handleMoveStart() {
+    if (!contextMenu || contextMenu.kind !== 'desc' || !selection) return;
+    const selectedIndices = rows
+      .map((r, i) => (selection.rowIds.has(r.id) ? i : -1))
+      .filter((i) => i !== -1 && levelOf(rows[i]) !== -1)
+      .sort((a, b) => a - b);
+    if (selectedIndices.length === 0) return;
+    const affected = new Set<number>();
+    for (const idx of selectedIndices) {
+      if (affected.has(idx)) continue;
+      const end = getDescendantEndIndex(idx);
+      for (let i = idx; i < end; i++) affected.add(i);
+    }
+    setMoveMode({ rowIds: new Set(Array.from(affected).map((i) => rows[i].id)) });
+    setSelection(null);
+    setContextMenu(null);
+  }
+
+  // Relocates the moving block to sit directly above/below the target row, preserving the
+  // moving rows' own internal order, descriptions, and codes untouched — a pure reorder.
+  function executeMove(position: 'above' | 'below') {
+    if (!moveMode || !moveTarget) return;
+    const movingIds = moveMode.rowIds;
+    const movingRows = rows.filter((r) => movingIds.has(r.id));
+    const remaining = rows.filter((r) => !movingIds.has(r.id));
+    const targetIndex = remaining.findIndex((r) => r.id === moveTarget.rowId);
+    if (targetIndex === -1) {
+      setMoveMode(null);
+      setMoveTarget(null);
+      return;
+    }
+    const insertAt = position === 'above' ? targetIndex : targetIndex + 1;
+    onChange([...remaining.slice(0, insertAt), ...movingRows, ...remaining.slice(insertAt)]);
+    setMoveMode(null);
+    setMoveTarget(null);
+  }
+
   return (
     <div className="grid-wrapper">
       <table className="taxonomy-grid">
@@ -673,7 +795,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
         </thead>
         <tbody>
           {rows.map((row, rowIndex) => (
-            <tr key={row.id}>
+            <tr key={row.id} className={moveMode?.rowIds.has(row.id) ? 'row-moving' : undefined}>
               {levels.map((level) => {
                 const isCodeSelected =
                   selection?.kind === 'code' &&
@@ -685,6 +807,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
                       className={`code-col${isCodeSelected ? ' code-col-selected' : ''}`}
                       style={{ backgroundColor: getLevelColor(level) }}
                       onMouseDown={(e) => handleCellMouseDown('code', row.id, level, e)}
+                      onMouseEnter={() => handleCellMouseEnter('code', row.id, level)}
                       onContextMenu={(e) => handleCellContextMenu('code', row.id, level, e)}
                     >
                       <input
@@ -714,6 +837,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
                     className={`desc-col${isSelected ? ' desc-col-selected' : ''}`}
                     style={{ backgroundColor: getLevelColor(level) }}
                     onMouseDown={(e) => handleCellMouseDown('desc', row.id, level, e)}
+                    onMouseEnter={() => handleCellMouseEnter('desc', row.id, level)}
                     onContextMenu={(e) => handleCellContextMenu('desc', row.id, level, e)}
                   >
                     <input
@@ -749,6 +873,13 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
         + Add Row
       </button>
 
+      {moveMode && (
+        <p className="move-mode-banner">
+          Click a row to move the selected {moveMode.rowIds.size} row
+          {moveMode.rowIds.size > 1 ? 's' : ''} there — Escape to cancel.
+        </p>
+      )}
+
       {contextMenu && (
         <ul
           className="context-menu"
@@ -760,6 +891,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
               <li onClick={handleToggleCase}>Toggle Case</li>
               <li onClick={() => requestPromoteDemote('promote')}>Promote</li>
               <li onClick={() => requestPromoteDemote('demote')}>Demote</li>
+              <li onClick={handleMoveStart}>Move</li>
             </>
           )}
           {contextMenu.kind === 'code' && (
@@ -769,9 +901,11 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
             </>
           )}
           <li className="context-menu-separator" onClick={() => handleInsertRow('above')}>
-            Insert Row Above
+            {pendingInsertCount() > 1 ? `Insert ${pendingInsertCount()} Rows Above` : 'Insert Row Above'}
           </li>
-          <li onClick={() => handleInsertRow('below')}>Insert Row Below</li>
+          <li onClick={() => handleInsertRow('below')}>
+            {pendingInsertCount() > 1 ? `Insert ${pendingInsertCount()} Rows Below` : 'Insert Row Below'}
+          </li>
           <li onClick={handleDeleteRowFromMenu}>Delete Row</li>
         </ul>
       )}
@@ -844,6 +978,46 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
                 }}
               >
                 Entry + Children
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {moveTarget && (
+        <div
+          className="validation-overlay"
+          onClick={() => {
+            setMoveTarget(null);
+            setMoveMode(null);
+          }}
+        >
+          <div
+            ref={moveDialogRef}
+            className="validation-dialog"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <p>Insert the moved row(s) above or below this row?</p>
+            <div className="confirm-dialog-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setMoveTarget(null);
+                  setMoveMode(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button type="button" onClick={() => executeMove('above')}>
+                Insert Above
+              </button>
+              <button type="button" onClick={() => executeMove('below')}>
+                Insert Below
               </button>
             </div>
           </div>

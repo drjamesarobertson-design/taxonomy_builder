@@ -392,3 +392,17 @@ body.sign-on-theme .delimiter-empty {
   padding: 0.4rem 1rem;
   cursor: pointer;
 }
+
+.move-mode-banner {
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0.75rem;
+  background: #fff6d6;
+  border: 1px solid #e0c34a;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  display: inline-block;
+}
+
+.row-moving {
+  opacity: 0.45;
+}
