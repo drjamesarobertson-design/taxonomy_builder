@@ -9,11 +9,12 @@ interface NewTaxonomyFormProps {
     maxDescriptionLength: number,
     delimiterPositions: number[],
   ) => void;
+  onLoadClick: () => void;
 }
 
 const numLevels = DEFAULT_SETTINGS.numLevels;
 
-export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
+export default function NewTaxonomyForm({ onCreate, onLoadClick }: NewTaxonomyFormProps) {
   const [title, setTitle] = useState('');
   const [tableName, setTableName] = useState('');
   const [purpose, setPurpose] = useState('');
@@ -56,15 +57,30 @@ export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
       <h2>Create a New Taxonomy</h2>
       <label>
         Title
-        <input value={title} onChange={(e) => setTitle(e.target.value)} required />
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          required
+          title="The name by which this table will be known in project documentation and the description of the table in the ERP"
+        />
       </label>
       <label>
         Table Name
-        <input value={tableName} onChange={(e) => setTableName(e.target.value)} required />
+        <input
+          value={tableName}
+          onChange={(e) => setTableName(e.target.value)}
+          required
+          title="The database table name that will be used in the ERP"
+        />
       </label>
       <label>
         Purpose
-        <textarea value={purpose} onChange={(e) => setPurpose(e.target.value)} rows={3} />
+        <textarea
+          value={purpose}
+          onChange={(e) => setPurpose(e.target.value)}
+          rows={3}
+          title="A description of the role of this table in the ERP"
+        />
       </label>
       <label>
         Maximum ERP Description Field Length
@@ -79,6 +95,7 @@ export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
               setMaxDescriptionLengthText(String(DEFAULT_SETTINGS.maxDescriptionLength));
             }
           }}
+          title="This is the description field length limit imposed by the ERP or a lesser length if it is desired to curtail description length, should never exceed the field length in the ERP"
         />
       </label>
 
@@ -109,7 +126,12 @@ export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
         )}
       </fieldset>
 
-      <button type="submit">Create Taxonomy</button>
+      <div className="form-actions">
+        <button type="submit">Create Taxonomy</button>
+        <button type="button" onClick={onLoadClick}>
+          Load from File
+        </button>
+      </div>
     </form>
   );
 }

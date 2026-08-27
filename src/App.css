@@ -13,14 +13,36 @@
   margin-bottom: 1rem;
 }
 
-.app-header h1 {
-  font-size: 1.4rem;
+.app-heading {
+  font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 36pt;
+  font-weight: 700;
   margin: 0;
+  text-align: left;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
 }
 
 .toolbar {
   display: flex;
   gap: 0.5rem;
+}
+
+.app-logo-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 4.5rem;
+  height: 4.5rem;
+  border: 1px dashed currentColor;
+  border-radius: 6px;
+  opacity: 0.5;
+  font-size: 0.75rem;
+  flex-shrink: 0;
 }
 
 .toolbar button {
@@ -56,10 +78,60 @@
   border-radius: 4px;
 }
 
+.new-taxonomy-form h2 {
+  font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+.new-taxonomy-form input,
+.new-taxonomy-form textarea {
+  background: #fff;
+  color: #1a1a1a;
+}
+
 .new-taxonomy-form button {
-  align-self: flex-start;
   padding: 0.5rem 1.2rem;
   cursor: pointer;
+}
+
+.form-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-self: flex-start;
+}
+
+.app-footer {
+  margin-top: 2.5rem;
+  padding-top: 1rem;
+  font-size: 0.75rem;
+  color: #b9c9ef;
+  max-width: 480px;
+}
+
+/* Sign-on (New Taxonomy) screen theme — a dark blue matching the ERP Doctor logo, with light
+   text for contrast. The working grid screen keeps its own, unrelated light theme. */
+body.sign-on-theme {
+  background: #102a5c;
+}
+
+body.sign-on-theme .app {
+  color: #eaf2ff;
+}
+
+body.sign-on-theme .delimiter-row {
+  border-bottom-color: rgba(255, 255, 255, 0.15);
+}
+
+body.sign-on-theme .delimiter-setup {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+body.sign-on-theme .delimiter-remove-btn {
+  border-color: rgba(255, 255, 255, 0.4);
+  color: #eaf2ff;
+}
+
+body.sign-on-theme .delimiter-empty {
+  color: #c9d6f5;
 }
 
 .delimiter-setup {
