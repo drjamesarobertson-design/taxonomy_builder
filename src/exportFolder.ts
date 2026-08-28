@@ -55,36 +55,54 @@ async function storeHandle(handle: FileSystemDirectoryHandle): Promise<void> {
 
 let cachedHandle: FileSystemDirectoryHandle | null = null;
 
+// queryPermission/requestPermission can reject outright rather than resolving to "denied" —
+// e.g. requestPermission needs an active user gesture, and one can easily have expired by the
+// time this runs (a dynamic import earlier in the same export, for instance). Treating any
+// such rejection as "not available" — instead of letting it propagate — is what keeps a
+// permission hiccup from silently hanging the whole export.
 async function verifyPermission(handle: FileSystemDirectoryHandle): Promise<boolean> {
-  const opts = { mode: 'readwrite' as const };
-  if ((await handle.queryPermission(opts)) === 'granted') return true;
-  if ((await handle.requestPermission(opts)) === 'granted') return true;
-  return false;
+  try {
+    const opts = { mode: 'readwrite' as const };
+    if ((await handle.queryPermission(opts)) === 'granted') return true;
+    if ((await handle.requestPermission(opts)) === 'granted') return true;
+    return false;
+  } catch {
+    return false;
+  }
 }
 
-/** Lets the user pick (or replace) the folder Save/Export writes to; remembered for next time. */
+/** Lets the user pick (or replace) the folder Save/Export writes to; remembered for next time.
+ * Reopens starting at the currently remembered folder, if there is one, rather than the
+ * browser's own default starting location. */
 export async function chooseExportFolder(): Promise<FileSystemDirectoryHandle | null> {
   if (!supportsFileSystemAccess()) return null;
   try {
-    const handle = await window.showDirectoryPicker!({ id: 'taxonomy-builder-exports' });
+    const startIn = cachedHandle ?? (await loadStoredHandle()) ?? undefined;
+    const handle = await window.showDirectoryPicker!({ id: 'taxonomy-builder-exports', ...(startIn ? { startIn } : {}) });
     cachedHandle = handle;
     await storeHandle(handle);
     return handle;
   } catch {
-    return null; // user cancelled the picker
+    return null; // user cancelled the picker, or it couldn't be shown
   }
 }
 
-/** Returns the remembered export folder, prompting the user to pick one only the first time. */
+/** Returns the remembered export folder, prompting the user to pick one only the first time.
+ * Never throws — any failure along the way (a revoked permission, a moved/deleted folder, an
+ * unexpected API rejection) is treated the same as "no folder available". */
 async function ensureExportFolder(): Promise<FileSystemDirectoryHandle | null> {
-  if (!supportsFileSystemAccess()) return null;
-  if (cachedHandle && (await verifyPermission(cachedHandle))) return cachedHandle;
-  const stored = await loadStoredHandle();
-  if (stored && (await verifyPermission(stored))) {
-    cachedHandle = stored;
-    return stored;
+  try {
+    if (!supportsFileSystemAccess()) return null;
+    if (cachedHandle && (await verifyPermission(cachedHandle))) return cachedHandle;
+    const stored = await loadStoredHandle();
+    if (stored && (await verifyPermission(stored))) {
+      cachedHandle = stored;
+      return stored;
+    }
+    return await chooseExportFolder();
+  } catch {
+    return null;
   }
-  return chooseExportFolder();
 }
 
 /** The remembered folder's name, without prompting for permission — for a UI label only. */
@@ -96,9 +114,11 @@ export async function peekExportFolderName(): Promise<string | null> {
 
 /**
  * Saves a blob to the remembered export folder if the browser supports it and the user has
- * granted access, otherwise falls back to a normal browser download.
+ * granted access, otherwise falls back to a normal browser download. Returns whether the
+ * folder was actually used, so a caller showing "Folder: X" in its UI can tell the label is no
+ * longer accurate (permission lapsed, folder moved, etc.) and stop claiming files go there.
  */
-export async function saveExportFile(blob: Blob, filename: string): Promise<void> {
+export async function saveExportFile(blob: Blob, filename: string): Promise<{ usedFolder: boolean }> {
   const folder = await ensureExportFolder();
   if (folder) {
     try {
@@ -106,10 +126,11 @@ export async function saveExportFile(blob: Blob, filename: string): Promise<void
       const writable = await fileHandle.createWritable();
       await writable.write(blob);
       await writable.close();
-      return;
+      return { usedFolder: true };
     } catch {
       // Fall through to a normal download if writing to the folder failed for some reason.
     }
   }
   downloadBlob(blob, filename);
+  return { usedFolder: false };
 }

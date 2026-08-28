@@ -67,25 +67,39 @@ function levelOf(row: TaxonomyRow): number {
   return -1;
 }
 
+// Inserts the taxonomy's configured "-" delimiters into a full code string at the same
+// positions they appear in the grid and the Discrete Columns export, e.g. codes ["1","2","3"]
+// with a delimiter after column 2 becomes "12-3".
+function joinCodeWithDelimiters(codes: string[], delimiterPositions: number[]): string {
+  let result = '';
+  for (let i = 0; i < codes.length; i++) {
+    result += codes[i] ?? '';
+    if (delimiterPositions.includes(i + 1)) result += '-';
+  }
+  return result;
+}
+
 // "Concatenated" export (Section 9, item 1 — out of v1's original scope, but James asked
 // for it): one combined Code column and one combined Description column per posting-level
 // row, ready to feed an ERP import, rather than one column per level.
 //
-// - Code: the row's full, fixed-width code exactly as it appears in the grid — including
-//   any trailing padding characters the user has entered — not trimmed to the row's own
-//   depth, so a fixed-length ERP code field still lines up.
+// - Code: the row's full, fixed-width code exactly as it appears in the grid — including any
+//   trailing padding characters and the taxonomy's configured "-" delimiters at the same
+//   positions they appear on screen — not trimmed to the row's own depth, so a fixed-length
+//   ERP code field still lines up.
 // - Description: the row's own text only (not a breadcrumb of its ancestors'
 //   descriptions), indented with one leading copy of the taxonomy's configured indent
 //   character per level above the top (a space by default, or another ASCII character set
 //   on the New Taxonomy form), so depth is visible at a glance.
 // Rows with no description at all (level -1) are skipped — there's nothing to export.
 function buildConcatenatedGrid(project: TaxonomyProject): { header: string[]; rows: string[][] } {
-  const indentChar = project.settings.indentChar || ' ';
+  const { indentChar: rawIndentChar, delimiterPositions } = project.settings;
+  const indentChar = rawIndentChar || ' ';
   const rows: string[][] = [];
   for (const row of project.rows) {
     const level = levelOf(row);
     if (level === -1) continue;
-    const code = row.codes.join('');
+    const code = joinCodeWithDelimiters(row.codes, delimiterPositions);
     const description = indentChar.repeat(level) + (row.descriptions[level] ?? '');
     rows.push([code, description]);
   }
@@ -118,16 +132,16 @@ function exportFilename(project: TaxonomyProject, descriptor: string, extension:
   return `${base} ${descriptor}${versionLabel}.${extension}`;
 }
 
-export async function exportDiscreteCsv(project: TaxonomyProject): Promise<TaxonomyProject> {
+export async function exportDiscreteCsv(project: TaxonomyProject): Promise<{ project: TaxonomyProject; usedFolder: boolean }> {
   const { project: versioned, versionLabel } = bumpFileVersion(project, 'discrete-csv');
   const { header, rows } = buildDiscreteGrid(project);
   const csv = [header, ...rows].map((line) => line.map(csvEscape).join(',')).join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  await saveExportFile(blob, exportFilename(project, 'Per Column', 'csv', versionLabel));
-  return versioned;
+  const { usedFolder } = await saveExportFile(blob, exportFilename(project, 'Per Column', 'csv', versionLabel));
+  return { project: versioned, usedFolder };
 }
 
-export async function exportDiscreteXlsx(project: TaxonomyProject): Promise<TaxonomyProject> {
+export async function exportDiscreteXlsx(project: TaxonomyProject): Promise<{ project: TaxonomyProject; usedFolder: boolean }> {
   const { project: versioned, versionLabel } = bumpFileVersion(project, 'discrete-xlsx');
   // exceljs is a large dependency needed only for this one export path — code-split so it
   // doesn't inflate the initial bundle for everyone who never exports to Excel.
@@ -194,20 +208,20 @@ export async function exportDiscreteXlsx(project: TaxonomyProject): Promise<Taxo
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });
-  await saveExportFile(blob, exportFilename(project, 'Per Column', 'xlsx', versionLabel));
-  return versioned;
+  const { usedFolder } = await saveExportFile(blob, exportFilename(project, 'Per Column', 'xlsx', versionLabel));
+  return { project: versioned, usedFolder };
 }
 
-export async function exportConcatenatedCsv(project: TaxonomyProject): Promise<TaxonomyProject> {
+export async function exportConcatenatedCsv(project: TaxonomyProject): Promise<{ project: TaxonomyProject; usedFolder: boolean }> {
   const { project: versioned, versionLabel } = bumpFileVersion(project, 'concatenated-csv');
   const { header, rows } = buildConcatenatedGrid(project);
   const csv = [header, ...rows].map((line) => line.map(csvEscape).join(',')).join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  await saveExportFile(blob, exportFilename(project, 'Concatenated', 'csv', versionLabel));
-  return versioned;
+  const { usedFolder } = await saveExportFile(blob, exportFilename(project, 'Concatenated', 'csv', versionLabel));
+  return { project: versioned, usedFolder };
 }
 
-export async function exportConcatenatedXlsx(project: TaxonomyProject): Promise<TaxonomyProject> {
+export async function exportConcatenatedXlsx(project: TaxonomyProject): Promise<{ project: TaxonomyProject; usedFolder: boolean }> {
   const { project: versioned, versionLabel } = bumpFileVersion(project, 'concatenated-xlsx');
   const ExcelJS = (await import('exceljs')).default;
   const { header, rows } = buildConcatenatedGrid(project);
@@ -224,6 +238,6 @@ export async function exportConcatenatedXlsx(project: TaxonomyProject): Promise<
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });
-  await saveExportFile(blob, exportFilename(project, 'Concatenated', 'xlsx', versionLabel));
-  return versioned;
+  const { usedFolder } = await saveExportFile(blob, exportFilename(project, 'Concatenated', 'xlsx', versionLabel));
+  return { project: versioned, usedFolder };
 }

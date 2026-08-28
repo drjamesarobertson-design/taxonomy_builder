@@ -395,6 +395,7 @@ body.app-dark-theme .delimiter-empty {
   border: none;
   background: transparent;
   font: inherit;
+  color: #000;
   box-sizing: content-box;
 }
 
@@ -419,6 +420,7 @@ body.app-dark-theme .delimiter-empty {
   border: none;
   background: transparent;
   font: inherit;
+  color: #000;
   padding: 2px 2px;
   box-sizing: border-box;
 }
@@ -450,6 +452,7 @@ body.app-dark-theme .delimiter-empty {
   border: none;
   background: transparent;
   font: inherit;
+  color: #000;
   padding: 2px 2px;
   box-sizing: border-box;
 }

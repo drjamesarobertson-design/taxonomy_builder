@@ -3,14 +3,18 @@ import { saveExportFile } from './exportFolder';
 import { bumpFileVersion } from './fileVersion';
 
 /** Saves the project to a file and returns the project with its "save" version counter
- * bumped — callers must persist this back into state so the next save continues counting. */
-export async function saveProjectToFile(project: TaxonomyProject): Promise<TaxonomyProject> {
+ * bumped — callers must persist this back into state so the next save continues counting —
+ * plus whether it actually landed in the remembered export folder or fell back to a plain
+ * download. */
+export async function saveProjectToFile(
+  project: TaxonomyProject,
+): Promise<{ project: TaxonomyProject; usedFolder: boolean }> {
   const { project: versioned, versionLabel } = bumpFileVersion(project, 'save');
   const json = JSON.stringify(versioned, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
   const base = project.tableName || project.title || 'taxonomy';
-  await saveExportFile(blob, `${base}${versionLabel}.json`);
-  return versioned;
+  const { usedFolder } = await saveExportFile(blob, `${base}${versionLabel}.json`);
+  return { project: versioned, usedFolder };
 }
 
 function isTaxonomyProject(data: unknown): data is TaxonomyProject {

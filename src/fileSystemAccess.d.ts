@@ -15,10 +15,12 @@ declare global {
     requestPermission(descriptor?: FileSystemHandlePermissionDescriptor): Promise<PermissionState>;
   }
 
+  type WellKnownDirectory = 'desktop' | 'documents' | 'downloads' | 'music' | 'pictures' | 'videos';
+
   interface DirectoryPickerOptions {
     id?: string;
     mode?: 'read' | 'readwrite';
-    startIn?: string;
+    startIn?: FileSystemHandle | WellKnownDirectory;
   }
 
   interface Window {
