@@ -209,7 +209,7 @@ export default function NewTaxonomyForm({ onCreate, onLoadClick }: NewTaxonomyFo
       </fieldset>
 
       <fieldset className="indent-char-setup">
-        <legend>Leading Pad Character</legend>
+        <legend>Leading Pad Character on Concatenated Export</legend>
         <label className="checkbox-label">
           <input
             type="checkbox"

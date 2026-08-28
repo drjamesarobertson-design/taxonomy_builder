@@ -39,6 +39,7 @@ interface ContextMenuState {
 
 const codeInputId = (level: number, rowId: string) => `code-${level}-${rowId}`;
 const descInputId = (level: number, rowId: string) => `desc-${level}-${rowId}`;
+const suffixInputId = (index: number, rowId: string) => `suffix-${index}-${rowId}`;
 
 export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: GridProps) {
   const { numLevels, delimiterPositions, maxDescriptionLength, suffixes } = settings;
@@ -62,6 +63,16 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
   const [promoteDemoteChoice, setPromoteDemoteChoice] = useState<{
     direction: 'promote' | 'demote';
   } | null>(null);
+  // A duplicate editable-suffix value found on blur (Section 3-adjacent): offers Accept (keep
+  // it), Edit (jump back into the cell), or Cancel (revert to what it held before this edit).
+  const [suffixDuplicateChoice, setSuffixDuplicateChoice] = useState<{
+    rowId: string;
+    index: number;
+    previousValue: string;
+  } | null>(null);
+  // The value an editable suffix cell held just before the user started typing into it —
+  // captured on focus, used to revert if a duplicate is found and the user chooses Cancel.
+  const suffixEditOriginalRef = useRef<{ rowId: string; index: number; value: string } | null>(null);
   // "Move" mode (click a cell, choose Move, then click a target row): the set of row ids
   // being relocated, and — once a target row has been clicked — that target, awaiting an
   // above/below choice.
@@ -70,6 +81,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
   const dialogRef = useRef<HTMLDivElement>(null);
   const confirmDialogRef = useRef<HTMLDivElement>(null);
   const promoteDemoteDialogRef = useRef<HTMLDivElement>(null);
+  const suffixDuplicateDialogRef = useRef<HTMLDivElement>(null);
   const moveDialogRef = useRef<HTMLDivElement>(null);
   // Tracks a click-and-drag range-select in progress; a ref (not state) since it doesn't
   // itself need to trigger a render, only the selection it produces does.
@@ -91,6 +103,10 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
   useEffect(() => {
     if (promoteDemoteChoice) promoteDemoteDialogRef.current?.focus();
   }, [promoteDemoteChoice]);
+
+  useEffect(() => {
+    if (suffixDuplicateChoice) suffixDuplicateDialogRef.current?.focus();
+  }, [suffixDuplicateChoice]);
 
   useEffect(() => {
     if (moveTarget) moveDialogRef.current?.focus();
@@ -250,9 +266,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     // written anywhere in the taxonomy; there's no level of hierarchy deeper than that yet.
     const maxDescCol = getMaxDescriptionColumn();
     if (char !== '' && level > maxDescCol) {
-      setValidationError(
-        'There are no descriptions in this column, codes can only be entered for columns covered by the description hierarchy',
-      );
+      setValidationError('Enter Descriptions Before Entering Codes');
       return;
     }
 
@@ -277,12 +291,17 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     const parentValue = level > 0 ? (rows[editIndex].codes[level - 1] ?? '') : null;
 
     // "." fills every column to the right with "." too, but no further than the deepest
-    // description written anywhere (Section 4.4); any other value simply clears the
-    // columns to the right, per Section 4.4/6.3.
+    // description written anywhere (Section 4.4). Entering any other (real) value clears a
+    // real code sitting to the right — it was scoped to the old value at this column and may
+    // no longer make sense — but leaves an existing "." alone: padding just means "no further
+    // hierarchy here", which stays true regardless of what this column's own code changes to.
     function applyCode(row: TaxonomyRow): TaxonomyRow {
-      const codes = row.codes.map((c, i) =>
-        i === level ? char : i > level ? (isPadding && i <= maxDescCol ? '.' : '') : c,
-      );
+      const codes = row.codes.map((c, i) => {
+        if (i === level) return char;
+        if (i < level) return c;
+        if (isPadding) return i <= maxDescCol ? '.' : '';
+        return c === '.' ? c : '';
+      });
       return { ...row, codes };
     }
 
@@ -412,12 +431,16 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
 
   // Editable suffix values are free text, not a code, so a duplicate isn't invalid — just
   // flagged once the user leaves the cell, in case it wasn't intentional (e.g. a copy/paste
-  // slip). Purely informational: it never blocks or changes the entry.
+  // slip). Offers Accept (keep it), Edit (jump back in), or Cancel (revert to what it held
+  // before this edit) — never silently blocks or changes the entry on its own.
   function checkSuffixDuplicate(rowId: string, index: number) {
     const value = (rows.find((r) => r.id === rowId)?.suffixValues[index] ?? '').trim();
     if (!value) return;
     const isDuplicate = rows.some((r) => r.id !== rowId && (r.suffixValues[index] ?? '').trim() === value);
-    if (isDuplicate) setValidationError('Duplicate Entry');
+    if (!isDuplicate) return;
+    const original = suffixEditOriginalRef.current;
+    const previousValue = original && original.rowId === rowId && original.index === index ? original.value : '';
+    setSuffixDuplicateChoice({ rowId, index, previousValue });
   }
 
   function createRowInheritingFrom(previous?: TaxonomyRow): TaxonomyRow {
@@ -553,13 +576,38 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
         return;
       case 'ArrowLeft':
         // Cells always exit to the adjacent one on arrow keys, rather than moving a text
-        // caret within the field — consistent, spreadsheet-style navigation.
+        // caret within the field — consistent, spreadsheet-style navigation. Off the left
+        // edge of the description block (column 1), wrap onto the rightmost code column of
+        // the same row rather than doing nothing.
         e.preventDefault();
-        focusCell(kind, level - 1, rowIndex);
+        if (kind === 'desc' && level === 0) {
+          focusCell('code', numLevels - 1, rowIndex);
+        } else {
+          focusCell(kind, level - 1, rowIndex);
+        }
         return;
       case 'ArrowRight':
         e.preventDefault();
         focusCell(kind, level + 1, rowIndex);
+        return;
+      case 'F2':
+        // Excel-style: F2 puts the field into edit mode with the cursor at the end of its
+        // existing text, rather than wherever the browser's own focus handling left it.
+        if (kind === 'desc') {
+          e.preventDefault();
+          const input = e.currentTarget;
+          const end = input.value.length;
+          input.setSelectionRange(end, end);
+        }
+        return;
+      case 'Delete':
+        // Excel-style: Delete clears an entire cell's content outright, rather than removing
+        // just the character to the right of the cursor.
+        if (kind === 'desc') {
+          e.preventDefault();
+          const row = rows[rowIndex];
+          if (row) updateDescription(row.id, level, '');
+        }
         return;
       default:
         return;
@@ -1081,10 +1129,14 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
                       <input className="suffix-cell" type="text" value={suffix.constantValue} readOnly />
                     ) : (
                       <input
+                        id={suffixInputId(index, row.id)}
                         className="suffix-cell"
                         type="text"
                         maxLength={suffix.width}
                         value={row.suffixValues[index] ?? ''}
+                        onFocus={() => {
+                          suffixEditOriginalRef.current = { rowId: row.id, index, value: row.suffixValues[index] ?? '' };
+                        }}
                         onChange={(e) => updateSuffix(row.id, index, e.target.value)}
                         onBlur={() => checkSuffixDuplicate(row.id, index)}
                       />
@@ -1216,6 +1268,49 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
                 }}
               >
                 Entry + Children
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {suffixDuplicateChoice && (
+        <div className="validation-overlay" onClick={() => setSuffixDuplicateChoice(null)}>
+          <div
+            ref={suffixDuplicateDialogRef}
+            className="validation-dialog"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <p>Duplicate Entry</p>
+            <div className="confirm-dialog-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  updateSuffix(suffixDuplicateChoice.rowId, suffixDuplicateChoice.index, suffixDuplicateChoice.previousValue);
+                  setSuffixDuplicateChoice(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const { rowId, index } = suffixDuplicateChoice;
+                  setSuffixDuplicateChoice(null);
+                  const input = document.getElementById(suffixInputId(index, rowId)) as HTMLInputElement | null;
+                  input?.focus();
+                  input?.select();
+                }}
+              >
+                Edit
+              </button>
+              <button type="button" onClick={() => setSuffixDuplicateChoice(null)}>
+                Accept
               </button>
             </div>
           </div>

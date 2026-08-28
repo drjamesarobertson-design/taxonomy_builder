@@ -143,11 +143,15 @@ export default function App() {
     if (!project) return;
     // saveProjectToFile bumps and returns the project's own "save" version counter (used to
     // build its " v1.NN" filename) — persisted back into state, bypassing undo/redo, since
-    // it's bookkeeping metadata, not a user edit.
-    const versioned = await saveProjectToFile(project);
+    // it's bookkeeping metadata, not a user edit. It also reports whether the file actually
+    // landed in the remembered folder or fell back to a plain download (e.g. permission
+    // lapsed) — if it fell back, the "Folder: X" button is no longer telling the truth, so
+    // clear it back to "Choose Export Folder" rather than leave a stale, inoperative label.
+    const { project: versioned, usedFolder } = await saveProjectToFile(project);
     setProject(versioned);
     setDirty(false);
-    peekExportFolderName().then(setExportFolderName);
+    if (usedFolder) peekExportFolderName().then(setExportFolderName);
+    else setExportFolderName(null);
   }
 
   function handleLoadClick() {
@@ -158,14 +162,18 @@ export default function App() {
     if (!project || !exportChoice) return;
     const { format } = exportChoice;
     let versioned: TaxonomyProject;
+    let usedFolder: boolean;
     if (format === 'csv') {
-      versioned = mode === 'discrete' ? await exportDiscreteCsv(project) : await exportConcatenatedCsv(project);
+      ({ project: versioned, usedFolder } =
+        mode === 'discrete' ? await exportDiscreteCsv(project) : await exportConcatenatedCsv(project));
     } else {
-      versioned = mode === 'discrete' ? await exportDiscreteXlsx(project) : await exportConcatenatedXlsx(project);
+      ({ project: versioned, usedFolder } =
+        mode === 'discrete' ? await exportDiscreteXlsx(project) : await exportConcatenatedXlsx(project));
     }
     setProject(versioned);
     setExportChoice(null);
-    peekExportFolderName().then(setExportFolderName);
+    if (usedFolder) peekExportFolderName().then(setExportFolderName);
+    else setExportFolderName(null);
   }
 
   async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
