@@ -17,11 +17,13 @@ type ExportColumn =
   | { type: 'suffix'; index: number };
 
 function buildExportColumns(project: TaxonomyProject): ExportColumn[] {
-  const { numLevels, delimiterPositions, suffixes } = project.settings;
+  const { numLevels, delimiterPositions, suffixes, codeDelimiterChar } = project.settings;
   const columns: ExportColumn[] = [];
   for (let level = 0; level < numLevels; level++) {
     columns.push({ type: 'code', level });
-    if (delimiterPositions.includes(level + 1)) columns.push({ type: 'delimiter', char: '-' });
+    if (delimiterPositions.includes(level + 1)) {
+      columns.push({ type: 'delimiter', char: codeDelimiterChar || '-' });
+    }
   }
   // A blank spacer column between the code block and the description block, matching the
   // on-screen grid's own gap column under the "Code" / "Description" section headings
@@ -51,8 +53,9 @@ function buildDiscreteGrid(project: TaxonomyProject): { header: string[]; rows: 
       if (c.type === 'gap') return '';
       if (c.type === 'code') return row.codes[c.level] ?? '';
       if (c.type === 'desc') return row.descriptions[c.level] ?? '';
-      const suffix = project.settings.suffixes[c.index];
-      return suffix.mode === 'constant' ? suffix.constantValue : row.suffixValues[c.index] ?? '';
+      // Both suffix modes are per-row now — "constant" only means new rows are seeded with
+      // the configured default, not that every row is forced to share the same value.
+      return row.suffixValues[c.index] ?? '';
     }),
   );
   return { header, rows, columns };
@@ -70,11 +73,11 @@ function levelOf(row: TaxonomyRow): number {
 // Inserts the taxonomy's configured "-" delimiters into a full code string at the same
 // positions they appear in the grid and the Discrete Columns export, e.g. codes ["1","2","3"]
 // with a delimiter after column 2 becomes "12-3".
-function joinCodeWithDelimiters(codes: string[], delimiterPositions: number[]): string {
+function joinCodeWithDelimiters(codes: string[], delimiterPositions: number[], delimiterChar: string): string {
   let result = '';
   for (let i = 0; i < codes.length; i++) {
     result += codes[i] ?? '';
-    if (delimiterPositions.includes(i + 1)) result += '-';
+    if (delimiterPositions.includes(i + 1)) result += delimiterChar;
   }
   return result;
 }
@@ -93,13 +96,13 @@ function joinCodeWithDelimiters(codes: string[], delimiterPositions: number[]): 
 //   on the New Taxonomy form), so depth is visible at a glance.
 // Rows with no description at all (level -1) are skipped — there's nothing to export.
 function buildConcatenatedGrid(project: TaxonomyProject): { header: string[]; rows: string[][] } {
-  const { indentChar: rawIndentChar, delimiterPositions } = project.settings;
+  const { indentChar: rawIndentChar, delimiterPositions, codeDelimiterChar } = project.settings;
   const indentChar = rawIndentChar || ' ';
   const rows: string[][] = [];
   for (const row of project.rows) {
     const level = levelOf(row);
     if (level === -1) continue;
-    const code = joinCodeWithDelimiters(row.codes, delimiterPositions);
+    const code = joinCodeWithDelimiters(row.codes, delimiterPositions, codeDelimiterChar || '-');
     const description = indentChar.repeat(level) + (row.descriptions[level] ?? '');
     rows.push([code, description]);
   }

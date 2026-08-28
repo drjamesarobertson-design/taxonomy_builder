@@ -24,8 +24,14 @@ export interface TaxonomySettings {
    * means none. Set at taxonomy creation via a sequence of "insert a delimiter?" prompts.
    */
   delimiterPositions: number[];
-  /** Character used to pad unused code positions. Default '.'. */
+  /**
+   * Character used to pad unused code positions. Default '.'; some ERPs won't accept "."
+   * in a code field, in which case "0" should be used instead (Section 4.4).
+   */
   paddingChar: string;
+  /** Character used for the code-column delimiters (Section 4.1). Default '-'; some ERPs
+   * need a different character in a code field. Independent of each suffix's own delimiter. */
+  codeDelimiterChar: string;
   /** Maximum ERP description field length, captured at taxonomy creation (Section 6.7). */
   maxDescriptionLength: number;
   /**
@@ -71,17 +77,21 @@ export const DEFAULT_SETTINGS: TaxonomySettings = {
   numLevels: 8,
   delimiterPositions: [3],
   paddingChar: '.',
+  codeDelimiterChar: '-',
   maxDescriptionLength: 40,
   indentChar: ' ',
   suffixes: [],
 };
 
-export function createEmptyRow(numLevels: number, suffixCount: number = 0): TaxonomyRow {
+export function createEmptyRow(numLevels: number, suffixes: SuffixField[] = []): TaxonomyRow {
   return {
     id: crypto.randomUUID(),
     codes: Array(numLevels).fill(''),
     descriptions: Array(numLevels).fill(''),
-    suffixValues: Array(suffixCount).fill(''),
+    // A "constant" suffix seeds every new row with its configured default value — still
+    // editable per row from there (e.g. to duplicate a different value across a later block
+    // of rows) rather than being locked to one value for the whole taxonomy.
+    suffixValues: suffixes.map((s) => (s.mode === 'constant' ? s.constantValue : '')),
   };
 }
 
@@ -94,6 +104,8 @@ export function createProject(
   indentChar: string = ' ',
   numLevels: number = DEFAULT_SETTINGS.numLevels,
   suffixes: SuffixField[] = [],
+  paddingChar: string = DEFAULT_SETTINGS.paddingChar,
+  codeDelimiterChar: string = DEFAULT_SETTINGS.codeDelimiterChar,
 ): TaxonomyProject {
   return {
     version: 1,
@@ -107,6 +119,8 @@ export function createProject(
       indentChar,
       numLevels,
       suffixes,
+      paddingChar,
+      codeDelimiterChar,
     },
     rows: [],
     fileVersions: {},

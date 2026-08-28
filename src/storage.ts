@@ -52,15 +52,34 @@ export function loadProjectFromFile(file: File): Promise<TaxonomyProject> {
         }
         // Older files predate suffix columns and per-file version counters.
         if (!Array.isArray(settings.suffixes)) settings.suffixes = [];
+        // Older files predate the configurable padding and code-delimiter characters —
+        // default to the values that were previously hardcoded everywhere.
+        if (typeof settings.paddingChar !== 'string' || settings.paddingChar.length !== 1) {
+          settings.paddingChar = '.';
+        }
+        if (typeof settings.codeDelimiterChar !== 'string' || settings.codeDelimiterChar.length !== 1) {
+          settings.codeDelimiterChar = '-';
+        }
         const project = data as unknown as Record<string, unknown>;
         if (typeof project.fileVersions !== 'object' || project.fileVersions === null) {
           project.fileVersions = {};
         }
-        const suffixCount = (settings.suffixes as unknown[]).length;
+        // "Constant" suffixes used to be read-only, always showing settings.constantValue for
+        // every row rather than their own per-row value — now they're editable like any other
+        // suffix, seeded from that same default. Backfill any row whose stored value for a
+        // constant-mode suffix is still blank (never having had a real per-row value to begin
+        // with) so loading an older file doesn't blank out what it used to display.
+        const suffixFields = settings.suffixes as Array<{ mode: string; constantValue: string }>;
         for (const row of data.rows as unknown as Record<string, unknown>[]) {
           if (!Array.isArray(row.suffixValues)) {
-            row.suffixValues = Array(suffixCount).fill('');
+            row.suffixValues = suffixFields.map(() => '');
           }
+          const suffixValues = row.suffixValues as string[];
+          suffixFields.forEach((suffix, i) => {
+            if (suffix.mode === 'constant' && !suffixValues[i]) {
+              suffixValues[i] = suffix.constantValue;
+            }
+          });
         }
         resolve(data);
       } catch {

@@ -571,3 +571,7 @@ body.app-dark-theme .delimiter-empty {
 .row-moving {
   opacity: 0.45;
 }
+
+.row-copying td {
+  box-shadow: inset 0 0 0 9999px rgba(74, 144, 217, 0.18);
+}
