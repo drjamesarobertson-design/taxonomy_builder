@@ -86,6 +86,8 @@ export default function App() {
     indentChar: string,
     numLevels: number,
     suffixes: SuffixField[],
+    paddingChar: string,
+    codeDelimiterChar: string,
   ) {
     const newProject = createProject(
       title,
@@ -96,9 +98,11 @@ export default function App() {
       indentChar,
       numLevels,
       suffixes,
+      paddingChar,
+      codeDelimiterChar,
     );
     // Start the user off with a row already in place, cursor ready, rather than an empty grid.
-    newProject.rows = [createEmptyRow(newProject.settings.numLevels, suffixes.length)];
+    newProject.rows = [createEmptyRow(newProject.settings.numLevels, suffixes)];
     setProject(newProject);
     setDirty(true);
     setAutoFocusFirstRow(true);
@@ -283,6 +287,10 @@ export default function App() {
             onChange={handleRowsChange}
             autoFocusFirstRow={autoFocusFirstRow}
           />
+          <footer className="app-footer">
+            The ERP Doctor Taxonomy Builder is the Intellectual Property of the ERP Doctor and
+            James A Robertson and Associates Limited, it is copyright © 2026
+          </footer>
         </>
       )}
 

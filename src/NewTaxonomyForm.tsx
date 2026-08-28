@@ -12,9 +12,13 @@ interface NewTaxonomyFormProps {
     indentChar: string,
     numLevels: number,
     suffixes: SuffixField[],
+    paddingChar: string,
+    codeDelimiterChar: string,
   ) => void;
   onLoadClick: () => void;
 }
+
+const CODE_DELIMITER_OPTIONS = ['-', '_', '+', '=', '/'];
 
 function defaultSuffix(): SuffixField {
   return { width: 4, delimiter: '-', mode: 'editable', constantValue: '' };
@@ -35,6 +39,10 @@ export default function NewTaxonomyForm({ onCreate, onLoadClick }: NewTaxonomyFo
   const [delimiterPositions, setDelimiterPositions] = useState<number[]>(
     DEFAULT_SETTINGS.delimiterPositions,
   );
+  // Some ERPs don't accept "." in a code field (pad with "0" instead), and some need a code
+  // delimiter other than "-" (Section 4.4).
+  const [paddingChar, setPaddingChar] = useState(DEFAULT_SETTINGS.paddingChar);
+  const [codeDelimiterChar, setCodeDelimiterChar] = useState(DEFAULT_SETTINGS.codeDelimiterChar);
   // Concatenated exports (Section 9) indent each level with a leading space by default; some
   // ERPs trim leading spaces on import, so James asked for an alternative single character
   // (e.g. "_") to be configurable per taxonomy instead.
@@ -112,6 +120,8 @@ export default function NewTaxonomyForm({ onCreate, onLoadClick }: NewTaxonomyFo
       replaceIndentChar ? indentChar : ' ',
       numLevels,
       normalizedSuffixes,
+      paddingChar,
+      codeDelimiterChar,
     );
   }
 
@@ -181,13 +191,33 @@ export default function NewTaxonomyForm({ onCreate, onLoadClick }: NewTaxonomyFo
         />
       </label>
 
+      <label>
+        Pad codes with trailing
+        <select value={paddingChar} onChange={(e) => setPaddingChar(e.target.value)} title="Some ERPs won't accept &quot;.&quot; in a code field — pad with &quot;0&quot; instead">
+          <option value=".">"." (default)</option>
+          <option value="0">"0"</option>
+        </select>
+      </label>
+      <label>
+        Delimit codes with
+        <select value={codeDelimiterChar} onChange={(e) => setCodeDelimiterChar(e.target.value)} title="Some ERPs need a different code delimiter character">
+          {CODE_DELIMITER_OPTIONS.map((c) => (
+            <option key={c} value={c}>
+              "{c}"{c === DEFAULT_SETTINGS.codeDelimiterChar ? ' (default)' : ''}
+            </option>
+          ))}
+        </select>
+      </label>
+
       <fieldset className="delimiter-setup">
-        <legend>Code Delimiters ("-")</legend>
-        {delimiterPositions.length === 0 && <p className="delimiter-empty">No delimiters — Insert "-" Code Delimiter?</p>}
+        <legend>Code Delimiters ("{codeDelimiterChar}")</legend>
+        {delimiterPositions.length === 0 && (
+          <p className="delimiter-empty">No delimiters — Insert "{codeDelimiterChar}" Code Delimiter?</p>
+        )}
         {delimiterPositions.map((position, index) => (
           <div className="delimiter-row" key={index}>
             <div className="delimiter-row-fields">
-              <span>Insert "-" Code Delimiter — after how many code columns?</span>
+              <span>Insert "{codeDelimiterChar}" Code Delimiter — after how many code columns?</span>
               <input
                 type="number"
                 min={1}

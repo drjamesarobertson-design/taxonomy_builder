@@ -18,7 +18,7 @@ interface GridProps {
   autoFocusFirstRow?: boolean;
 }
 
-type CellKind = 'code' | 'desc';
+type CellKind = 'code' | 'desc' | 'suffix';
 
 interface Selection {
   kind: CellKind;
@@ -42,7 +42,7 @@ const descInputId = (level: number, rowId: string) => `desc-${level}-${rowId}`;
 const suffixInputId = (index: number, rowId: string) => `suffix-${index}-${rowId}`;
 
 export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: GridProps) {
-  const { numLevels, delimiterPositions, maxDescriptionLength, suffixes } = settings;
+  const { numLevels, delimiterPositions, maxDescriptionLength, suffixes, paddingChar, codeDelimiterChar } = settings;
   const levels = Array.from({ length: numLevels }, (_, i) => i);
   // The wide overflow column gets whatever's left of the configured max description length
   // after reserving one character per description level (Section 6.7's indent padding) and
@@ -78,11 +78,16 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
   // above/below choice.
   const [moveMode, setMoveMode] = useState<{ rowIds: Set<string> } | null>(null);
   const [moveTarget, setMoveTarget] = useState<{ rowId: string } | null>(null);
+  // "Copy Rows" mode (Section 6.5-adjacent, item 9): like Move, but the selected rows and
+  // their descendants stay put — a duplicate block is inserted at the chosen target instead.
+  const [copyMode, setCopyMode] = useState<{ rowIds: Set<string> } | null>(null);
+  const [copyTarget, setCopyTarget] = useState<{ rowId: string } | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const confirmDialogRef = useRef<HTMLDivElement>(null);
   const promoteDemoteDialogRef = useRef<HTMLDivElement>(null);
   const suffixDuplicateDialogRef = useRef<HTMLDivElement>(null);
   const moveDialogRef = useRef<HTMLDivElement>(null);
+  const copyDialogRef = useRef<HTMLDivElement>(null);
   // Tracks a click-and-drag range-select in progress; a ref (not state) since it doesn't
   // itself need to trigger a render, only the selection it produces does.
   const isDraggingRef = useRef(false);
@@ -113,6 +118,10 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
   }, [moveTarget]);
 
   useEffect(() => {
+    if (copyTarget) copyDialogRef.current?.focus();
+  }, [copyTarget]);
+
+  useEffect(() => {
     // Ends a click-and-drag range-select no matter where the mouse is released.
     const endDrag = () => {
       isDraggingRef.current = false;
@@ -129,7 +138,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     // keyed by the data-* attributes below) doesn't depend on "entering" any single narrow
     // target, so it keeps up regardless of how fast the drag moves.
     function handleMouseMove(e: MouseEvent) {
-      if (!isDraggingRef.current || moveMode) return;
+      if (!isDraggingRef.current || moveMode || copyMode) return;
       const el = document.elementFromPoint(e.clientX, e.clientY);
       const cell = el instanceof Element ? el.closest('[data-cell-kind]') : null;
       if (!cell) return;
@@ -154,6 +163,18 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     window.addEventListener('keydown', cancelOnEscape);
     return () => window.removeEventListener('keydown', cancelOnEscape);
   }, [moveMode]);
+
+  useEffect(() => {
+    if (!copyMode) return;
+    const cancelOnEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setCopyMode(null);
+        setCopyTarget(null);
+      }
+    };
+    window.addEventListener('keydown', cancelOnEscape);
+    return () => window.removeEventListener('keydown', cancelOnEscape);
+  }, [copyMode]);
 
   useEffect(() => {
     // A freshly created taxonomy starts with one empty row already in place — put the
@@ -242,9 +263,9 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     if (editIndex === -1) return;
 
     const oldValue = rows[editIndex].codes[level] ?? '';
-    // Retyping the same character is a deliberate re-entry (e.g. re-cascading "." padding),
-    // not a no-op — it still runs the full cascade/clear-right logic below.
-    const isPadding = char === '.';
+    // Retyping the same character is a deliberate re-entry (e.g. re-cascading padding), not a
+    // no-op — it still runs the full cascade/clear-right logic below.
+    const isPadding = char === paddingChar;
 
     if (char !== '' && !isValidCodeChar(char)) {
       setValidationError('Invalid code. Valid codes are: ".", 0 to 9, A to Z, a to z');
@@ -299,8 +320,8 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
       const codes = row.codes.map((c, i) => {
         if (i === level) return char;
         if (i < level) return c;
-        if (isPadding) return i <= maxDescCol ? '.' : '';
-        return c === '.' ? c : '';
+        if (isPadding) return i <= maxDescCol ? paddingChar : '';
+        return c === paddingChar ? c : '';
       });
       return { ...row, codes };
     }
@@ -324,7 +345,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
       for (let c = level; c <= maxDescCol; c++) {
         for (let i = editIndex + 1; i < end; i++) {
           if ((updated[i].codes[c] ?? '') === '') {
-            updated[i].codes[c] = '.';
+            updated[i].codes[c] = paddingChar;
           } else {
             break;
           }
@@ -335,40 +356,67 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     }
 
     let cascadeActive = true;
-    onChange(
-      rows.map((row, idx) => {
-        if (idx < editIndex) return row;
-        if (idx === editIndex) return applyCode(row);
-        if (!cascadeActive) return row;
-        const rowParent = level > 0 ? (row.codes[level - 1] ?? '') : null;
-        if (parentValue !== null && rowParent !== parentValue) {
+    const updated = rows.map((row, idx) => {
+      if (idx < editIndex) return row;
+      if (idx === editIndex) return applyCode(row);
+      if (!cascadeActive) return row;
+      const rowParent = level > 0 ? (row.codes[level - 1] ?? '') : null;
+      if (parentValue !== null && rowParent !== parentValue) {
+        cascadeActive = false;
+        return row;
+      }
+      const rowOwnOld = row.codes[level] ?? '';
+      if (char === '') {
+        // Clearing propagates only through rows that held the exact value being cleared.
+        if (rowOwnOld !== oldValue) {
           cascadeActive = false;
           return row;
         }
-        const rowOwnOld = row.codes[level] ?? '';
-        if (char === '') {
-          // Clearing propagates only through rows that held the exact value being cleared.
-          if (rowOwnOld !== oldValue) {
-            cascadeActive = false;
-            return row;
-          }
-        } else {
-          // A real code sweeps through blank cells and any smaller value below it, and
-          // stops at the first cell that already holds an equal or greater one.
-          if (rowOwnOld !== '' && rowOwnOld.charCodeAt(0) >= char.charCodeAt(0)) {
-            cascadeActive = false;
-            return row;
-          }
+      } else {
+        // A real code sweeps through blank cells and any smaller value below it, and
+        // stops at the first cell that already holds an equal or greater one.
+        if (rowOwnOld !== '' && rowOwnOld.charCodeAt(0) >= char.charCodeAt(0)) {
+          cascadeActive = false;
+          return row;
         }
-        return applyCode(row);
-      }),
-      `code:${level}:${rowId}`,
-    );
+      }
+      return applyCode(row);
+    });
+
+    // Completing a leaf row's own code (Section 5: "the remaining Code Columns on that row
+    // will auto populate with '.'") — any row that just received this real value at exactly
+    // its own significant level, and has no children, gets its remaining columns (up to the
+    // deepest description written anywhere) auto-padded, rather than left for the user to
+    // fill in by hand one at a time.
+    if (char !== '' && !isPadding) {
+      for (let idx = editIndex; idx < updated.length; idx++) {
+        const row = updated[idx];
+        if (rows[idx] === row) continue; // untouched by this edit
+        if (row.codes[level] !== char) continue;
+        if (levelOf(row) !== level) continue;
+        if (getDescendantEndIndex(idx) > idx + 1) continue; // has children — real codes still needed
+        const newCodes = [...row.codes];
+        let changed = false;
+        for (let c = level + 1; c <= maxDescCol; c++) {
+          if ((newCodes[c] ?? '') !== '') break;
+          newCodes[c] = paddingChar;
+          changed = true;
+        }
+        if (changed) updated[idx] = { ...row, codes: newCodes };
+      }
+    }
+
+    onChange(updated, `code:${level}:${rowId}`);
   }
 
-  function updateDescription(rowId: string, level: number, value: string) {
+  function updateDescription(rowId: string, level: number, rawValue: string) {
     const editIndex = rows.findIndex((r) => r.id === rowId);
     if (editIndex === -1) return;
+
+    // Column 1 entries are the top level of the hierarchy — virtually always structural
+    // (Section 4.3) — so force ALL CAPS as the user types, matching the case toggle's own
+    // convention rather than requiring a separate manual toggle for the common case.
+    const value = level === 0 ? rawValue.toUpperCase() : rawValue;
 
     // A row has exactly one populated description column — the one matching its level
     // (Section 4.1). Typing into a second column while another already holds text would
@@ -443,8 +491,50 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     setSuffixDuplicateChoice({ rowId, index, previousValue });
   }
 
+  // Enter/Up/Down move between rows in the same suffix column, matching the code/description
+  // cells' own row-to-row navigation.
+  function handleSuffixKeyDown(e: React.KeyboardEvent<HTMLInputElement>, index: number, rowIndex: number) {
+    switch (e.key) {
+      case 'Enter':
+      case 'ArrowDown': {
+        e.preventDefault();
+        const targetRow = rows[rowIndex + 1];
+        if (targetRow) document.getElementById(suffixInputId(index, targetRow.id))?.focus();
+        return;
+      }
+      case 'ArrowUp': {
+        e.preventDefault();
+        const targetRow = rows[rowIndex - 1];
+        if (targetRow) document.getElementById(suffixInputId(index, targetRow.id))?.focus();
+        return;
+      }
+      default:
+        return;
+    }
+  }
+
+  // Right-click "Duplicate to Selected Rows" on a suffix cell — copies that cell's own value
+  // into every row currently selected in the same suffix column. Meant for a "constant"-style
+  // suffix that actually varies in blocks down the list (e.g. one value per quarter): overtype
+  // one cell, select the block it should apply to, and duplicate it across — rather than
+  // requiring the same value to be retyped into every row by hand.
+  function handleDuplicateSuffixToSelection() {
+    if (!contextMenu || contextMenu.kind !== 'suffix' || !selection || selection.kind !== 'suffix') return;
+    const { level: index, rowId: sourceRowId } = contextMenu;
+    const sourceValue = rows.find((r) => r.id === sourceRowId)?.suffixValues[index] ?? '';
+    onChange(
+      rows.map((row) =>
+        selection.rowIds.has(row.id)
+          ? { ...row, suffixValues: row.suffixValues.map((v, i) => (i === index ? sourceValue : v)) }
+          : row,
+      ),
+    );
+    setSelection(null);
+    setContextMenu(null);
+  }
+
   function createRowInheritingFrom(previous?: TaxonomyRow): TaxonomyRow {
-    const newRow = createEmptyRow(numLevels, settings.suffixes.length);
+    const newRow = createEmptyRow(numLevels, settings.suffixes);
     if (previous) newRow.codes = [...previous.codes];
     return newRow;
   }
@@ -554,6 +644,20 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
       return;
     }
 
+    // Excel-style Ctrl+Up/Ctrl+Down: jump to the next row that actually has a value in this
+    // same description column, skipping over the (usually many) blank ones in between, rather
+    // than moving one row at a time.
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'ArrowDown' || e.key === 'ArrowUp') && kind === 'desc') {
+      e.preventDefault();
+      const dir = e.key === 'ArrowDown' ? 1 : -1;
+      let i = rowIndex + dir;
+      while (i >= 0 && i < rows.length && !(rows[i].descriptions[level] ?? '').trim()) {
+        i += dir;
+      }
+      if (i >= 0 && i < rows.length) focusCell('desc', level, i);
+      return;
+    }
+
     switch (e.key) {
       case 'Enter':
       case 'ArrowDown': {
@@ -587,8 +691,14 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
         }
         return;
       case 'ArrowRight':
+        // Off the right edge of the code block (its last column), wrap onto description
+        // column 1 of the same row, mirroring the left-edge wrap above.
         e.preventDefault();
-        focusCell(kind, level + 1, rowIndex);
+        if (kind === 'code' && level === numLevels - 1) {
+          focusCell('desc', 0, rowIndex);
+        } else {
+          focusCell(kind, level + 1, rowIndex);
+        }
         return;
       case 'F2':
         // Excel-style: F2 puts the field into edit mode with the cursor at the end of its
@@ -629,6 +739,14 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
         return;
       }
       setMoveTarget({ rowId });
+      return;
+    }
+    if (copyMode) {
+      if (copyMode.rowIds.has(rowId)) {
+        setValidationError('Choose a position outside the copied rows.');
+        return;
+      }
+      setCopyTarget({ rowId });
       return;
     }
     if (e.shiftKey && selection && selection.kind === kind && anchorRowId && anchorLevel !== null) {
@@ -685,7 +803,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
   }
 
   function handleCellMouseEnter(kind: CellKind, rowId: string, level: number) {
-    if (!isDraggingRef.current || moveMode) return;
+    if (!isDraggingRef.current || moveMode || copyMode) return;
     extendDragSelection(kind, rowId, level);
   }
 
@@ -791,6 +909,50 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     onChange(updated);
     setSelection(null);
     setContextMenu(null);
+  }
+
+  // Right-click "Check Ascending Order" — an on-demand audit distinct from the hard rule
+  // enforced as codes are typed (Section 4.4/6.7), since Override, promote/demote, Move, and
+  // sort can all rearrange rows without necessarily re-checking every column afterward. On
+  // column 1, checks the whole column top to bottom; anywhere else, checks only the currently
+  // selected block in that column. Consecutive equal values are fine — only an actual decrease
+  // is flagged. Blank cells are skipped, not treated as violations.
+  function handleCheckAscendingOrder() {
+    if (!contextMenu || contextMenu.kind !== 'code') return;
+    const level = contextMenu.level;
+    setContextMenu(null);
+    let indices: number[];
+    if (level === 0) {
+      indices = rows.map((_, i) => i);
+    } else if (
+      selection &&
+      selection.kind === 'code' &&
+      level >= selection.level &&
+      level <= (selection.levelEnd ?? selection.level)
+    ) {
+      indices = rows
+        .map((r, i) => (selection.rowIds.has(r.id) ? i : -1))
+        .filter((i) => i !== -1)
+        .sort((a, b) => a - b);
+    } else {
+      setValidationError('Select a block of rows in this column first, then check its order.');
+      return;
+    }
+    let prevValue: string | null = null;
+    let prevRowNumber: number | null = null;
+    for (const idx of indices) {
+      const value = rows[idx].codes[level] ?? '';
+      if (!value) continue;
+      if (prevValue !== null && value.charCodeAt(0) < prevValue.charCodeAt(0)) {
+        setValidationError(
+          `Out of order: row ${idx + 1} ("${value}") comes after row ${prevRowNumber} ("${prevValue}").`,
+        );
+        return;
+      }
+      prevValue = value;
+      prevRowNumber = idx + 1;
+    }
+    setValidationError('Codes are in ascending order — no issues found.');
   }
 
   // A row's level is the position of its deepest populated description column (Section
@@ -910,16 +1072,18 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
         const oldLevel = levelOf(row);
         const newLevel = oldLevel + offset;
         // Only the description moves; colour follows the column automatically since it's
-        // never stored per-row. Only the code cell at the entry's new column is blanked —
-        // that's the one whose value is no longer trustworthy at the new level and needs a
-        // fresh code — every other code cell on the row (its ancestor path) is left alone
+        // never stored per-row. The code cell at the entry's new column is blanked — that's
+        // the one whose value is no longer trustworthy at the new level and needs a fresh
+        // code — and so is the one at its old column, since the entry no longer sits there;
+        // leaving a stale value behind would make it look like an untouched ancestor code.
+        // Every other code cell on the row (its actual ancestor path) is left alone
         // (Section 6.3).
         const descriptions = row.descriptions.map((d, idx) => {
           if (idx === newLevel) return row.descriptions[oldLevel];
           if (idx === oldLevel) return '';
           return d;
         });
-        const codes = row.codes.map((c, idx) => (idx === newLevel ? '' : c));
+        const codes = row.codes.map((c, idx) => (idx === newLevel || idx === oldLevel ? '' : c));
         return { ...row, descriptions, codes };
       }),
     );
@@ -1005,6 +1169,54 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     setMoveTarget(null);
   }
 
+  // Right-click "Copy Rows" (item 9) — arms copy mode with the selected entry (or entries)
+  // and all of their descendants, same block-selection rule as Move. Unlike Move, the
+  // originals are left exactly where they are; the next plain click on any other row picks
+  // where a duplicate of the whole block is inserted.
+  function handleCopyStart() {
+    if (!contextMenu || contextMenu.kind !== 'desc' || !selection) return;
+    const selectedIndices = rows
+      .map((r, i) => (selection.rowIds.has(r.id) ? i : -1))
+      .filter((i) => i !== -1 && levelOf(rows[i]) !== -1)
+      .sort((a, b) => a - b);
+    if (selectedIndices.length === 0) return;
+    const affected = new Set<number>();
+    for (const idx of selectedIndices) {
+      if (affected.has(idx)) continue;
+      const end = getDescendantEndIndex(idx);
+      for (let i = idx; i < end; i++) affected.add(i);
+    }
+    setCopyMode({ rowIds: new Set(Array.from(affected).map((i) => rows[i].id)) });
+    setSelection(null);
+    setContextMenu(null);
+  }
+
+  // Inserts a fresh-id duplicate of the copied block directly above/below the target row,
+  // preserving the copied rows' own internal order, descriptions, and codes — the originals
+  // stay untouched at their existing position.
+  function executeCopy(position: 'above' | 'below') {
+    if (!copyMode || !copyTarget) return;
+    const copyingIds = copyMode.rowIds;
+    const originals = rows.filter((r) => copyingIds.has(r.id));
+    const copies = originals.map((r) => ({
+      ...r,
+      id: crypto.randomUUID(),
+      codes: [...r.codes],
+      descriptions: [...r.descriptions],
+      suffixValues: [...r.suffixValues],
+    }));
+    const targetIndex = rows.findIndex((r) => r.id === copyTarget.rowId);
+    if (targetIndex === -1) {
+      setCopyMode(null);
+      setCopyTarget(null);
+      return;
+    }
+    const insertAt = position === 'above' ? targetIndex : targetIndex + 1;
+    onChange([...rows.slice(0, insertAt), ...copies, ...rows.slice(insertAt)]);
+    setCopyMode(null);
+    setCopyTarget(null);
+  }
+
   return (
     <div className="grid-wrapper">
       <table className="taxonomy-grid">
@@ -1054,7 +1266,16 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
         </thead>
         <tbody>
           {rows.map((row, rowIndex) => (
-            <tr key={row.id} className={moveMode?.rowIds.has(row.id) ? 'row-moving' : undefined}>
+            <tr
+              key={row.id}
+              className={
+                moveMode?.rowIds.has(row.id)
+                  ? 'row-moving'
+                  : copyMode?.rowIds.has(row.id)
+                    ? 'row-copying'
+                    : undefined
+              }
+            >
               {levels.map((level) => {
                 const isCodeSelected =
                   selection?.kind === 'code' &&
@@ -1084,7 +1305,9 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
                         onFocus={(e) => e.currentTarget.select()}
                       />
                     </td>
-                    {delimiterPositions.includes(level + 1) && <td className="delim-col">-</td>}
+                    {delimiterPositions.includes(level + 1) && (
+                      <td className="delim-col">{codeDelimiterChar}</td>
+                    )}
                   </Fragment>
                 );
               })}
@@ -1121,13 +1344,21 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
                 );
               })}
               <td className="overflow-col" style={{ width: `${overflowChars}ch` }} />
-              {suffixes.map((suffix, index) => (
-                <Fragment key={`suffix-${row.id}-${index}`}>
-                  <td className="delim-col">{suffix.delimiter || '-'}</td>
-                  <td className="suffix-col">
-                    {suffix.mode === 'constant' ? (
-                      <input className="suffix-cell" type="text" value={suffix.constantValue} readOnly />
-                    ) : (
+              {suffixes.map((suffix, index) => {
+                const isSuffixSelected =
+                  selection?.kind === 'suffix' && selection.level === index && selection.rowIds.has(row.id);
+                return (
+                  <Fragment key={`suffix-${row.id}-${index}`}>
+                    <td className="delim-col">{suffix.delimiter || '-'}</td>
+                    <td
+                      className={`suffix-col${isSuffixSelected ? ' desc-col-selected' : ''}`}
+                      data-cell-kind="suffix"
+                      data-row-id={row.id}
+                      data-level={index}
+                      onMouseDown={(e) => handleCellMouseDown('suffix', row.id, index, e)}
+                      onMouseEnter={() => handleCellMouseEnter('suffix', row.id, index)}
+                      onContextMenu={(e) => handleCellContextMenu('suffix', row.id, index, e)}
+                    >
                       <input
                         id={suffixInputId(index, row.id)}
                         className="suffix-cell"
@@ -1139,11 +1370,12 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
                         }}
                         onChange={(e) => updateSuffix(row.id, index, e.target.value)}
                         onBlur={() => checkSuffixDuplicate(row.id, index)}
+                        onKeyDown={(e) => handleSuffixKeyDown(e, index, rowIndex)}
                       />
-                    )}
-                  </td>
-                </Fragment>
-              ))}
+                    </td>
+                  </Fragment>
+                );
+              })}
               <td className="row-actions-col">
                 <button
                   type="button"
@@ -1169,6 +1401,13 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
         </p>
       )}
 
+      {copyMode && (
+        <p className="move-mode-banner">
+          Click a row to copy the selected {copyMode.rowIds.size} row
+          {copyMode.rowIds.size > 1 ? 's' : ''} there — Escape to cancel.
+        </p>
+      )}
+
       {contextMenu && (
         <ul
           className="context-menu"
@@ -1182,13 +1421,18 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
               <li onClick={() => requestPromoteDemote('promote')}>Promote</li>
               <li onClick={() => requestPromoteDemote('demote')}>Demote</li>
               <li onClick={handleMoveStart}>Move</li>
+              <li onClick={handleCopyStart}>Copy Rows</li>
             </>
           )}
           {contextMenu.kind === 'code' && (
             <>
               <li onClick={handleDeleteCodes}>Delete Codes</li>
               <li onClick={handleReplicateAbove}>Replicate Codes Above</li>
+              <li onClick={handleCheckAscendingOrder}>Check Ascending Order</li>
             </>
+          )}
+          {contextMenu.kind === 'suffix' && (
+            <li onClick={handleDuplicateSuffixToSelection}>Duplicate to Selected Rows</li>
           )}
           <li className="context-menu-separator" onClick={() => handleInsertRow('above')}>
             {pendingInsertCount() > 1 ? `Insert ${pendingInsertCount()} Rows Above` : 'Insert Row Above'}
@@ -1350,6 +1594,46 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
                 Insert Above
               </button>
               <button type="button" onClick={() => executeMove('below')}>
+                Insert Below
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {copyTarget && (
+        <div
+          className="validation-overlay"
+          onClick={() => {
+            setCopyTarget(null);
+            setCopyMode(null);
+          }}
+        >
+          <div
+            ref={copyDialogRef}
+            className="validation-dialog"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <p>Insert the copied row(s) above or below this row?</p>
+            <div className="confirm-dialog-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setCopyTarget(null);
+                  setCopyMode(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button type="button" onClick={() => executeCopy('above')}>
+                Insert Above
+              </button>
+              <button type="button" onClick={() => executeCopy('below')}>
                 Insert Below
               </button>
             </div>
