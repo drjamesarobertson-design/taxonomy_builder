@@ -55,6 +55,10 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
   const [anchorLevel, setAnchorLevel] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
+  // An optional action to run once the validation-error dialog above is dismissed — e.g.
+  // Check Ascending Order jumping the cursor to the first offending cell, so the user lands
+  // right where they need to fix it instead of having to hunt for it themselves.
+  const validationFollowUpRef = useRef<(() => void) | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{
     message: string;
     confirmLabel?: string;
@@ -82,6 +86,17 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
   // their descendants stay put — a duplicate block is inserted at the chosen target instead.
   const [copyMode, setCopyMode] = useState<{ rowIds: Set<string> } | null>(null);
   const [copyTarget, setCopyTarget] = useState<{ rowId: string } | null>(null);
+  // Item 10's Copy Codes / Paste Codes clipboard: a rectangular block of code values (one
+  // array per column, top-to-bottom within each), pasted back in starting wherever the user
+  // next right-clicks "Paste Codes" — a plain overtype, independent of row selection.
+  const [codeClipboard, setCodeClipboard] = useState<{
+    colValues: string[][];
+    numRows: number;
+    numCols: number;
+  } | null>(null);
+  // Right-clicking a delimiter cell (item 11) shows a tiny "Not editable" notice instead of
+  // either doing nothing or leaking the browser's own native context menu through.
+  const [delimNotice, setDelimNotice] = useState<{ x: number; y: number } | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const confirmDialogRef = useRef<HTMLDivElement>(null);
   const promoteDemoteDialogRef = useRef<HTMLDivElement>(null);
@@ -203,18 +218,41 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     };
   }, [contextMenu]);
 
+  useEffect(() => {
+    if (!delimNotice) return;
+    const close = () => setDelimNotice(null);
+    window.addEventListener('click', close);
+    window.addEventListener('keydown', close);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('keydown', close);
+    };
+  }, [delimNotice]);
+
+  // Opens the validation-error dialog, optionally arming a one-shot action that runs once the
+  // dialog is dismissed (e.g. Check Ascending Order jumping the cursor straight to the first
+  // offending cell). Every call sets (or clears) the follow-up explicitly, so an earlier
+  // dialog's follow-up can never leak into an unrelated later one.
+  function showValidationError(message: string, followUp?: () => void) {
+    validationFollowUpRef.current = followUp ?? null;
+    setValidationError(message);
+  }
+
+  function dismissValidationError() {
+    const followUp = validationFollowUpRef.current;
+    validationFollowUpRef.current = null;
+    setValidationError(null);
+    followUp?.();
+  }
+
   // The rightmost description column used anywhere in the taxonomy. A code (real or "."
   // padding) can only exist at or to the left of this column — there's no level of the
   // hierarchy deeper than the deepest description anyone has actually written yet.
   function getMaxDescriptionColumn(): number {
     let max = -1;
     for (const row of rows) {
-      for (let i = row.descriptions.length - 1; i > max; i--) {
-        if ((row.descriptions[i] ?? '').trim()) {
-          max = i;
-          break;
-        }
-      }
+      const lvl = levelOf(row);
+      if (lvl > max) max = lvl;
     }
     return max;
   }
@@ -248,14 +286,49 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     return { upper, lower };
   }
 
+  // Fills columns [fromLevel, numLevels) of the row at editIndex with the padding character,
+  // then cascades that same padding down through each of those columns independently into
+  // every row below within the same parent group, stopping at the first non-blank cell in
+  // each column — identical mechanics whether triggered by the user typing the padding
+  // character directly, or automatically once a leaf row's own real code is completed
+  // (Section 5: "the remaining Code Columns on that row will auto populate with '.'"). Always
+  // reaches the actual last configured code column — there's no reason a posting-level entry's
+  // trailing padding should stop short of it just because no other row happens to go as deep.
+  function padFromLevel(rowsIn: TaxonomyRow[], editIndex: number, fromLevel: number): TaxonomyRow[] {
+    const parentValue = fromLevel > 0 ? (rowsIn[editIndex].codes[fromLevel - 1] ?? '') : null;
+    let end = rowsIn.length;
+    for (let i = editIndex + 1; i < rowsIn.length; i++) {
+      const rowParent = fromLevel > 0 ? (rowsIn[i].codes[fromLevel - 1] ?? '') : null;
+      if (parentValue !== null && rowParent !== parentValue) {
+        end = i;
+        break;
+      }
+    }
+    const updated = rowsIn.map((row, idx) => {
+      if (idx !== editIndex) return { ...row, codes: [...row.codes] };
+      const codes = row.codes.map((c, i) => (i >= fromLevel ? paddingChar : c));
+      return { ...row, codes };
+    });
+    for (let c = fromLevel; c < numLevels; c++) {
+      for (let i = editIndex + 1; i < end; i++) {
+        if ((updated[i].codes[c] ?? '') === '') {
+          updated[i].codes[c] = paddingChar;
+        } else {
+          break;
+        }
+      }
+    }
+    return updated;
+  }
+
   function updateCode(
     rowId: string,
     level: number,
     value: string,
-    options?: { skipOrderCheck?: boolean },
+    options?: { skipOrderCheck?: boolean; skipZeroWarning?: boolean },
   ) {
     if (value.length > 1) {
-      setValidationError('Only one character permitted');
+      showValidationError('Only one character permitted');
       return;
     }
     const char = value;
@@ -268,7 +341,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     const isPadding = char === paddingChar;
 
     if (char !== '' && !isValidCodeChar(char)) {
-      setValidationError('Invalid code. Valid codes are: ".", 0 to 9, A to Z, a to z');
+      showValidationError('Invalid code. Valid codes are: ".", 0 to 9, A to Z, a to z');
       return;
     }
 
@@ -277,7 +350,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     if (char !== '') {
       for (let i = 0; i < level; i++) {
         if (!(rows[editIndex].codes[i] ?? '')) {
-          setValidationError('Code to left is blank, codes must populate from left to right');
+          showValidationError('Codes must advance from left to right');
           return;
         }
       }
@@ -287,7 +360,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     // written anywhere in the taxonomy; there's no level of hierarchy deeper than that yet.
     const maxDescCol = getMaxDescriptionColumn();
     if (char !== '' && level > maxDescCol) {
-      setValidationError('Enter Descriptions Before Entering Codes');
+      showValidationError('Enter Descriptions Before Entering Codes');
       return;
     }
 
@@ -303,60 +376,47 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
         setConfirmDialog({
           message: 'Codes should increase, lesser value is invalid—Override?',
           confirmLabel: 'Override',
-          onConfirm: () => updateCode(rowId, level, value, { skipOrderCheck: true }),
+          onConfirm: () => updateCode(rowId, level, value, { ...options, skipOrderCheck: true }),
         });
         return;
       }
     }
 
+    // "0" reads awkwardly in later analysis (easy to confuse with a genuine zero total, or
+    // with the padding character on a taxonomy that pads with "."), so flag it — but only
+    // when it isn't itself the configured padding character, in which case it's not a code
+    // at all and this warning doesn't apply.
+    if (char === '0' && !isPadding && char !== oldValue && !options?.skipZeroWarning) {
+      setConfirmDialog({
+        message: 'It is strongly recommended that you avoid using "0" as a valid code for analysis purposes.',
+        confirmLabel: 'Override',
+        onConfirm: () => updateCode(rowId, level, value, { ...options, skipZeroWarning: true }),
+      });
+      return;
+    }
+
     const parentValue = level > 0 ? (rows[editIndex].codes[level - 1] ?? '') : null;
 
-    // "." fills every column to the right with "." too, but no further than the deepest
-    // description written anywhere (Section 4.4). Entering any other (real) value clears a
-    // real code sitting to the right — it was scoped to the old value at this column and may
-    // no longer make sense — but leaves an existing "." alone: padding just means "no further
-    // hierarchy here", which stays true regardless of what this column's own code changes to.
+    // Entering a real value clears a real code sitting to the right — it was scoped to the
+    // old value at this column and may no longer make sense — but leaves an existing padding
+    // character alone: padding just means "no further hierarchy here", which stays true
+    // regardless of what this column's own code changes to.
     function applyCode(row: TaxonomyRow): TaxonomyRow {
       const codes = row.codes.map((c, i) => {
         if (i === level) return char;
         if (i < level) return c;
-        if (isPadding) return i <= maxDescCol ? paddingChar : '';
         return c === paddingChar ? c : '';
       });
       return { ...row, codes };
     }
 
     if (isPadding) {
-      // "." replicates right across every column up to the deepest description (applied to
-      // the edited row via applyCode), then cascades down through blank cells below — but
-      // each of those replicated columns cascades independently, stopping only when THAT
-      // column hits a non-blank cell, not the moment any other column happens to.
-      let end = rows.length;
-      for (let i = editIndex + 1; i < rows.length; i++) {
-        const rowParent = level > 0 ? (rows[i].codes[level - 1] ?? '') : null;
-        if (parentValue !== null && rowParent !== parentValue) {
-          end = i;
-          break;
-        }
-      }
-      const updated = rows.map((row, idx) =>
-        idx === editIndex ? applyCode(row) : { ...row, codes: [...row.codes] },
-      );
-      for (let c = level; c <= maxDescCol; c++) {
-        for (let i = editIndex + 1; i < end; i++) {
-          if ((updated[i].codes[c] ?? '') === '') {
-            updated[i].codes[c] = paddingChar;
-          } else {
-            break;
-          }
-        }
-      }
-      onChange(updated, `code:${level}:${rowId}`);
+      onChange(padFromLevel(rows, editIndex, level), `code:${level}:${rowId}`);
       return;
     }
 
     let cascadeActive = true;
-    const updated = rows.map((row, idx) => {
+    let updated = rows.map((row, idx) => {
       if (idx < editIndex) return row;
       if (idx === editIndex) return applyCode(row);
       if (!cascadeActive) return row;
@@ -385,9 +445,10 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
 
     // Completing a leaf row's own code (Section 5: "the remaining Code Columns on that row
     // will auto populate with '.'") — any row that just received this real value at exactly
-    // its own significant level, and has no children, gets its remaining columns (up to the
-    // deepest description written anywhere) auto-padded, rather than left for the user to
-    // fill in by hand one at a time.
+    // its own significant level, and has no children, gets its remaining columns padded all
+    // the way to the last configured code column, exactly as if the user had typed the
+    // padding character into the next column themselves — rather than left for them to fill
+    // in by hand one at a time.
     if (char !== '' && !isPadding) {
       for (let idx = editIndex; idx < updated.length; idx++) {
         const row = updated[idx];
@@ -395,14 +456,8 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
         if (row.codes[level] !== char) continue;
         if (levelOf(row) !== level) continue;
         if (getDescendantEndIndex(idx) > idx + 1) continue; // has children — real codes still needed
-        const newCodes = [...row.codes];
-        let changed = false;
-        for (let c = level + 1; c <= maxDescCol; c++) {
-          if ((newCodes[c] ?? '') !== '') break;
-          newCodes[c] = paddingChar;
-          changed = true;
-        }
-        if (changed) updated[idx] = { ...row, codes: newCodes };
+        if (level + 1 >= numLevels) continue; // already the last column — nothing to pad
+        updated = padFromLevel(updated, idx, level + 1);
       }
     }
 
@@ -427,7 +482,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
         (d, i) => i !== level && (d ?? '').trim(),
       );
       if (otherFilledLevel !== -1) {
-        setValidationError('A row can only have one description — clear the existing entry first.');
+        showValidationError('A row can only have one description — clear the existing entry first.');
         return;
       }
     }
@@ -435,28 +490,41 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     // A description can move left any number of columns, but rightward only one column
     // at a time — it can't skip a level of the hierarchy that was never established.
     const wasEmpty = !(rows[editIndex].descriptions[level] ?? '').trim();
+    let prevDepth: number | null = null;
+    let prevDepthIdx = -1;
     if (wasEmpty && value.trim()) {
-      let prevDepth: number | null = null;
       for (let i = editIndex - 1; i >= 0 && prevDepth === null; i--) {
         for (let j = rows[i].descriptions.length - 1; j >= 0; j--) {
           if ((rows[i].descriptions[j] ?? '').trim()) {
             prevDepth = j;
+            prevDepthIdx = i;
             break;
           }
         }
       }
       if (prevDepth !== null && level > prevDepth + 1) {
-        setValidationError('Descriptions must cascade no more than one column right');
+        showValidationError('Descriptions must cascade no more than one column right');
         return;
       }
     }
 
+    // A brand-new entry one level deeper than the nearest row above it turns that row into a
+    // parent. If that row picked up trailing padding while it still looked like a leaf
+    // (Section 5's auto-pad), that padding is now stale — it genuinely has a child, so those
+    // columns need a real code, not blanket "no further hierarchy" padding.
+    const newParentIdx = prevDepth !== null && level === prevDepth + 1 ? prevDepthIdx : -1;
+
     onChange(
-      rows.map((row) =>
-        row.id === rowId
-          ? { ...row, descriptions: row.descriptions.map((d, i) => (i === level ? value : d)) }
-          : row,
-      ),
+      rows.map((row, idx) => {
+        if (row.id === rowId) {
+          return { ...row, descriptions: row.descriptions.map((d, i) => (i === level ? value : d)) };
+        }
+        if (idx === newParentIdx) {
+          const codes = row.codes.map((c, i) => (i > prevDepth! && c === paddingChar ? '' : c));
+          return codes.some((c, i) => c !== row.codes[i]) ? { ...row, codes } : row;
+        }
+        return row;
+      }),
       `desc:${level}:${rowId}`,
     );
   }
@@ -535,7 +603,15 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
 
   function createRowInheritingFrom(previous?: TaxonomyRow): TaxonomyRow {
     const newRow = createEmptyRow(numLevels, settings.suffixes);
-    if (previous) newRow.codes = [...previous.codes];
+    if (previous) {
+      const prevLevel = levelOf(previous);
+      // Only inherit the ancestor portion of the previous row's codes — up to and including
+      // its own level — not any trailing padding it happens to carry (e.g. as a leaf, per
+      // Section 5's auto-pad). That padding reflected the previous row having no children of
+      // its own at the time; a brand-new row shouldn't start pre-padded before it even has a
+      // description, let alone before anyone knows whether it turns out to be that row's child.
+      newRow.codes = previous.codes.map((c, i) => (prevLevel === -1 || i <= prevLevel ? c : ''));
+    }
     return newRow;
   }
 
@@ -679,10 +755,18 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
         focusCell(kind, level, rowIndex - 1);
         return;
       case 'ArrowLeft':
-        // Cells always exit to the adjacent one on arrow keys, rather than moving a text
-        // caret within the field — consistent, spreadsheet-style navigation. Off the left
-        // edge of the description block (column 1), wrap onto the rightmost code column of
-        // the same row rather than doing nothing.
+        // Code cells (always exactly one character) exit to the adjacent cell unconditionally
+        // — there's no meaningful text caret to move within a single character. Description
+        // cells, though, behave like Excel: the arrow key moves the text caret within the
+        // field while there's still somewhere for it to go, and only exits to the adjacent
+        // cell once the caret is already sitting at that edge of the text (this is exactly
+        // what makes F2 followed by Left actually resume editing, instead of immediately
+        // hopping to the previous cell). Off the left edge of the description block (column
+        // 1), wrap onto the rightmost code column of the same row rather than doing nothing.
+        if (kind === 'desc') {
+          const input = e.currentTarget;
+          if (input.selectionStart !== 0 || input.selectionEnd !== 0) return;
+        }
         e.preventDefault();
         if (kind === 'desc' && level === 0) {
           focusCell('code', numLevels - 1, rowIndex);
@@ -691,8 +775,14 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
         }
         return;
       case 'ArrowRight':
-        // Off the right edge of the code block (its last column), wrap onto description
+        // Mirrors ArrowLeft above: only exits the cell once the caret is at the end of the
+        // text. Off the right edge of the code block (its last column), wrap onto description
         // column 1 of the same row, mirroring the left-edge wrap above.
+        if (kind === 'desc') {
+          const input = e.currentTarget;
+          const end = input.value.length;
+          if (input.selectionStart !== end || input.selectionEnd !== end) return;
+        }
         e.preventDefault();
         if (kind === 'code' && level === numLevels - 1) {
           focusCell('desc', 0, rowIndex);
@@ -735,7 +825,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     if (e.button !== 0) return; // right/middle click: leave selection to handleCellContextMenu
     if (moveMode) {
       if (moveMode.rowIds.has(rowId)) {
-        setValidationError('Cannot move an entry into itself or its own children.');
+        showValidationError('Cannot move an entry into itself or its own children.');
         return;
       }
       setMoveTarget({ rowId });
@@ -743,7 +833,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     }
     if (copyMode) {
       if (copyMode.rowIds.has(rowId)) {
-        setValidationError('Choose a position outside the copied rows.');
+        showValidationError('Choose a position outside the copied rows.');
         return;
       }
       setCopyTarget({ rowId });
@@ -805,6 +895,11 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
   function handleCellMouseEnter(kind: CellKind, rowId: string, level: number) {
     if (!isDraggingRef.current || moveMode || copyMode) return;
     extendDragSelection(kind, rowId, level);
+  }
+
+  function handleDelimiterContextMenu(e: React.MouseEvent) {
+    e.preventDefault();
+    setDelimNotice({ x: e.clientX, y: e.clientY });
   }
 
   function handleCellContextMenu(kind: CellKind, rowId: string, level: number, e: React.MouseEvent) {
@@ -895,7 +990,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
       }
     }
     if (!anySourceFound) {
-      setValidationError('No code above to replicate from.');
+      showValidationError('No code above to replicate from.');
       return;
     }
     if (!anyReplicated) {
@@ -908,6 +1003,89 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     }
     onChange(updated);
     setSelection(null);
+    setContextMenu(null);
+  }
+
+  // Right-click "Replicate Codes Below" — the mirror of Replicate Codes Above: takes the
+  // value from the TOP row of the current selection itself (rather than the row above it)
+  // and rolls it down through every blank cell beneath, stopping at the first cell in each
+  // column that already holds something (a real code, or a "." padding character — either
+  // way, a genuine boundary the replication shouldn't cross).
+  function handleReplicateBelow() {
+    if (!contextMenu || contextMenu.kind !== 'code' || !selection) return;
+    const levelStart = selection.level;
+    const levelEnd = selection.levelEnd ?? selection.level;
+    const selectedIndices = rows
+      .map((r, i) => (selection.rowIds.has(r.id) ? i : -1))
+      .filter((i) => i !== -1)
+      .sort((a, b) => a - b);
+    if (selectedIndices.length === 0) return;
+    const topIndex = selectedIndices[0];
+    const updated = rows.map((row) => ({ ...row, codes: [...row.codes] }));
+    let anySourceFound = false;
+    let anyReplicated = false;
+    for (let level = levelStart; level <= levelEnd; level++) {
+      const sourceValue = rows[topIndex].codes[level] ?? '';
+      if (!sourceValue) continue;
+      anySourceFound = true;
+      for (let idx = topIndex + 1; idx < updated.length; idx++) {
+        if ((updated[idx].codes[level] ?? '') !== '') break;
+        updated[idx].codes[level] = sourceValue;
+        anyReplicated = true;
+      }
+    }
+    if (!anySourceFound) {
+      showValidationError('The selected cell is empty — nothing to replicate.');
+      return;
+    }
+    if (!anyReplicated) {
+      showValidationError('The cell(s) below already hold a value — nothing to replicate into.');
+      return;
+    }
+    onChange(updated);
+    setSelection(null);
+    setContextMenu(null);
+  }
+
+  // Right-click "Copy Codes" / "Paste Codes" (item 10) — copies the values of a selected code
+  // block (one or more columns, one or more rows) into an in-memory clipboard, then pastes
+  // them back in starting at wherever the user right-clicks next, overwriting downward and
+  // rightward from that cell — a plain overtype, like Excel's own copy/paste, not a validated
+  // entry (Replicate Above/Below and Delete Codes are bulk operations in the same spirit).
+  function handleCopyCodesBlock() {
+    if (!contextMenu || contextMenu.kind !== 'code' || !selection || selection.kind !== 'code') return;
+    const levelStart = selection.level;
+    const levelEnd = selection.levelEnd ?? selection.level;
+    const selectedIndices = rows
+      .map((r, i) => (selection.rowIds.has(r.id) ? i : -1))
+      .filter((i) => i !== -1)
+      .sort((a, b) => a - b);
+    if (selectedIndices.length === 0) return;
+    const colValues: string[][] = [];
+    for (let level = levelStart; level <= levelEnd; level++) {
+      colValues.push(selectedIndices.map((idx) => rows[idx].codes[level] ?? ''));
+    }
+    setCodeClipboard({ colValues, numRows: selectedIndices.length, numCols: levelEnd - levelStart + 1 });
+    setSelection(null);
+    setContextMenu(null);
+  }
+
+  function handlePasteCodesBlock() {
+    if (!contextMenu || contextMenu.kind !== 'code' || !codeClipboard) return;
+    const startIdx = rows.findIndex((r) => r.id === contextMenu.rowId);
+    if (startIdx === -1) return;
+    const startLevel = contextMenu.level;
+    const updated = rows.map((row) => ({ ...row, codes: [...row.codes] }));
+    for (let c = 0; c < codeClipboard.numCols; c++) {
+      const level = startLevel + c;
+      if (level >= numLevels) break;
+      for (let r = 0; r < codeClipboard.numRows; r++) {
+        const idx = startIdx + r;
+        if (idx >= updated.length) break;
+        updated[idx].codes[level] = codeClipboard.colValues[c][r];
+      }
+    }
+    onChange(updated);
     setContextMenu(null);
   }
 
@@ -935,7 +1113,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
         .filter((i) => i !== -1)
         .sort((a, b) => a - b);
     } else {
-      setValidationError('Select a block of rows in this column first, then check its order.');
+      showValidationError('Select a block of rows in this column first, then check its order.');
       return;
     }
     let prevValue: string | null = null;
@@ -944,15 +1122,16 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
       const value = rows[idx].codes[level] ?? '';
       if (!value) continue;
       if (prevValue !== null && value.charCodeAt(0) < prevValue.charCodeAt(0)) {
-        setValidationError(
+        showValidationError(
           `Out of order: row ${idx + 1} ("${value}") comes after row ${prevRowNumber} ("${prevValue}").`,
+          () => focusCell('code', level, idx),
         );
         return;
       }
       prevValue = value;
       prevRowNumber = idx + 1;
     }
-    setValidationError('Codes are in ascending order — no issues found.');
+    showValidationError('Codes are in ascending order — no issues found.');
   }
 
   // A row's level is the position of its deepest populated description column (Section
@@ -990,7 +1169,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
       return newLevel < 0 || newLevel >= numLevels;
     });
     if (outOfBounds) {
-      setValidationError(
+      showValidationError(
         direction === 'promote'
           ? 'Cannot promote further — already at the leftmost level'
           : 'Cannot demote further — no levels remain to the right',
@@ -1028,7 +1207,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     for (const i of affected) {
       const newLevel = levelOf(rows[i]) + offset;
       if (newLevel < 0 || newLevel >= numLevels) {
-        setValidationError(
+        showValidationError(
           direction === 'promote'
             ? 'Cannot promote further — already at the leftmost level'
             : 'Cannot demote further — no levels remain to the right',
@@ -1050,7 +1229,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
           const lvl = levelOf(rows[i]);
           if (lvl === -1) continue;
           if (newTopLevel > lvl + 1) {
-            setValidationError('Descriptions must cascade no more than one column right');
+            showValidationError('Descriptions must cascade no more than one column right');
             return;
           }
           break;
@@ -1059,7 +1238,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
         if (end < rows.length) {
           const lvl = levelOf(rows[end]);
           if (lvl !== -1 && lvl > newBottomLevel + 1) {
-            setValidationError('Descriptions must cascade no more than one column right');
+            showValidationError('Descriptions must cascade no more than one column right');
             return;
           }
         }
@@ -1222,6 +1401,9 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
       <table className="taxonomy-grid">
         <thead>
           <tr>
+            <th className="row-number-col" rowSpan={2}>
+              &nbsp;
+            </th>
             <th colSpan={numLevels + delimiterPositions.length} className="section-heading">
               Code
             </th>
@@ -1276,6 +1458,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
                     : undefined
               }
             >
+              <td className="row-number-col">{rowIndex + 1}</td>
               {levels.map((level) => {
                 const isCodeSelected =
                   selection?.kind === 'code' &&
@@ -1306,7 +1489,9 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
                       />
                     </td>
                     {delimiterPositions.includes(level + 1) && (
-                      <td className="delim-col">{codeDelimiterChar}</td>
+                      <td className="delim-col" onContextMenu={handleDelimiterContextMenu}>
+                        {codeDelimiterChar}
+                      </td>
                     )}
                   </Fragment>
                 );
@@ -1336,6 +1521,10 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
                         width: `${Math.max(1, (row.descriptions[level]?.length ?? 0) + 2)}ch`,
                       }}
                       type="text"
+                      // Column 1 is forced to ALL CAPS as you type (Section 4.3) — hinting the
+                      // same at the virtual-keyboard level, so a mobile/tablet keyboard visibly
+                      // shows itself shifted into caps for this field, like a locked Caps Lock.
+                      autoCapitalize={level === 0 ? 'characters' : undefined}
                       value={row.descriptions[level] ?? ''}
                       onChange={(e) => updateDescription(row.id, level, e.target.value)}
                       onKeyDown={(e) => handleCellKeyDown(e, 'desc', level, rowIndex)}
@@ -1349,7 +1538,9 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
                   selection?.kind === 'suffix' && selection.level === index && selection.rowIds.has(row.id);
                 return (
                   <Fragment key={`suffix-${row.id}-${index}`}>
-                    <td className="delim-col">{suffix.delimiter || '-'}</td>
+                    <td className="delim-col" onContextMenu={handleDelimiterContextMenu}>
+                      {suffix.delimiter || '-'}
+                    </td>
                     <td
                       className={`suffix-col${isSuffixSelected ? ' desc-col-selected' : ''}`}
                       data-cell-kind="suffix"
@@ -1408,6 +1599,16 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
         </p>
       )}
 
+      {delimNotice && (
+        <ul
+          className="context-menu"
+          style={{ top: delimNotice.y, left: delimNotice.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <li className="context-menu-disabled">Not editable</li>
+        </ul>
+      )}
+
       {contextMenu && (
         <ul
           className="context-menu"
@@ -1428,7 +1629,10 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
             <>
               <li onClick={handleDeleteCodes}>Delete Codes</li>
               <li onClick={handleReplicateAbove}>Replicate Codes Above</li>
+              <li onClick={handleReplicateBelow}>Replicate Codes Below</li>
               <li onClick={handleCheckAscendingOrder}>Check Ascending Order</li>
+              <li onClick={handleCopyCodesBlock}>Copy Codes</li>
+              {codeClipboard && <li onClick={handlePasteCodesBlock}>Paste Codes</li>}
             </>
           )}
           {contextMenu.kind === 'suffix' && (
@@ -1642,7 +1846,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
       )}
 
       {validationError && (
-        <div className="validation-overlay" onClick={() => setValidationError(null)}>
+        <div className="validation-overlay" onClick={dismissValidationError}>
           <div
             ref={dialogRef}
             className="validation-dialog"
@@ -1657,7 +1861,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
             }}
           >
             <p>{validationError}</p>
-            <button type="button" onClick={() => setValidationError(null)}>
+            <button type="button" onClick={dismissValidationError}>
               OK
             </button>
           </div>
