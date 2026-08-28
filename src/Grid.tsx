@@ -410,6 +410,16 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     );
   }
 
+  // Editable suffix values are free text, not a code, so a duplicate isn't invalid — just
+  // flagged once the user leaves the cell, in case it wasn't intentional (e.g. a copy/paste
+  // slip). Purely informational: it never blocks or changes the entry.
+  function checkSuffixDuplicate(rowId: string, index: number) {
+    const value = (rows.find((r) => r.id === rowId)?.suffixValues[index] ?? '').trim();
+    if (!value) return;
+    const isDuplicate = rows.some((r) => r.id !== rowId && (r.suffixValues[index] ?? '').trim() === value);
+    if (isDuplicate) setValidationError('Duplicate Entry');
+  }
+
   function createRowInheritingFrom(previous?: TaxonomyRow): TaxonomyRow {
     const newRow = createEmptyRow(numLevels, settings.suffixes.length);
     if (previous) newRow.codes = [...previous.codes];
@@ -1076,6 +1086,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
                         maxLength={suffix.width}
                         value={row.suffixValues[index] ?? ''}
                         onChange={(e) => updateSuffix(row.id, index, e.target.value)}
+                        onBlur={() => checkSuffixDuplicate(row.id, index)}
                       />
                     )}
                   </td>
