@@ -10,6 +10,8 @@ import {
 } from './gridExport';
 import { chooseExportFolder, peekExportFolderName, supportsFileSystemAccess } from './exportFolder';
 import NewTaxonomyForm from './NewTaxonomyForm';
+import SettingsModal from './SettingsModal';
+import type { SettingsFields } from './SettingsModal';
 import Grid from './Grid';
 import Logo from './Logo';
 import './App.css';
@@ -34,6 +36,11 @@ export default function App() {
   // Concatenated (Section 9, one combined code/description per row for ERP import).
   const [exportChoice, setExportChoice] = useState<{ format: 'csv' | 'xlsx' } | null>(null);
   const exportDialogRef = useRef<HTMLDivElement>(null);
+
+  // Item 14: a way back to the taxonomy's own settings from the working screen, since it's
+  // easy to forget to adjust something (e.g. the description length limit) before the grid
+  // fills up with rows built against it.
+  const [showSettings, setShowSettings] = useState(false);
 
   // Export folder (Section 8-adjacent convenience James asked for): on Chromium browsers,
   // Save/Export can write straight into a folder picked once via the File System Access API,
@@ -198,6 +205,25 @@ export default function App() {
     }
   }
 
+  function handleSaveSettings(fields: SettingsFields) {
+    if (!project) return;
+    setProject({
+      ...project,
+      title: fields.title,
+      tableName: fields.tableName,
+      purpose: fields.purpose,
+      settings: {
+        ...project.settings,
+        maxDescriptionLength: fields.maxDescriptionLength,
+        paddingChar: fields.paddingChar,
+        codeDelimiterChar: fields.codeDelimiterChar,
+        indentChar: fields.indentChar,
+      },
+    });
+    setDirty(true);
+    setShowSettings(false);
+  }
+
   function handleNewTaxonomy() {
     if (project && dirty && !confirm('Discard the current taxonomy and start a new one?')) return;
     setProject(null);
@@ -243,6 +269,11 @@ export default function App() {
             {project && (
               <button type="button" onClick={handleLoadClick}>
                 Load from File
+              </button>
+            )}
+            {project && (
+              <button type="button" onClick={() => setShowSettings(true)}>
+                Settings
               </button>
             )}
             {project && (
@@ -292,6 +323,10 @@ export default function App() {
             James A Robertson and Associates Limited, it is copyright © 2026
           </footer>
         </>
+      )}
+
+      {showSettings && project && (
+        <SettingsModal project={project} onSave={handleSaveSettings} onClose={() => setShowSettings(false)} />
       )}
 
       {exportChoice && (

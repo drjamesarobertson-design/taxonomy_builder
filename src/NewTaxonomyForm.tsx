@@ -42,7 +42,12 @@ export default function NewTaxonomyForm({ onCreate, onLoadClick }: NewTaxonomyFo
   // Some ERPs don't accept "." in a code field (pad with "0" instead), and some need a code
   // delimiter other than "-" (Section 4.4).
   const [paddingChar, setPaddingChar] = useState(DEFAULT_SETTINGS.paddingChar);
+  const [showPaddingWarning, setShowPaddingWarning] = useState(false);
   const [codeDelimiterChar, setCodeDelimiterChar] = useState(DEFAULT_SETTINGS.codeDelimiterChar);
+  // Before actually creating the taxonomy (item 14): a last look at the settings chosen,
+  // since several of them (number of code columns, delimiter positions, padding character)
+  // are awkward to change once rows exist — "Edit" just closes this back onto the form as-is.
+  const [showConfirm, setShowConfirm] = useState(false);
   // Concatenated exports (Section 9) indent each level with a leading space by default; some
   // ERPs trim leading spaces on import, so James asked for an alternative single character
   // (e.g. "_") to be configurable per taxonomy instead.
@@ -105,12 +110,17 @@ export default function NewTaxonomyForm({ onCreate, onLoadClick }: NewTaxonomyFo
         return;
       }
     }
+    setShowConfirm(true);
+  }
+
+  function handleConfirmCreate() {
     const sorted = [...new Set(delimiterPositions)].filter((p) => p < numLevels).sort((a, b) => a - b);
     const normalizedSuffixes = suffixes.map((s) => ({
       ...s,
       delimiter: s.delimiter || '-',
       width: Math.max(1, Math.min(8, s.width)),
     }));
+    setShowConfirm(false);
     onCreate(
       title.trim(),
       tableName.trim(),
@@ -193,7 +203,15 @@ export default function NewTaxonomyForm({ onCreate, onLoadClick }: NewTaxonomyFo
 
       <label>
         Pad codes with trailing
-        <select value={paddingChar} onChange={(e) => setPaddingChar(e.target.value)} title="Some ERPs won't accept &quot;.&quot; in a code field — pad with &quot;0&quot; instead">
+        <select
+          value={paddingChar}
+          onChange={(e) => {
+            const v = e.target.value;
+            setPaddingChar(v);
+            if (v === '0') setShowPaddingWarning(true);
+          }}
+          title="Some ERPs won't accept &quot;.&quot; in a code field — pad with &quot;0&quot; instead"
+        >
           <option value=".">"." (default)</option>
           <option value="0">"0"</option>
         </select>
@@ -334,6 +352,45 @@ export default function NewTaxonomyForm({ onCreate, onLoadClick }: NewTaxonomyFo
           Load from File
         </button>
       </div>
+
+      {showPaddingWarning && (
+        <div className="validation-overlay" onClick={() => setShowPaddingWarning(false)}>
+          <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <p>
+              Note that "0" as the pad character has limitations — it is strongly recommended
+              that you use "." unless your software cannot be configured to accept ".".
+            </p>
+            <button type="button" onClick={() => setShowPaddingWarning(false)}>
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showConfirm && (
+        <div className="validation-overlay" onClick={() => setShowConfirm(false)}>
+          <div className="validation-dialog settings-confirm-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <p>Confirm all settings as you want them:</p>
+            <ul className="settings-summary">
+              <li>Title: {title.trim()}</li>
+              <li>Table Name: {tableName.trim()}</li>
+              <li>Maximum ERP Description Field Length: {maxDescriptionLength}</li>
+              <li>Number of Code Columns: {numLevels}</li>
+              <li>Pad codes with trailing: "{paddingChar}"</li>
+              <li>Delimit codes with: "{codeDelimiterChar}"</li>
+              {suffixes.length > 0 && <li>Description Suffixes: {suffixes.length}</li>}
+            </ul>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setShowConfirm(false)}>
+                Edit
+              </button>
+              <button type="button" onClick={handleConfirmCreate}>
+                Accept
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </form>
   );
 }
