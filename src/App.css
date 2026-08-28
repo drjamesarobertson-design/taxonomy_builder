@@ -344,8 +344,12 @@ body.app-dark-theme .delimiter-empty {
   overflow-x: auto;
   padding-right: 20ch; /* room for description text that overflows past the indicative width */
   /* Stays white regardless of the app-wide dark theme around it, and gives the table its own
-     opaque backdrop so transparent cells don't show the dark page background through them. */
+     opaque backdrop so transparent cells don't show the dark page background through them.
+     The explicit dark text color matters just as much as the white background: without it,
+     everything in here (including the Add Row button) would inherit the dark theme's
+     near-white text color from .app and become unreadable against this white backdrop. */
   background: #fff;
+  color: #1a1a1a;
   padding-top: 0.5rem;
   padding-bottom: 0.5rem;
 }
@@ -473,6 +477,7 @@ body.app-dark-theme .delimiter-empty {
   margin: 0;
   padding: 4px 0;
   background: #fff;
+  color: #1a1a1a;
   border: 1px solid #ccc;
   border-radius: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
@@ -509,6 +514,7 @@ body.app-dark-theme .delimiter-empty {
 
 .validation-dialog {
   background: #fff;
+  color: #1a1a1a;
   border-radius: 6px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
   padding: 1.25rem;
@@ -552,6 +558,7 @@ body.app-dark-theme .delimiter-empty {
   margin: 0.5rem 0 0;
   padding: 0.5rem 0.75rem;
   background: #fff6d6;
+  color: #1a1a1a;
   border: 1px solid #e0c34a;
   border-radius: 4px;
   font-size: 0.85rem;
