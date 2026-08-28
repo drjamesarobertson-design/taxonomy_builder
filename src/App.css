@@ -127,36 +127,53 @@
   max-width: 480px;
 }
 
-/* Sign-on (New Taxonomy) screen theme — a dark blue matching the ERP Doctor logo, with light
-   text for contrast. The working grid screen keeps its own, unrelated light theme. */
-body.sign-on-theme {
+/* App-wide theme — a dark blue matching the ERP Doctor logo, with light sans-serif text for
+   contrast, on both the sign-on (New Taxonomy) screen and the working grid screen's chrome
+   (header, toolbar, meta section). The taxonomy grid itself stays white regardless — see
+   .grid-wrapper below. */
+body.app-dark-theme {
   background: #102a5c;
 }
 
-body.sign-on-theme .app {
+body.app-dark-theme .app {
   color: #eaf2ff;
+  font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
-body.sign-on-theme .delimiter-row {
+body.app-dark-theme .taxonomy-meta .table-name {
+  color: #cfe0ff;
+}
+
+body.app-dark-theme .taxonomy-meta .purpose {
+  color: #b9c9ef;
+}
+
+body.app-dark-theme .delimiter-row {
   border-bottom-color: rgba(255, 255, 255, 0.15);
 }
 
-body.sign-on-theme .delimiter-setup,
-body.sign-on-theme .indent-char-setup {
+body.app-dark-theme .delimiter-setup,
+body.app-dark-theme .indent-char-setup,
+body.app-dark-theme .suffix-setup {
   border-color: rgba(255, 255, 255, 0.3);
 }
 
-body.sign-on-theme .delimiter-remove-btn {
+body.app-dark-theme .suffix-row {
+  border-bottom-color: rgba(255, 255, 255, 0.15);
+}
+
+body.app-dark-theme .delimiter-remove-btn {
   border-color: rgba(255, 255, 255, 0.4);
   color: #eaf2ff;
 }
 
-body.sign-on-theme .delimiter-empty {
+body.app-dark-theme .delimiter-empty {
   color: #c9d6f5;
 }
 
 .delimiter-setup,
-.indent-char-setup {
+.indent-char-setup,
+.suffix-setup {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -166,7 +183,8 @@ body.sign-on-theme .delimiter-empty {
 }
 
 .delimiter-setup legend,
-.indent-char-setup legend {
+.indent-char-setup legend,
+.suffix-setup legend {
   font-weight: 600;
   padding: 0 0.3rem;
 }
@@ -187,9 +205,64 @@ body.sign-on-theme .delimiter-empty {
   border-radius: 4px;
 }
 
+.suffix-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid #eee;
+  font-weight: normal;
+}
+
+.suffix-row:last-of-type {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.suffix-row-label {
+  font-weight: 600;
+  align-self: center;
+}
+
+.suffix-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.85rem;
+  font-weight: normal;
+}
+
+.suffix-row input,
+.suffix-row select {
+  font: inherit;
+  padding: 0.3rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.suffix-row input[type='number'] {
+  width: 4rem;
+}
+
+.suffix-row input:not([type='number']) {
+  width: 5rem;
+}
+
 .field-error {
   margin: 0;
   color: #c0392b;
+  font-size: 0.85rem;
+  font-weight: normal;
+}
+
+.field-warning {
+  margin: 0;
+  color: #a15c00;
+  background: #fff6e0;
+  border: 1px solid #f0d68a;
+  border-radius: 4px;
+  padding: 0.5rem 0.75rem;
   font-size: 0.85rem;
   font-weight: normal;
 }
@@ -270,10 +343,19 @@ body.sign-on-theme .delimiter-empty {
 .grid-wrapper {
   overflow-x: auto;
   padding-right: 20ch; /* room for description text that overflows past the indicative width */
+  /* Stays white regardless of the app-wide dark theme around it, and gives the table its own
+     opaque backdrop so transparent cells don't show the dark page background through them. */
+  background: #fff;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
 }
 
 .taxonomy-grid {
   border-collapse: collapse;
+  /* Keeps the grid's own monospace typography (code cells are sized in "ch" units) even
+     though the surrounding chrome now uses the app-wide sans-serif font. */
+  font-family: 'Courier New', Courier, monospace;
+  color: #1a1a1a;
 }
 
 .taxonomy-grid th,
@@ -352,6 +434,25 @@ body.sign-on-theme .delimiter-empty {
   background: #fafafa;
   color: #999;
   width: 1.2rem;
+}
+
+.suffix-col {
+  text-align: left;
+  padding: 0;
+}
+
+.suffix-cell {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font: inherit;
+  padding: 2px 2px;
+  box-sizing: border-box;
+}
+
+.suffix-cell:focus {
+  outline: 2px solid #4a90d9;
+  outline-offset: -1px;
 }
 
 .code-cell:focus,

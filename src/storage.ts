@@ -1,10 +1,16 @@
 import type { TaxonomyProject } from './types';
 import { saveExportFile } from './exportFolder';
+import { bumpFileVersion } from './fileVersion';
 
-export async function saveProjectToFile(project: TaxonomyProject): Promise<void> {
-  const json = JSON.stringify(project, null, 2);
+/** Saves the project to a file and returns the project with its "save" version counter
+ * bumped — callers must persist this back into state so the next save continues counting. */
+export async function saveProjectToFile(project: TaxonomyProject): Promise<TaxonomyProject> {
+  const { project: versioned, versionLabel } = bumpFileVersion(project, 'save');
+  const json = JSON.stringify(versioned, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
-  await saveExportFile(blob, `${project.tableName || project.title || 'taxonomy'}.json`);
+  const base = project.tableName || project.title || 'taxonomy';
+  await saveExportFile(blob, `${base}${versionLabel}.json`);
+  return versioned;
 }
 
 function isTaxonomyProject(data: unknown): data is TaxonomyProject {
@@ -39,6 +45,18 @@ export function loadProjectFromFile(file: File): Promise<TaxonomyProject> {
         // to the space that was previously hardcoded.
         if (typeof settings.indentChar !== 'string' || settings.indentChar.length !== 1) {
           settings.indentChar = ' ';
+        }
+        // Older files predate suffix columns and per-file version counters.
+        if (!Array.isArray(settings.suffixes)) settings.suffixes = [];
+        const project = data as unknown as Record<string, unknown>;
+        if (typeof project.fileVersions !== 'object' || project.fileVersions === null) {
+          project.fileVersions = {};
+        }
+        const suffixCount = (settings.suffixes as unknown[]).length;
+        for (const row of data.rows as unknown as Record<string, unknown>[]) {
+          if (!Array.isArray(row.suffixValues)) {
+            row.suffixValues = Array(suffixCount).fill('');
+          }
         }
         resolve(data);
       } catch {

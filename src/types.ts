@@ -1,7 +1,22 @@
 // Data model for a taxonomy project, per CLAUDE.md Section 4 (data model) and Section 8 (persistence).
 
+/** Internal cap on how many code/description levels a taxonomy can have. */
+export const MAX_LEVELS = 15;
+
+export interface SuffixField {
+  /** Max characters this suffix column can hold (1 to 8). */
+  width: number;
+  /** Single-character delimiter shown immediately before this suffix column. Default '-'. */
+  delimiter: string;
+  /** 'constant': one value, set here, applies to every row and isn't edited in the grid.
+   *  'editable': each row holds its own value, edited directly in the grid like a description. */
+  mode: 'constant' | 'editable';
+  /** Only meaningful when mode === 'constant' — the value shown (and exported) for every row. */
+  constantValue: string;
+}
+
 export interface TaxonomySettings {
-  /** Number of hierarchy levels (code columns / description columns). Default 8. */
+  /** Number of hierarchy levels (code columns / description columns). Default 8, max 15. */
   numLevels: number;
   /**
    * Code-column counts after which a delimiter appears (e.g. [3, 6] puts one after the
@@ -19,6 +34,11 @@ export interface TaxonomySettings {
    * instead, since leading spaces can be trimmed on import.
    */
   indentChar: string;
+  /**
+   * User-defined suffix columns (0 to 6) appended after the wide description column on the
+   * working screen and in the Discrete Columns export, each preceded by its own delimiter.
+   */
+  suffixes: SuffixField[];
 }
 
 export interface TaxonomyRow {
@@ -27,6 +47,8 @@ export interface TaxonomyRow {
   codes: string[];
   /** One entry per level; only the column matching the row's deepest level is expected to hold text. */
   descriptions: string[];
+  /** One entry per configured suffix column; only meaningful where that suffix is 'editable'. */
+  suffixValues: string[];
 }
 
 export interface TaxonomyProject {
@@ -37,6 +59,12 @@ export interface TaxonomyProject {
   purpose: string;
   settings: TaxonomySettings;
   rows: TaxonomyRow[];
+  /**
+   * Per-output-file save/export counters, keyed by a stable id for each producible file
+   * (the project save, and each export format/layout combination). Incremented every time
+   * that particular file is written, and used to build its " v1.NN" filename suffix.
+   */
+  fileVersions: Record<string, number>;
 }
 
 export const DEFAULT_SETTINGS: TaxonomySettings = {
@@ -45,13 +73,15 @@ export const DEFAULT_SETTINGS: TaxonomySettings = {
   paddingChar: '.',
   maxDescriptionLength: 40,
   indentChar: ' ',
+  suffixes: [],
 };
 
-export function createEmptyRow(numLevels: number): TaxonomyRow {
+export function createEmptyRow(numLevels: number, suffixCount: number = 0): TaxonomyRow {
   return {
     id: crypto.randomUUID(),
     codes: Array(numLevels).fill(''),
     descriptions: Array(numLevels).fill(''),
+    suffixValues: Array(suffixCount).fill(''),
   };
 }
 
@@ -62,13 +92,23 @@ export function createProject(
   maxDescriptionLength: number,
   delimiterPositions: number[],
   indentChar: string = ' ',
+  numLevels: number = DEFAULT_SETTINGS.numLevels,
+  suffixes: SuffixField[] = [],
 ): TaxonomyProject {
   return {
     version: 1,
     title,
     tableName,
     purpose,
-    settings: { ...DEFAULT_SETTINGS, maxDescriptionLength, delimiterPositions, indentChar },
+    settings: {
+      ...DEFAULT_SETTINGS,
+      maxDescriptionLength,
+      delimiterPositions,
+      indentChar,
+      numLevels,
+      suffixes,
+    },
     rows: [],
+    fileVersions: {},
   };
 }

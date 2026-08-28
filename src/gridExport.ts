@@ -1,19 +1,27 @@
 // Raw-grid ("Discrete Columns") export, per CLAUDE.md Section 7: the grid exactly as it
 // appears on screen — one column per code-character position (including the delimiter,
-// exported as a literal "-"), followed by one column per description level. No
-// concatenation or padding substitution — that's explicitly deferred (Section 9).
+// exported as a literal "-"), followed by one column per description level, followed by any
+// configured suffix columns (each with its own delimiter). No concatenation or padding
+// substitution for the main code/description columns — that's explicitly deferred (Section 9).
 
 import type { TaxonomyProject, TaxonomyRow } from './types';
 import { getLevelColor } from './colors';
 import { saveExportFile } from './exportFolder';
+import { bumpFileVersion } from './fileVersion';
 
-type ExportColumn = { type: 'code' | 'desc'; level: number } | { type: 'delimiter' } | { type: 'gap' };
+type ExportColumn =
+  | { type: 'code'; level: number }
+  | { type: 'desc'; level: number }
+  | { type: 'delimiter'; char: string }
+  | { type: 'gap' }
+  | { type: 'suffix'; index: number };
 
-function buildExportColumns(numLevels: number, delimiterPositions: number[]): ExportColumn[] {
+function buildExportColumns(project: TaxonomyProject): ExportColumn[] {
+  const { numLevels, delimiterPositions, suffixes } = project.settings;
   const columns: ExportColumn[] = [];
   for (let level = 0; level < numLevels; level++) {
     columns.push({ type: 'code', level });
-    if (delimiterPositions.includes(level + 1)) columns.push({ type: 'delimiter' });
+    if (delimiterPositions.includes(level + 1)) columns.push({ type: 'delimiter', char: '-' });
   }
   // A blank spacer column between the code block and the description block, matching the
   // on-screen grid's own gap column under the "Code" / "Description" section headings
@@ -22,19 +30,29 @@ function buildExportColumns(numLevels: number, delimiterPositions: number[]): Ex
   for (let level = 0; level < numLevels; level++) {
     columns.push({ type: 'desc', level });
   }
+  // User-defined suffix columns, each preceded by its own configured delimiter character.
+  suffixes.forEach((suffix, index) => {
+    columns.push({ type: 'delimiter', char: suffix.delimiter || '-' });
+    columns.push({ type: 'suffix', index });
+  });
   return columns;
 }
 
 function buildDiscreteGrid(project: TaxonomyProject): { header: string[]; rows: string[][]; columns: ExportColumn[] } {
-  const { numLevels, delimiterPositions } = project.settings;
-  const columns = buildExportColumns(numLevels, delimiterPositions);
-  const header = columns.map((c) => (c.type === 'code' || c.type === 'desc' ? String(c.level + 1) : ''));
+  const columns = buildExportColumns(project);
+  const header = columns.map((c) => {
+    if (c.type === 'code' || c.type === 'desc') return String(c.level + 1);
+    if (c.type === 'suffix') return `Suffix ${c.index + 1}`;
+    return '';
+  });
   const rows = project.rows.map((row) =>
     columns.map((c) => {
-      if (c.type === 'delimiter') return '-';
+      if (c.type === 'delimiter') return c.char;
       if (c.type === 'gap') return '';
       if (c.type === 'code') return row.codes[c.level] ?? '';
-      return row.descriptions[c.level] ?? '';
+      if (c.type === 'desc') return row.descriptions[c.level] ?? '';
+      const suffix = project.settings.suffixes[c.index];
+      return suffix.mode === 'constant' ? suffix.constantValue : row.suffixValues[c.index] ?? '';
     }),
   );
   return { header, rows, columns };
@@ -90,23 +108,27 @@ function csvEscape(value: string): string {
   return value;
 }
 
-// File names carry a descriptor of which export they are, since a taxonomy typically ends
-// up with several files side by side in the same folder — e.g. "Further Milling.json" (the
-// save file, for reuse) alongside "Further Milling Per Column.csv" and "Further Milling
-// Concatenated.xlsx".
-function exportFilename(project: TaxonomyProject, descriptor: string, extension: string): string {
+// File names carry a descriptor of which export they are, plus a " v1.NN" version suffix that
+// increments every time that same file (same descriptor/format) is written again — a taxonomy
+// typically ends up with several files side by side in the same folder, e.g.
+// "Further Milling v1.01.json" (the save file, for reuse) alongside
+// "Further Milling Per Column v1.03.csv" and "Further Milling Concatenated v1.01.xlsx".
+function exportFilename(project: TaxonomyProject, descriptor: string, extension: string, versionLabel: string): string {
   const base = project.tableName || project.title || 'taxonomy';
-  return `${base} ${descriptor}.${extension}`;
+  return `${base} ${descriptor}${versionLabel}.${extension}`;
 }
 
-export async function exportDiscreteCsv(project: TaxonomyProject): Promise<void> {
+export async function exportDiscreteCsv(project: TaxonomyProject): Promise<TaxonomyProject> {
+  const { project: versioned, versionLabel } = bumpFileVersion(project, 'discrete-csv');
   const { header, rows } = buildDiscreteGrid(project);
   const csv = [header, ...rows].map((line) => line.map(csvEscape).join(',')).join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  await saveExportFile(blob, exportFilename(project, 'Per Column', 'csv'));
+  await saveExportFile(blob, exportFilename(project, 'Per Column', 'csv', versionLabel));
+  return versioned;
 }
 
-export async function exportDiscreteXlsx(project: TaxonomyProject): Promise<void> {
+export async function exportDiscreteXlsx(project: TaxonomyProject): Promise<TaxonomyProject> {
+  const { project: versioned, versionLabel } = bumpFileVersion(project, 'discrete-xlsx');
   // exceljs is a large dependency needed only for this one export path — code-split so it
   // doesn't inflate the initial bundle for everyone who never exports to Excel.
   const ExcelJS = (await import('exceljs')).default;
@@ -149,6 +171,11 @@ export async function exportDiscreteXlsx(project: TaxonomyProject): Promise<void
       excelCol.width = 3;
       return;
     }
+    if (col.type === 'suffix') {
+      excelCol.width = Math.max(4, project.settings.suffixes[col.index].width + 2);
+      excelCol.alignment = { horizontal: 'left' };
+      return;
+    }
     const isCode = col.type === 'code';
     const staysWide = col.type === 'desc' && col.level === lastDescLevel;
     excelCol.width = staysWide
@@ -167,17 +194,21 @@ export async function exportDiscreteXlsx(project: TaxonomyProject): Promise<void
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });
-  await saveExportFile(blob, exportFilename(project, 'Per Column', 'xlsx'));
+  await saveExportFile(blob, exportFilename(project, 'Per Column', 'xlsx', versionLabel));
+  return versioned;
 }
 
-export async function exportConcatenatedCsv(project: TaxonomyProject): Promise<void> {
+export async function exportConcatenatedCsv(project: TaxonomyProject): Promise<TaxonomyProject> {
+  const { project: versioned, versionLabel } = bumpFileVersion(project, 'concatenated-csv');
   const { header, rows } = buildConcatenatedGrid(project);
   const csv = [header, ...rows].map((line) => line.map(csvEscape).join(',')).join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  await saveExportFile(blob, exportFilename(project, 'Concatenated', 'csv'));
+  await saveExportFile(blob, exportFilename(project, 'Concatenated', 'csv', versionLabel));
+  return versioned;
 }
 
-export async function exportConcatenatedXlsx(project: TaxonomyProject): Promise<void> {
+export async function exportConcatenatedXlsx(project: TaxonomyProject): Promise<TaxonomyProject> {
+  const { project: versioned, versionLabel } = bumpFileVersion(project, 'concatenated-xlsx');
   const ExcelJS = (await import('exceljs')).default;
   const { header, rows } = buildConcatenatedGrid(project);
   const workbook = new ExcelJS.Workbook();
@@ -193,5 +224,6 @@ export async function exportConcatenatedXlsx(project: TaxonomyProject): Promise<
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });
-  await saveExportFile(blob, exportFilename(project, 'Concatenated', 'xlsx'));
+  await saveExportFile(blob, exportFilename(project, 'Concatenated', 'xlsx', versionLabel));
+  return versioned;
 }
