@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { TaxonomyProject, TaxonomyRow } from './types';
+import type { TaxonomyProject, TaxonomyRow, SuffixField } from './types';
 import { createEmptyRow, createProject } from './types';
 import { saveProjectToFile, loadProjectFromFile } from './storage';
 import {
@@ -48,13 +48,14 @@ export default function App() {
     if (folder) setExportFolderName(folder.name);
   }
 
-  // The sign-on (New Taxonomy) screen gets its own dark theme; the working grid keeps the
-  // existing light one. Toggled on the body so the theme covers the full page, not just the
+  // The whole app (sign-on screen and the working grid screen alike) uses the dark blue /
+  // white sans-serif chrome; only the grid table itself stays white (styled directly, not
+  // via this theme). Applied on the body so it covers the full page, not just the
   // width-constrained .app box.
   useEffect(() => {
-    document.body.classList.toggle('sign-on-theme', !project);
-    return () => document.body.classList.remove('sign-on-theme');
-  }, [project]);
+    document.body.classList.add('app-dark-theme');
+    return () => document.body.classList.remove('app-dark-theme');
+  }, []);
 
   useEffect(() => {
     if (exportChoice) exportDialogRef.current?.focus();
@@ -83,6 +84,8 @@ export default function App() {
     maxDescriptionLength: number,
     delimiterPositions: number[],
     indentChar: string,
+    numLevels: number,
+    suffixes: SuffixField[],
   ) {
     const newProject = createProject(
       title,
@@ -91,9 +94,11 @@ export default function App() {
       maxDescriptionLength,
       delimiterPositions,
       indentChar,
+      numLevels,
+      suffixes,
     );
     // Start the user off with a row already in place, cursor ready, rather than an empty grid.
-    newProject.rows = [createEmptyRow(newProject.settings.numLevels)];
+    newProject.rows = [createEmptyRow(newProject.settings.numLevels, suffixes.length)];
     setProject(newProject);
     setDirty(true);
     setAutoFocusFirstRow(true);
@@ -136,7 +141,11 @@ export default function App() {
 
   async function handleSave() {
     if (!project) return;
-    await saveProjectToFile(project);
+    // saveProjectToFile bumps and returns the project's own "save" version counter (used to
+    // build its " v1.NN" filename) — persisted back into state, bypassing undo/redo, since
+    // it's bookkeeping metadata, not a user edit.
+    const versioned = await saveProjectToFile(project);
+    setProject(versioned);
     setDirty(false);
     peekExportFolderName().then(setExportFolderName);
   }
@@ -148,13 +157,13 @@ export default function App() {
   async function runExport(mode: 'discrete' | 'concatenated') {
     if (!project || !exportChoice) return;
     const { format } = exportChoice;
+    let versioned: TaxonomyProject;
     if (format === 'csv') {
-      if (mode === 'discrete') await exportDiscreteCsv(project);
-      else await exportConcatenatedCsv(project);
+      versioned = mode === 'discrete' ? await exportDiscreteCsv(project) : await exportConcatenatedCsv(project);
     } else {
-      if (mode === 'discrete') await exportDiscreteXlsx(project);
-      else await exportConcatenatedXlsx(project);
+      versioned = mode === 'discrete' ? await exportDiscreteXlsx(project) : await exportConcatenatedXlsx(project);
     }
+    setProject(versioned);
     setExportChoice(null);
     peekExportFolderName().then(setExportFolderName);
   }

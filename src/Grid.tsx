@@ -41,9 +41,13 @@ const codeInputId = (level: number, rowId: string) => `code-${level}-${rowId}`;
 const descInputId = (level: number, rowId: string) => `desc-${level}-${rowId}`;
 
 export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: GridProps) {
-  const { numLevels, delimiterPositions, maxDescriptionLength } = settings;
+  const { numLevels, delimiterPositions, maxDescriptionLength, suffixes } = settings;
   const levels = Array.from({ length: numLevels }, (_, i) => i);
-  const overflowChars = Math.max(10, maxDescriptionLength - numLevels);
+  // The wide overflow column gets whatever's left of the configured max description length
+  // after reserving one character per description level (Section 6.7's indent padding) and
+  // the width of every suffix column plus its own delimiter.
+  const suffixTotalWidth = suffixes.reduce((sum, s) => sum + 1 + s.width, 0);
+  const overflowChars = Math.max(4, maxDescriptionLength - numLevels - suffixTotalWidth);
 
   const [selection, setSelection] = useState<Selection | null>(null);
   const [anchorRowId, setAnchorRowId] = useState<string | null>(null);
@@ -390,8 +394,24 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     );
   }
 
+  // Edits an "editable" suffix column's per-row value (Section 3-adjacent: user-defined
+  // suffixes). "Constant" suffixes aren't edited in the grid at all — their value comes
+  // straight from settings and is the same for every row.
+  function updateSuffix(rowId: string, index: number, value: string) {
+    const width = settings.suffixes[index]?.width ?? 8;
+    const clamped = value.slice(0, width);
+    onChange(
+      rows.map((row) =>
+        row.id === rowId
+          ? { ...row, suffixValues: row.suffixValues.map((v, i) => (i === index ? clamped : v)) }
+          : row,
+      ),
+      `suffix:${index}:${rowId}`,
+    );
+  }
+
   function createRowInheritingFrom(previous?: TaxonomyRow): TaxonomyRow {
-    const newRow = createEmptyRow(numLevels);
+    const newRow = createEmptyRow(numLevels, settings.suffixes.length);
     if (previous) newRow.codes = [...previous.codes];
     return newRow;
   }
@@ -849,6 +869,43 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     setContextMenu(null);
   }
 
+  // Right-click "Alpha Sort" (Section 6.4) — sorts a selected block of sibling entries within
+  // one description column alphabetically, each carrying its own descendants along with it.
+  // The block may be the whole column or any contiguous subset; rows outside the selection are
+  // untouched.
+  function handleAlphaSort() {
+    if (!contextMenu || contextMenu.kind !== 'desc' || !selection || selection.kind !== 'desc') return;
+    const { level } = selection;
+    const selectedIndices = rows
+      .map((r, i) => (selection.rowIds.has(r.id) ? i : -1))
+      .filter((i) => i !== -1)
+      .sort((a, b) => a - b);
+    if (selectedIndices.length < 2) {
+      setContextMenu(null);
+      return;
+    }
+    const topIndex = selectedIndices[0];
+    const bottomIndex = selectedIndices[selectedIndices.length - 1];
+    // Split the selected range into chunks — each selected sibling plus every descendant row
+    // that immediately follows it — then sort the chunks as units by the sibling's own text,
+    // never disturbing a chunk's internal (parent-then-children) order.
+    const chunks: TaxonomyRow[][] = [];
+    for (let i = topIndex; i <= bottomIndex; ) {
+      const end = getDescendantEndIndex(i);
+      chunks.push(rows.slice(i, end));
+      i = end;
+    }
+    const sorted = [...chunks].sort((a, b) =>
+      (a[0].descriptions[level] ?? '').localeCompare(b[0].descriptions[level] ?? '', undefined, {
+        sensitivity: 'base',
+      }),
+    );
+    const updated = [...rows.slice(0, topIndex), ...sorted.flat(), ...rows.slice(bottomIndex + 1)];
+    onChange(updated);
+    setSelection(null);
+    setContextMenu(null);
+  }
+
   // Right-click "Move" — arms move mode with the selected entry (or entries) and all of
   // their descendants (always the whole hierarchy; unlike promote/demote there's no "just
   // this one" here, since detaching a moved entry from its children mid-move would leave
@@ -926,6 +983,14 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
             <th className="overflow-col" style={{ width: `${overflowChars}ch` }}>
               &nbsp;
             </th>
+            {suffixes.map((suffix, index) => (
+              <Fragment key={`suffix-h-${index}`}>
+                <th className="delim-col">&nbsp;</th>
+                <th className="suffix-col" style={{ width: `${suffix.width}ch` }}>
+                  Suffix {index + 1}
+                </th>
+              </Fragment>
+            ))}
             <th className="row-actions-col">&nbsp;</th>
           </tr>
         </thead>
@@ -998,6 +1063,24 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
                 );
               })}
               <td className="overflow-col" style={{ width: `${overflowChars}ch` }} />
+              {suffixes.map((suffix, index) => (
+                <Fragment key={`suffix-${row.id}-${index}`}>
+                  <td className="delim-col">{suffix.delimiter || '-'}</td>
+                  <td className="suffix-col">
+                    {suffix.mode === 'constant' ? (
+                      <input className="suffix-cell" type="text" value={suffix.constantValue} readOnly />
+                    ) : (
+                      <input
+                        className="suffix-cell"
+                        type="text"
+                        maxLength={suffix.width}
+                        value={row.suffixValues[index] ?? ''}
+                        onChange={(e) => updateSuffix(row.id, index, e.target.value)}
+                      />
+                    )}
+                  </td>
+                </Fragment>
+              ))}
               <td className="row-actions-col">
                 <button
                   type="button"
@@ -1032,6 +1115,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
           {contextMenu.kind === 'desc' && (
             <>
               <li onClick={handleToggleCase}>Toggle Case</li>
+              <li onClick={handleAlphaSort}>Alpha Sort</li>
               <li onClick={() => requestPromoteDemote('promote')}>Promote</li>
               <li onClick={() => requestPromoteDemote('demote')}>Demote</li>
               <li onClick={handleMoveStart}>Move</li>
