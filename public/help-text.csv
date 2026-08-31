@@ -1,18 +1,19 @@
 Field,Label,HelpText
-title,Title,"TODO: add help text for Title"
-tableName,Table Name,"TODO: add help text for Table Name"
-purpose,Purpose,"TODO: add help text for Purpose"
-maxDescriptionLength,Maximum ERP Description Field Length,"TODO: add help text for Maximum ERP Description Field Length"
-numLevels,Number of Code Columns,"TODO: add help text for Number of Code Columns"
-codeDelimiterChar,Delimit codes with,"TODO: add help text for Delimit codes with"
-delimiterPositions,Code Delimiters,"TODO: add help text for Code Delimiters"
-indentToggle,Replace leading space with other ASCII character?,"TODO: add help text for Replace leading space with other ASCII character?"
-indentChar,Leading Pad Character,"TODO: add help text for Leading Pad Character"
-suffixCount,Description Suffixes required (0 to 6),"TODO: add help text for Description Suffixes required (0 to 6)"
-suffixWidth,Suffix Width,"TODO: add help text for Suffix Width"
-suffixDelimiter,Delimiter before this suffix,"TODO: add help text for Delimiter before this suffix"
-suffixMode,Constant or Editable,"TODO: add help text for Constant or Editable"
-suffixConstantValue,Constant Value,"TODO: add help text for Constant Value"
+title,Title,The title that you want to appear in the Library or that appears on the input prompt in the ERP or other software
+tableName,Table Name,The target filename for the ERP or other software
+purpose,Purpose,Any information you want to record about the table
+maxDescriptionLength,Maximum ERP Description Field Length,The maximum description length that is permitted by the software for this particular table
+numLevels,Number of Code Columns,"Your best estimate of the number of columns required for the table, you can add and remove tables in the worksheet"
+paddingChar,Pad codes with trailing,The padding character defaults to period (fullstop) but can be changed to 0 -- 0 is NOT recommended
+codeDelimiterChar,Delimit codes with,Code delimiter defaults to dash (-) but offers other options for aesthetic reasons and software constraints
+delimiterPositions,Code Delimiters,"Specify the location of delimiters, default is after every three code characters which is optimum for human interpretation and anotation"
+indentToggle,Replace leading space with other ASCII character?,"Descriptions are padded with spaces or the character you enter here, many software systems will strip leading spaces in which case underscore (_) is the next best choice"
+indentChar,Leading Pad Character,This is the delimiter on Concatenated Exports
+suffixCount,Description Suffixes required (0 to 6),"The number of suffix fields on the table, in most cases this would be one field but in the case of complex Charts of Accounts may be more"
+suffixWidth,Suffix Width,"The number of characters, this is per suffx, typically 3 or 4 characters is recommened"
+suffixDelimiter,Delimiter before this suffix,"The delimiter before each suffix, typically a dash (-)"
+suffixMode,Constant or Editable,"In many cases, particulary a block for a component of coding in the Chart of Accounts the suffix might be constant for a table, in other cases, it may be a unique text string to add intelligence about the hiearchy to the table entries"
+suffixConstantValue,Constant Value,"Where the Suffix is constant, the text to be entered"
 gridCodeMenuHelp,Code Cell Right-Click Menu,"TODO: add guidance for the code-cell right-click menu"
 gridDescMenuHelp,Description Cell Right-Click Menu,"TODO: add guidance for the description-cell right-click menu"
 gridSuffixMenuHelp,Suffix Cell Right-Click Menu,"TODO: add guidance for the suffix-cell right-click menu"
