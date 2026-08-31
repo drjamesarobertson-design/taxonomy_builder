@@ -41,10 +41,11 @@ export default function NewTaxonomyForm({ onCreate, helpText }: NewTaxonomyFormP
   const [delimiterPositions, setDelimiterPositions] = useState<number[]>(
     DEFAULT_SETTINGS.delimiterPositions,
   );
-  // Some ERPs don't accept "." in a code field (pad with "0" instead), and some need a code
-  // delimiter other than "-" (Section 4.4).
-  const [paddingChar, setPaddingChar] = useState(DEFAULT_SETTINGS.paddingChar);
-  const [showPaddingWarning, setShowPaddingWarning] = useState(false);
+  // Codes are always typed and stored padded with "." — some ERPs can't accept "." in a code
+  // field, but that's now offered as a one-off substitution when exporting (Export to
+  // CSV/Excel), not a taxonomy-wide setting chosen up front and easily left on by habit.
+  const paddingChar = DEFAULT_SETTINGS.paddingChar;
+  // Some ERPs need a code delimiter other than "-" (Section 4.4).
   const [codeDelimiterChar, setCodeDelimiterChar] = useState(DEFAULT_SETTINGS.codeDelimiterChar);
   // Before actually creating the taxonomy (item 14): a last look at the settings chosen,
   // since several of them (number of code columns, delimiter positions, padding character)
@@ -209,22 +210,6 @@ export default function NewTaxonomyForm({ onCreate, helpText }: NewTaxonomyFormP
       </label>
 
       <label>
-        Pad codes with trailing
-        <HelpIcon field="paddingChar" helpText={helpText} />
-        <select
-          value={paddingChar}
-          onChange={(e) => {
-            const v = e.target.value;
-            setPaddingChar(v);
-            if (v === '0') setShowPaddingWarning(true);
-          }}
-          title="Some ERPs won't accept &quot;.&quot; in a code field — pad with &quot;0&quot; instead"
-        >
-          <option value=".">"." (default)</option>
-          <option value="0">"0"</option>
-        </select>
-      </label>
-      <label>
         Delimit codes with
         <HelpIcon field="codeDelimiterChar" helpText={helpText} />
         <select value={codeDelimiterChar} onChange={(e) => setCodeDelimiterChar(e.target.value)} title="Some ERPs need a different code delimiter character">
@@ -369,20 +354,6 @@ export default function NewTaxonomyForm({ onCreate, helpText }: NewTaxonomyFormP
         <button type="submit">Create Taxonomy</button>
       </div>
 
-      {showPaddingWarning && (
-        <div className="validation-overlay" onClick={() => setShowPaddingWarning(false)}>
-          <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
-            <p>
-              Note that "0" as the pad character has limitations — it is strongly recommended
-              that you use "." unless your software cannot be configured to accept ".".
-            </p>
-            <button type="button" onClick={() => setShowPaddingWarning(false)}>
-              OK
-            </button>
-          </div>
-        </div>
-      )}
-
       {showConfirm && (
         <div className="validation-overlay" onClick={() => setShowConfirm(false)}>
           <div className="validation-dialog settings-confirm-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
@@ -392,7 +363,6 @@ export default function NewTaxonomyForm({ onCreate, helpText }: NewTaxonomyFormP
               <li>Table Name: {tableName.trim()}</li>
               <li>Maximum ERP Description Field Length: {maxDescriptionLength}</li>
               <li>Number of Code Columns: {numLevels}</li>
-              <li>Pad codes with trailing: "{paddingChar}"</li>
               <li>Delimit codes with: "{codeDelimiterChar}"</li>
               {suffixes.length > 0 && <li>Description Suffixes: {suffixes.length}</li>}
             </ul>

@@ -14,3 +14,7 @@ suffixWidth,Suffix Width,"The number of characters, this is per suffx, typically
 suffixDelimiter,Delimiter before this suffix,"The delimiter before each suffix, typically a dash (-)"
 suffixMode,Constant or Editable,"In many cases, particulary a block for a component of coding in the Chart of Accounts the suffix might be constant for a table, in other cases, it may be a unique text string to add intelligence about the hiearchy to the table entries"
 suffixConstantValue,Constant Value,"Where the Suffix is constant, the text to be entered"
+gridCodeMenuHelp,Code Cell Right-Click Menu,"TODO: add guidance for the code-cell right-click menu"
+gridDescMenuHelp,Description Cell Right-Click Menu,"TODO: add guidance for the description-cell right-click menu"
+gridSuffixMenuHelp,Suffix Cell Right-Click Menu,"TODO: add guidance for the suffix-cell right-click menu"
+worksheetGuidance,Worksheet Guidance,"TODO: add overall process and convention guidance for building this taxonomy"

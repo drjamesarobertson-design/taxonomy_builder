@@ -9,7 +9,6 @@ export interface SettingsFields {
   tableName: string;
   purpose: string;
   maxDescriptionLength: number;
-  paddingChar: string;
   codeDelimiterChar: string;
   indentChar: string;
   numLevels: number;
@@ -36,7 +35,7 @@ function levelOf(row: TaxonomyRow): number {
 
 // Item 14 (extended): a way back to the taxonomy's own settings from the working grid screen,
 // without having to start over. Most fields here are pure metadata or cosmetic (title, purpose,
-// padding/delimiter characters) and are always safe to change. Number of code columns is
+// the code delimiter character) and are always safe to change. Number of code columns is
 // structural, but changing it is only actually risky in one direction — growing it is exactly
 // what "Add Column" already does mid-grid (new columns start blank), while shrinking it is only
 // offered down to whatever's still safe given the rows already there, checked below. Delimiter
@@ -44,6 +43,8 @@ function levelOf(row: TaxonomyRow): number {
 // data — so they're freely editable regardless of what's already in the grid. Suffix
 // configuration remains genuinely structural (each row's own suffixValues are keyed by
 // position), so it's still left out of this modal — a new taxonomy is the way to change that.
+// The padding character itself is no longer editable anywhere in setup — it's always "." as
+// typed; a one-off "0" substitution is offered instead when exporting (see App.tsx).
 export default function SettingsModal({ project, onSave, onClose, helpText }: SettingsModalProps) {
   const [title, setTitle] = useState(project.title);
   const [tableName, setTableName] = useState(project.tableName);
@@ -51,8 +52,6 @@ export default function SettingsModal({ project, onSave, onClose, helpText }: Se
   const [maxDescriptionLengthText, setMaxDescriptionLengthText] = useState(
     String(project.settings.maxDescriptionLength),
   );
-  const [paddingChar, setPaddingChar] = useState(project.settings.paddingChar);
-  const [showPaddingWarning, setShowPaddingWarning] = useState(false);
   const [codeDelimiterChar, setCodeDelimiterChar] = useState(project.settings.codeDelimiterChar);
   const [replaceIndentChar, setReplaceIndentChar] = useState(project.settings.indentChar !== ' ');
   const [indentChar, setIndentChar] = useState(
@@ -116,7 +115,6 @@ export default function SettingsModal({ project, onSave, onClose, helpText }: Se
       tableName: tableName.trim(),
       purpose: purpose.trim(),
       maxDescriptionLength,
-      paddingChar,
       codeDelimiterChar,
       indentChar: replaceIndentChar ? indentChar : ' ',
       numLevels,
@@ -173,21 +171,6 @@ export default function SettingsModal({ project, onSave, onClose, helpText }: Se
           />
         </label>
         {numLevelsError && <p className="field-error">{numLevelsError}</p>}
-        <label>
-          Pad codes with trailing
-          <HelpIcon field="paddingChar" helpText={helpText} />
-          <select
-            value={paddingChar}
-            onChange={(e) => {
-              const v = e.target.value;
-              setPaddingChar(v);
-              if (v === '0') setShowPaddingWarning(true);
-            }}
-          >
-            <option value=".">"." (default)</option>
-            <option value="0">"0"</option>
-          </select>
-        </label>
         <label>
           Delimit codes with
           <HelpIcon field="codeDelimiterChar" helpText={helpText} />
@@ -269,21 +252,6 @@ export default function SettingsModal({ project, onSave, onClose, helpText }: Se
             Save
           </button>
         </div>
-
-        {showPaddingWarning && (
-          <div className="validation-overlay" onClick={() => setShowPaddingWarning(false)}>
-            <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
-              <p>
-                Note that "0" as the pad character has limitations — it is strongly
-                recommended that you use "." unless your software cannot be configured to
-                accept ".".
-              </p>
-              <button type="button" onClick={() => setShowPaddingWarning(false)}>
-                OK
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

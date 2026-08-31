@@ -47,6 +47,19 @@ export default function App() {
   const [exportChoice, setExportChoice] = useState<{ format: 'csv' | 'xlsx' } | null>(null);
   const exportDialogRef = useRef<HTMLDivElement>(null);
 
+  // Padding is always typed as "." now (Settings/New Taxonomy no longer offer "0" — some ERPs
+  // still can't accept "." in a code field, so that's handled as a one-off substitution on the
+  // way out, per export, rather than a taxonomy-wide setting that risks getting left on by
+  // habit). Only offered when the taxonomy's own padding character is still ".": an older
+  // project already configured with "0" has nothing to substitute.
+  const [paddingSubstituteChoice, setPaddingSubstituteChoice] = useState<{
+    mode: 'discrete' | 'concatenated';
+  } | null>(null);
+  const paddingSubstituteDialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (paddingSubstituteChoice) paddingSubstituteDialogRef.current?.focus();
+  }, [paddingSubstituteChoice]);
+
   // Save/Export both check for a code cell left blank within a row's own valid range first —
   // easy to overlook mid-entry, and worth a nudge before the file goes out the door. "Accept"
   // proceeds with whichever save/export action was actually requested; "Cancel" backs out
@@ -82,6 +95,11 @@ export default function App() {
   useEffect(() => {
     loadHelpText().then(setHelpText);
   }, []);
+
+  // Worksheet Guidance (process/convention guidance for building this taxonomy, as opposed to
+  // the per-field help icons): collapsed to a short preview by default since it's expected to
+  // hold a fair amount of text, with a click to expand to the full thing.
+  const [guidanceExpanded, setGuidanceExpanded] = useState(false);
 
   async function handleChooseFolder() {
     const folder = await chooseExportFolder();
@@ -216,18 +234,19 @@ export default function App() {
     fileInputRef.current?.click();
   }
 
-  async function performExport(mode: 'discrete' | 'concatenated') {
+  async function performExport(mode: 'discrete' | 'concatenated', paddingOverride?: string) {
     if (!project || !exportChoice) return;
     const { format } = exportChoice;
+    const options = paddingOverride ? { paddingOverride } : undefined;
     let versioned: TaxonomyProject;
     let usedFolder: boolean;
     let cancelled: boolean;
     if (format === 'csv') {
       ({ project: versioned, usedFolder, cancelled } =
-        mode === 'discrete' ? await exportDiscreteCsv(project) : await exportConcatenatedCsv(project));
+        mode === 'discrete' ? await exportDiscreteCsv(project, options) : await exportConcatenatedCsv(project, options));
     } else {
       ({ project: versioned, usedFolder, cancelled } =
-        mode === 'discrete' ? await exportDiscreteXlsx(project) : await exportConcatenatedXlsx(project));
+        mode === 'discrete' ? await exportDiscreteXlsx(project, options) : await exportConcatenatedXlsx(project, options));
     }
     setExportChoice(null);
     if (cancelled) return; // backed out of the Save As dialog — nothing happened
@@ -236,13 +255,26 @@ export default function App() {
     else setExportFolderName(null);
   }
 
+  // Between choosing Discrete/Concatenated and actually exporting: if the taxonomy's codes are
+  // still padded with "." (the only option Settings/New Taxonomy offer now), ask whether to
+  // substitute "0" in this one export's output — a one-off, per-file choice rather than a
+  // standing setting, since it's meant only for the rare ERP that genuinely can't accept ".".
+  function proceedToExport(mode: 'discrete' | 'concatenated') {
+    if (!project) return;
+    if (project.settings.paddingChar === '.') {
+      setPaddingSubstituteChoice({ mode });
+    } else {
+      performExport(mode);
+    }
+  }
+
   function runExport(mode: 'discrete' | 'concatenated') {
     if (!project) return;
     if (hasBlankCodeGaps(project.rows)) {
-      setBlankCodeWarning({ action: () => performExport(mode) });
+      setBlankCodeWarning({ action: () => proceedToExport(mode) });
       return;
     }
-    performExport(mode);
+    proceedToExport(mode);
   }
 
   async function performCreateBlock() {
@@ -322,7 +354,6 @@ export default function App() {
       settings: {
         ...project.settings,
         maxDescriptionLength: fields.maxDescriptionLength,
-        paddingChar: fields.paddingChar,
         codeDelimiterChar: fields.codeDelimiterChar,
         indentChar: fields.indentChar,
         numLevels: newNumLevels,
@@ -436,12 +467,25 @@ export default function App() {
             <p className="table-name">Table: {project.tableName}</p>
             {project.purpose && <p className="purpose">{project.purpose}</p>}
           </section>
+          <section className={`worksheet-guidance ${guidanceExpanded ? 'expanded' : 'collapsed'}`}>
+            <div className="worksheet-guidance-text">
+              {helpText.worksheetGuidance?.trim() || 'No worksheet guidance has been added yet.'}
+            </div>
+            <button
+              type="button"
+              className="worksheet-guidance-toggle"
+              onClick={() => setGuidanceExpanded((e) => !e)}
+            >
+              {guidanceExpanded ? 'Show less ▴' : 'Show more ▾'}
+            </button>
+          </section>
           <Grid
             key={projectGeneration}
             settings={project.settings}
             rows={project.rows}
             onChange={handleRowsChange}
             onSettingsAndRowsChange={handleSettingsAndRowsChange}
+            helpText={helpText}
             autoFocusFirstRow={autoFocusFirstRow}
           />
           <footer className="app-footer">
@@ -485,6 +529,50 @@ export default function App() {
               </button>
               <button type="button" onClick={() => runExport('concatenated')}>
                 Concatenated
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {paddingSubstituteChoice && (
+        <div className="validation-overlay" onClick={() => setPaddingSubstituteChoice(null)}>
+          <div
+            ref={paddingSubstituteDialogRef}
+            className="validation-dialog"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <p>
+              It is strongly recommended NOT to use "0" unless the target software absolutely
+              blocks "." and after detailed technical assessment "." is simply not permissible.
+              Note that "0" makes use of the taxonomy less effective in analysis and manipulation
+              of the content.
+            </p>
+            <div className="confirm-dialog-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  const { mode } = paddingSubstituteChoice;
+                  setPaddingSubstituteChoice(null);
+                  performExport(mode);
+                }}
+              >
+                Keep "."
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const { mode } = paddingSubstituteChoice;
+                  setPaddingSubstituteChoice(null);
+                  performExport(mode, '0');
+                }}
+              >
+                Replace with "0"
               </button>
             </div>
           </div>

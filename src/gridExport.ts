@@ -125,6 +125,22 @@ function csvEscape(value: string): string {
   return value;
 }
 
+// Returns a project whose row codes have every occurrence of the taxonomy's own configured
+// padding character replaced with `replacement` — used only to build the bytes of one export,
+// never returned to the caller as the project's new state (the real, stored project always
+// keeps its own padding character exactly as typed; only the exported file's content changes).
+function withPaddingSubstitution(project: TaxonomyProject, replacement: string | undefined): TaxonomyProject {
+  if (!replacement) return project;
+  const target = project.settings.paddingChar;
+  return {
+    ...project,
+    rows: project.rows.map((row) => ({
+      ...row,
+      codes: row.codes.map((c) => (c === target ? replacement : c)),
+    })),
+  };
+}
+
 // File names carry a descriptor of which export they are, plus a " v1.NN" version suffix that
 // increments every time that same file (same descriptor/format) is written again — a taxonomy
 // typically ends up with several files side by side in the same folder, e.g.
@@ -137,9 +153,10 @@ function exportFilename(project: TaxonomyProject, descriptor: string, extension:
 
 export async function exportDiscreteCsv(
   project: TaxonomyProject,
+  options?: { paddingOverride?: string },
 ): Promise<{ project: TaxonomyProject; usedFolder: boolean; cancelled: boolean }> {
   const { project: versioned, versionLabel } = bumpFileVersion(project, 'discrete-csv');
-  const { header, rows } = buildDiscreteGrid(project);
+  const { header, rows } = buildDiscreteGrid(withPaddingSubstitution(project, options?.paddingOverride));
   const csv = [header, ...rows].map((line) => line.map(csvEscape).join(',')).join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const { usedFolder, cancelled } = await saveExportFile(blob, exportFilename(project, 'Per Column', 'csv', versionLabel));
@@ -148,12 +165,13 @@ export async function exportDiscreteCsv(
 
 export async function exportDiscreteXlsx(
   project: TaxonomyProject,
+  options?: { paddingOverride?: string },
 ): Promise<{ project: TaxonomyProject; usedFolder: boolean; cancelled: boolean }> {
   const { project: versioned, versionLabel } = bumpFileVersion(project, 'discrete-xlsx');
   // exceljs is a large dependency needed only for this one export path — code-split so it
   // doesn't inflate the initial bundle for everyone who never exports to Excel.
   const ExcelJS = (await import('exceljs')).default;
-  const { header, rows, columns } = buildDiscreteGrid(project);
+  const { header, rows, columns } = buildDiscreteGrid(withPaddingSubstitution(project, options?.paddingOverride));
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet((project.tableName || 'Taxonomy').slice(0, 31));
 
@@ -221,9 +239,10 @@ export async function exportDiscreteXlsx(
 
 export async function exportConcatenatedCsv(
   project: TaxonomyProject,
+  options?: { paddingOverride?: string },
 ): Promise<{ project: TaxonomyProject; usedFolder: boolean; cancelled: boolean }> {
   const { project: versioned, versionLabel } = bumpFileVersion(project, 'concatenated-csv');
-  const { header, rows } = buildConcatenatedGrid(project);
+  const { header, rows } = buildConcatenatedGrid(withPaddingSubstitution(project, options?.paddingOverride));
   const csv = [header, ...rows].map((line) => line.map(csvEscape).join(',')).join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const { usedFolder, cancelled } = await saveExportFile(blob, exportFilename(project, 'Concatenated', 'csv', versionLabel));
@@ -232,10 +251,11 @@ export async function exportConcatenatedCsv(
 
 export async function exportConcatenatedXlsx(
   project: TaxonomyProject,
+  options?: { paddingOverride?: string },
 ): Promise<{ project: TaxonomyProject; usedFolder: boolean; cancelled: boolean }> {
   const { project: versioned, versionLabel } = bumpFileVersion(project, 'concatenated-xlsx');
   const ExcelJS = (await import('exceljs')).default;
-  const { header, rows } = buildConcatenatedGrid(project);
+  const { header, rows } = buildConcatenatedGrid(withPaddingSubstitution(project, options?.paddingOverride));
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet((project.tableName || 'Taxonomy').slice(0, 31));
 
