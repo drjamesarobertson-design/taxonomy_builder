@@ -61,14 +61,19 @@ export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange
   const suffixTotalWidth = suffixes.reduce((sum, s) => sum + 1 + s.width, 0);
   const overflowChars = Math.max(4, maxDescriptionLength - numLevels - suffixTotalWidth);
 
-  // Items 5/6: a caret button under each column header (description columns and code columns
-  // alike) collapses the working view down to that column — hiding every row whose deepest
-  // content sits further right — so a long taxonomy can be worked on level by level without
-  // scrolling past everything beneath. This is purely a display filter: it never touches
-  // `rows` itself, so every index-based operation elsewhere (context menus, insert-row math,
-  // drag-select) keeps working against the real, complete row list exactly as before — hidden
-  // rows are hidden with CSS only. null means nothing is collapsed (show every row).
-  const [collapseLevel, setCollapseLevel] = useState<number | null>(null);
+  // Items 5/6: a caret button under each column header collapses/filters the working view —
+  // so a long taxonomy can be worked on level by level without scrolling past everything
+  // beneath. Purely a display filter: it never touches `rows` itself, so every index-based
+  // operation elsewhere (context menus, insert-row math, drag-select) keeps working against
+  // the real, complete row list exactly as before — hidden rows are hidden with CSS only.
+  // The two column types filter differently: a description-column caret collapses to that
+  // level (show that column or shallower); a code-column caret instead filters on content —
+  // only rows whose code in that exact column is the padding character "." — since James
+  // asked for the code side to literally filter on "." rather than mirror the level collapse.
+  // null means nothing is filtered (show every row).
+  const [collapseFilter, setCollapseFilter] = useState<
+    { kind: 'level'; level: number } | { kind: 'codeDot'; level: number } | null
+  >(null);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [anchorRowId, setAnchorRowId] = useState<string | null>(null);
   const [anchorLevel, setAnchorLevel] = useState<number | null>(null);
@@ -1799,10 +1804,12 @@ export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange
         style={{ display: 'none' }}
         onChange={handleBlockFileSelected}
       />
-      {collapseLevel !== null && (
+      {collapseFilter !== null && (
         <div className="collapse-banner">
-          Showing entries down to column {collapseLevel + 1} only.
-          <button type="button" onClick={() => setCollapseLevel(null)}>
+          {collapseFilter.kind === 'level'
+            ? `Showing entries down to column ${collapseFilter.level + 1} only.`
+            : `Showing only rows padded with "${paddingChar}" in code column ${collapseFilter.level + 1}.`}
+          <button type="button" onClick={() => setCollapseFilter(null)}>
             Show All
           </button>
         </div>
@@ -1830,12 +1837,18 @@ export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange
                     <span>{level + 1}</span>
                     <button
                       type="button"
-                      className={`collapse-caret${collapseLevel === level ? ' collapse-caret-active' : ''}`}
-                      onClick={() => setCollapseLevel(collapseLevel === level ? null : level)}
+                      className={`collapse-caret${collapseFilter?.kind === 'codeDot' && collapseFilter.level === level ? ' collapse-caret-active' : ''}`}
+                      onClick={() =>
+                        setCollapseFilter(
+                          collapseFilter?.kind === 'codeDot' && collapseFilter.level === level
+                            ? null
+                            : { kind: 'codeDot', level },
+                        )
+                      }
                       title={
-                        collapseLevel === level
+                        collapseFilter?.kind === 'codeDot' && collapseFilter.level === level
                           ? 'Show all rows again'
-                          : `Filter/Collapse — hide rows with descriptions beyond column ${level + 1}`
+                          : `Filter — show only rows padded with "${paddingChar}" in this column`
                       }
                     >
                       ▾
@@ -1856,10 +1869,16 @@ export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange
                   <span>{level + 1}</span>
                   <button
                     type="button"
-                    className={`collapse-caret${collapseLevel === level ? ' collapse-caret-active' : ''}`}
-                    onClick={() => setCollapseLevel(collapseLevel === level ? null : level)}
+                    className={`collapse-caret${collapseFilter?.kind === 'level' && collapseFilter.level === level ? ' collapse-caret-active' : ''}`}
+                    onClick={() =>
+                      setCollapseFilter(
+                        collapseFilter?.kind === 'level' && collapseFilter.level === level
+                          ? null
+                          : { kind: 'level', level },
+                      )
+                    }
                     title={
-                      collapseLevel === level
+                      collapseFilter?.kind === 'level' && collapseFilter.level === level
                         ? 'Show all rows again'
                         : `Filter/Collapse — hide rows with descriptions beyond column ${level + 1}`
                     }
@@ -1885,9 +1904,15 @@ export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange
         </thead>
         <tbody>
           {rows.map((row, rowIndex) => {
+            const isFilteredOut =
+              collapseFilter?.kind === 'level'
+                ? levelOf(row) > collapseFilter.level
+                : collapseFilter?.kind === 'codeDot'
+                  ? (row.codes[collapseFilter.level] ?? '') !== paddingChar
+                  : false;
             const rowClasses = [
               moveMode?.rowIds.has(row.id) ? 'row-moving' : copyMode?.rowIds.has(row.id) ? 'row-copying' : null,
-              collapseLevel !== null && levelOf(row) > collapseLevel ? 'row-collapsed' : null,
+              isFilteredOut ? 'row-collapsed' : null,
             ]
               .filter(Boolean)
               .join(' ');
