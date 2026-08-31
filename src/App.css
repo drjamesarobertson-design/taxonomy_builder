@@ -315,6 +315,8 @@ body.app-dark-theme .taxonomy-meta .purpose {
 .settings-modal {
   text-align: left;
   max-width: 28rem;
+  max-height: 85vh;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 0.6rem;

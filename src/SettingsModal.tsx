@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import type { TaxonomyProject } from './types';
+import type { TaxonomyProject, TaxonomyRow } from './types';
+import { MAX_LEVELS } from './types';
 
 export interface SettingsFields {
   title: string;
@@ -9,6 +10,8 @@ export interface SettingsFields {
   paddingChar: string;
   codeDelimiterChar: string;
   indentChar: string;
+  numLevels: number;
+  delimiterPositions: number[];
 }
 
 interface SettingsModalProps {
@@ -19,13 +22,25 @@ interface SettingsModalProps {
 
 const CODE_DELIMITER_OPTIONS = ['-', '_', '+', '=', '/'];
 
-// Item 14: a way back to the taxonomy's own settings from the working grid screen, without
-// having to start over. Only the fields that stay safe to change after rows already exist are
-// editable here — title/table name/purpose (pure metadata), the description length warning
-// threshold, the padding character, the code delimiter, and the Concatenated-export indent
-// character. Number of code columns, delimiter positions, and suffix configuration are
-// structural — changing them after data exists risks orphaning or misreading existing rows —
-// so they're deliberately left out of this modal; a new taxonomy is the way to change those.
+// A row's level is the position of its deepest populated description column (Section 4.1);
+// -1 means the row has no description at all yet.
+function levelOf(row: TaxonomyRow): number {
+  for (let i = row.descriptions.length - 1; i >= 0; i--) {
+    if ((row.descriptions[i] ?? '').trim()) return i;
+  }
+  return -1;
+}
+
+// Item 14 (extended): a way back to the taxonomy's own settings from the working grid screen,
+// without having to start over. Most fields here are pure metadata or cosmetic (title, purpose,
+// padding/delimiter characters) and are always safe to change. Number of code columns is
+// structural, but changing it is only actually risky in one direction — growing it is exactly
+// what "Add Column" already does mid-grid (new columns start blank), while shrinking it is only
+// offered down to whatever's still safe given the rows already there, checked below. Delimiter
+// positions are purely a display/export concern — they're never part of a row's own stored
+// data — so they're freely editable regardless of what's already in the grid. Suffix
+// configuration remains genuinely structural (each row's own suffixValues are keyed by
+// position), so it's still left out of this modal — a new taxonomy is the way to change that.
 export default function SettingsModal({ project, onSave, onClose }: SettingsModalProps) {
   const [title, setTitle] = useState(project.title);
   const [tableName, setTableName] = useState(project.tableName);
@@ -42,6 +57,35 @@ export default function SettingsModal({ project, onSave, onClose }: SettingsModa
   );
   const [indentCharError, setIndentCharError] = useState<string | null>(null);
 
+  const [numLevelsText, setNumLevelsText] = useState(String(project.settings.numLevels));
+  const [numLevelsError, setNumLevelsError] = useState<string | null>(null);
+  const [delimiterPositions, setDelimiterPositions] = useState<number[]>(project.settings.delimiterPositions);
+
+  // The fewest columns that would still hold every row's actual content — a decrease below
+  // this would silently cut off real descriptions/codes, so it's blocked rather than allowed
+  // through with a data-loss warning; nothing here is actually gained by cutting it that close
+  // when the user can just leave the extra columns blank instead.
+  const maxRowLevel = Math.max(-1, ...project.rows.map(levelOf));
+  const minSafeLevels = Math.max(1, maxRowLevel + 1);
+
+  function addDelimiter() {
+    const numLevels = Math.max(1, Number(numLevelsText) || project.settings.numLevels);
+    const last = delimiterPositions[delimiterPositions.length - 1] ?? 0;
+    const next = Math.min(numLevels - 1, last + 3 || 3);
+    if (next < 1) return;
+    setDelimiterPositions([...delimiterPositions, next]);
+  }
+
+  function updateDelimiter(index: number, value: number) {
+    const numLevels = Math.max(1, Number(numLevelsText) || project.settings.numLevels);
+    const clamped = Math.max(1, Math.min(numLevels - 1, value));
+    setDelimiterPositions(delimiterPositions.map((p, i) => (i === index ? clamped : p)));
+  }
+
+  function removeDelimiter(index: number) {
+    setDelimiterPositions(delimiterPositions.filter((_, i) => i !== index));
+  }
+
   function handleSave() {
     if (!title.trim() || !tableName.trim()) return;
     if (replaceIndentChar) {
@@ -51,6 +95,15 @@ export default function SettingsModal({ project, onSave, onClose }: SettingsModa
         return;
       }
     }
+    const numLevels = Math.max(1, Math.min(MAX_LEVELS, Number(numLevelsText) || project.settings.numLevels));
+    if (numLevels < minSafeLevels) {
+      setNumLevelsError(
+        `Column ${minSafeLevels} still holds real content — reduce it to at least ${minSafeLevels} columns, or clear that content first.`,
+      );
+      return;
+    }
+    setNumLevelsError(null);
+    const sortedDelimiters = [...new Set(delimiterPositions)].filter((p) => p < numLevels).sort((a, b) => a - b);
     const maxDescriptionLength = Math.max(
       1,
       Number(maxDescriptionLengthText) || project.settings.maxDescriptionLength,
@@ -63,6 +116,8 @@ export default function SettingsModal({ project, onSave, onClose }: SettingsModa
       paddingChar,
       codeDelimiterChar,
       indentChar: replaceIndentChar ? indentChar : ' ',
+      numLevels,
+      delimiterPositions: sortedDelimiters,
     });
   }
 
@@ -92,6 +147,25 @@ export default function SettingsModal({ project, onSave, onClose }: SettingsModa
           />
         </label>
         <label>
+          Number of Code Columns
+          <input
+            type="number"
+            min={minSafeLevels}
+            max={MAX_LEVELS}
+            value={numLevelsText}
+            onChange={(e) => {
+              setNumLevelsText(e.target.value);
+              setNumLevelsError(null);
+            }}
+            title={
+              minSafeLevels > 1
+                ? `Can't go below ${minSafeLevels} — that's as far as column ${minSafeLevels}'s own content reaches`
+                : undefined
+            }
+          />
+        </label>
+        {numLevelsError && <p className="field-error">{numLevelsError}</p>}
+        <label>
           Pad codes with trailing
           <select
             value={paddingChar}
@@ -115,6 +189,34 @@ export default function SettingsModal({ project, onSave, onClose }: SettingsModa
             ))}
           </select>
         </label>
+        <fieldset className="delimiter-setup">
+          <legend>Code Delimiters ("{codeDelimiterChar}")</legend>
+          {delimiterPositions.length === 0 && (
+            <p className="delimiter-empty">No delimiters — Insert "{codeDelimiterChar}" Code Delimiter?</p>
+          )}
+          {delimiterPositions.map((position, index) => (
+            <div className="delimiter-row" key={index}>
+              <div className="delimiter-row-fields">
+                <span>Insert "{codeDelimiterChar}" Code Delimiter — after how many code columns?</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={Math.max(1, Number(numLevelsText) || project.settings.numLevels) - 1}
+                  value={position}
+                  onChange={(e) => updateDelimiter(index, Number(e.target.value))}
+                />
+              </div>
+              <button type="button" className="delimiter-remove-btn" onClick={() => removeDelimiter(index)}>
+                Remove
+              </button>
+            </div>
+          ))}
+          {delimiterPositions.length < Math.max(1, Number(numLevelsText) || project.settings.numLevels) - 1 && (
+            <button type="button" onClick={addDelimiter}>
+              + Insert {delimiterPositions.length > 0 ? 'Further ' : ''}Delimiter
+            </button>
+          )}
+        </fieldset>
         <label className="checkbox-label">
           <input
             type="checkbox"
@@ -141,9 +243,8 @@ export default function SettingsModal({ project, onSave, onClose }: SettingsModa
         )}
         {indentCharError && <p className="field-error">{indentCharError}</p>}
         <p className="field-warning">
-          Number of code columns, delimiter positions, and description suffixes are structural
-          — they can't be changed here once a taxonomy has rows. Start a new taxonomy if you
-          need to change those.
+          Description suffixes are structural — they can't be changed here once a taxonomy has
+          rows. Start a new taxonomy if you need to change those.
         </p>
         <div className="confirm-dialog-actions">
           <button type="button" onClick={onClose}>
