@@ -61,6 +61,14 @@ export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange
   const suffixTotalWidth = suffixes.reduce((sum, s) => sum + 1 + s.width, 0);
   const overflowChars = Math.max(4, maxDescriptionLength - numLevels - suffixTotalWidth);
 
+  // Items 5/6: a caret button under each column header (description columns and code columns
+  // alike) collapses the working view down to that column — hiding every row whose deepest
+  // content sits further right — so a long taxonomy can be worked on level by level without
+  // scrolling past everything beneath. This is purely a display filter: it never touches
+  // `rows` itself, so every index-based operation elsewhere (context menus, insert-row math,
+  // drag-select) keeps working against the real, complete row list exactly as before — hidden
+  // rows are hidden with CSS only. null means nothing is collapsed (show every row).
+  const [collapseLevel, setCollapseLevel] = useState<number | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [anchorRowId, setAnchorRowId] = useState<string | null>(null);
   const [anchorLevel, setAnchorLevel] = useState<number | null>(null);
@@ -500,6 +508,25 @@ export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange
           confirmLabel: 'Override',
           onConfirm: () => updateCode(rowId, level, value, { ...options, skipOrderCheck: true }),
         });
+        return;
+      }
+    }
+
+    // The deepest code column has no column to its right to distinguish siblings under
+    // different parents — two leaf rows that happen to land on the same character, with
+    // nothing but "." padding rows separating them, would otherwise look like a single
+    // contiguous run. This is narrower than (and independent of) the ascending-order check
+    // above: it only compares against the immediate neighbour rows, not the whole sibling
+    // group, and it is a hard block with no override.
+    if (char !== '' && !isPadding && level === numLevels - 1 && char !== oldValue) {
+      const aboveValue = editIndex > 0 ? (rows[editIndex - 1].codes[level] ?? '') : '';
+      const belowValue = editIndex < rows.length - 1 ? (rows[editIndex + 1].codes[level] ?? '') : '';
+      const aboveReal = aboveValue !== '' && aboveValue !== paddingChar;
+      const belowReal = belowValue !== '' && belowValue !== paddingChar;
+      if ((aboveReal && aboveValue === char) || (belowReal && belowValue === char)) {
+        showValidationError(
+          'Ending codes within a code block delimited by "." at start and end must be unique, please change one of these codes',
+        );
         return;
       }
     }
@@ -1096,6 +1123,23 @@ export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange
     );
     setSelection(null);
     setContextMenu(null);
+  }
+
+  // Right-click "Clear Codes and Start Again" — a deliberate reset of every code in the whole
+  // taxonomy, not just the selected column/rows (unlike "Delete Codes" above), for when coding
+  // has gone wrong enough that starting over is easier than fixing it cell by cell. Descriptions
+  // and the hierarchy itself are untouched. Destructive across the entire grid, so it's always
+  // gated behind an explicit confirmation, with no way to target just part of the taxonomy.
+  function handleClearAllCodes() {
+    if (!contextMenu || contextMenu.kind !== 'code') return;
+    setContextMenu(null);
+    setConfirmDialog({
+      message: 'This will clear every code in the entire taxonomy. Continue?',
+      confirmLabel: 'Confirm',
+      onConfirm: () => {
+        onChange(rows.map((row) => ({ ...row, codes: row.codes.map(() => '') })));
+      },
+    });
   }
 
   // Right-click "Replicate Codes Above" — recovers codes that were deleted (or never
@@ -1755,6 +1799,14 @@ export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange
         style={{ display: 'none' }}
         onChange={handleBlockFileSelected}
       />
+      {collapseLevel !== null && (
+        <div className="collapse-banner">
+          Showing entries down to column {collapseLevel + 1} only.
+          <button type="button" onClick={() => setCollapseLevel(null)}>
+            Show All
+          </button>
+        </div>
+      )}
       <table className="taxonomy-grid">
         <thead>
           <tr>
@@ -1774,7 +1826,21 @@ export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange
             {levels.map((level) => (
               <Fragment key={`code-h-${level}`}>
                 <th className="code-col" style={{ backgroundColor: getLevelColor(level) }}>
-                  {level + 1}
+                  <div className="level-header">
+                    <span>{level + 1}</span>
+                    <button
+                      type="button"
+                      className={`collapse-caret${collapseLevel === level ? ' collapse-caret-active' : ''}`}
+                      onClick={() => setCollapseLevel(collapseLevel === level ? null : level)}
+                      title={
+                        collapseLevel === level
+                          ? 'Show all rows again'
+                          : `Filter/Collapse — hide rows with descriptions beyond column ${level + 1}`
+                      }
+                    >
+                      ▾
+                    </button>
+                  </div>
                 </th>
                 {delimiterPositions.includes(level + 1) && <th className="delim-col">&nbsp;</th>}
               </Fragment>
@@ -1786,7 +1852,21 @@ export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange
                 className="desc-col"
                 style={{ backgroundColor: getLevelColor(level) }}
               >
-                {level + 1}
+                <div className="level-header">
+                  <span>{level + 1}</span>
+                  <button
+                    type="button"
+                    className={`collapse-caret${collapseLevel === level ? ' collapse-caret-active' : ''}`}
+                    onClick={() => setCollapseLevel(collapseLevel === level ? null : level)}
+                    title={
+                      collapseLevel === level
+                        ? 'Show all rows again'
+                        : `Filter/Collapse — hide rows with descriptions beyond column ${level + 1}`
+                    }
+                  >
+                    ▾
+                  </button>
+                </div>
               </th>
             ))}
             <th className="overflow-col" style={{ width: `${overflowChars}ch` }}>
@@ -1804,16 +1884,17 @@ export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, rowIndex) => (
+          {rows.map((row, rowIndex) => {
+            const rowClasses = [
+              moveMode?.rowIds.has(row.id) ? 'row-moving' : copyMode?.rowIds.has(row.id) ? 'row-copying' : null,
+              collapseLevel !== null && levelOf(row) > collapseLevel ? 'row-collapsed' : null,
+            ]
+              .filter(Boolean)
+              .join(' ');
+            return (
             <tr
               key={row.id}
-              className={
-                moveMode?.rowIds.has(row.id)
-                  ? 'row-moving'
-                  : copyMode?.rowIds.has(row.id)
-                    ? 'row-copying'
-                    : undefined
-              }
+              className={rowClasses || undefined}
             >
               <td className="row-number-col">{rowIndex + 1}</td>
               {levels.map((level) => {
@@ -1953,7 +2034,8 @@ export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange
                 </button>
               </td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
       <button type="button" className="add-row-btn" onClick={addRow}>
@@ -2011,6 +2093,7 @@ export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange
               <li onClick={handleCopyCodesBlock}>Copy Codes</li>
               {codeClipboard && <li onClick={handlePasteCodesBlock}>Paste Codes</li>}
               <li onClick={handleImportBlockMenuClick}>Import Block</li>
+              <li onClick={handleClearAllCodes}>Clear Codes and Start Again</li>
               <li onClick={() => handleGridMenuHelp('gridCodeMenuHelp')}>Help</li>
             </>
           )}

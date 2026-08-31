@@ -598,6 +598,49 @@ body.app-dark-theme .taxonomy-meta .purpose {
   outline-offset: -2px;
 }
 
+.level-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+
+.collapse-caret {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.7rem;
+  line-height: 1;
+  padding: 1px 2px;
+  color: #555;
+  border-radius: 2px;
+}
+
+.collapse-caret:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.collapse-caret-active {
+  background: #102a5c;
+  color: #fff;
+}
+
+.row-collapsed {
+  display: none;
+}
+
+.collapse-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff6da;
+  border: 1px solid #e6d17a;
+  border-radius: 4px;
+  padding: 4px 10px;
+  margin-bottom: 6px;
+  font-size: 0.85rem;
+}
+
 .taxonomy-grid .overflow-col {
   border-right: 2px dashed #999;
   background: #fbfbfb;

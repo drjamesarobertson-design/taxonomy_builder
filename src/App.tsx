@@ -54,6 +54,7 @@ export default function App() {
   // project already configured with "0" has nothing to substitute.
   const [paddingSubstituteChoice, setPaddingSubstituteChoice] = useState<{
     mode: 'discrete' | 'concatenated';
+    excludeDelimiters?: boolean;
   } | null>(null);
   const paddingSubstituteDialogRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -234,10 +235,10 @@ export default function App() {
     fileInputRef.current?.click();
   }
 
-  async function performExport(mode: 'discrete' | 'concatenated', paddingOverride?: string) {
+  async function performExport(mode: 'discrete' | 'concatenated', paddingOverride?: string, excludeDelimiters?: boolean) {
     if (!project || !exportChoice) return;
     const { format } = exportChoice;
-    const options = paddingOverride ? { paddingOverride } : undefined;
+    const options = { ...(paddingOverride ? { paddingOverride } : {}), ...(excludeDelimiters ? { excludeDelimiters } : {}) };
     let versioned: TaxonomyProject;
     let usedFolder: boolean;
     let cancelled: boolean;
@@ -259,22 +260,22 @@ export default function App() {
   // still padded with "." (the only option Settings/New Taxonomy offer now), ask whether to
   // substitute "0" in this one export's output — a one-off, per-file choice rather than a
   // standing setting, since it's meant only for the rare ERP that genuinely can't accept ".".
-  function proceedToExport(mode: 'discrete' | 'concatenated') {
+  function proceedToExport(mode: 'discrete' | 'concatenated', excludeDelimiters?: boolean) {
     if (!project) return;
     if (project.settings.paddingChar === '.') {
-      setPaddingSubstituteChoice({ mode });
+      setPaddingSubstituteChoice({ mode, excludeDelimiters });
     } else {
-      performExport(mode);
+      performExport(mode, undefined, excludeDelimiters);
     }
   }
 
-  function runExport(mode: 'discrete' | 'concatenated') {
+  function runExport(mode: 'discrete' | 'concatenated', excludeDelimiters?: boolean) {
     if (!project) return;
     if (hasBlankCodeGaps(project.rows)) {
-      setBlankCodeWarning({ action: () => proceedToExport(mode) });
+      setBlankCodeWarning({ action: () => proceedToExport(mode, excludeDelimiters) });
       return;
     }
-    proceedToExport(mode);
+    proceedToExport(mode, excludeDelimiters);
   }
 
   async function performCreateBlock() {
@@ -530,6 +531,16 @@ export default function App() {
               <button type="button" onClick={() => runExport('concatenated')}>
                 Concatenated
               </button>
+              {exportChoice.format === 'csv' && (
+                <>
+                  <button type="button" onClick={() => runExport('discrete', true)}>
+                    Discrete Columns (No Delimiter)
+                  </button>
+                  <button type="button" onClick={() => runExport('concatenated', true)}>
+                    Concatenated (No Delimiter)
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -557,9 +568,9 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
-                  const { mode } = paddingSubstituteChoice;
+                  const { mode, excludeDelimiters } = paddingSubstituteChoice;
                   setPaddingSubstituteChoice(null);
-                  performExport(mode);
+                  performExport(mode, undefined, excludeDelimiters);
                 }}
               >
                 Keep "."
@@ -567,9 +578,9 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
-                  const { mode } = paddingSubstituteChoice;
+                  const { mode, excludeDelimiters } = paddingSubstituteChoice;
                   setPaddingSubstituteChoice(null);
-                  performExport(mode, '0');
+                  performExport(mode, '0', excludeDelimiters);
                 }}
               >
                 Replace with "0"
