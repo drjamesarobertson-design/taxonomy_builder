@@ -66,6 +66,11 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
   // firing only once ever.
   const [showCapsNotice, setShowCapsNotice] = useState(false);
   const capsNoticeShownRef = useRef(false);
+  // The physical Caps Lock key's last-known state, tracked from real keystrokes anywhere in
+  // the grid — browsers only expose it via KeyboardEvent.getModifierState, so it can't be
+  // queried on demand; null means "no keystroke observed yet, state unknown".
+  const capsLockOnRef = useRef<boolean | null>(null);
+  const [capsNoticeSuggestCapsLock, setCapsNoticeSuggestCapsLock] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
     message: string;
     confirmLabel?: string;
@@ -155,6 +160,19 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     };
     window.addEventListener('mouseup', endDrag);
     return () => window.removeEventListener('mouseup', endDrag);
+  }, []);
+
+  useEffect(() => {
+    // Caps Lock state has no on-demand query — only a live KeyboardEvent exposes it — so it's
+    // tracked passively from whatever typing happens anywhere in the grid, ready by the time
+    // the one-time capitalization notice needs it.
+    const trackCapsLock = (e: KeyboardEvent) => {
+      if (typeof e.getModifierState === 'function') {
+        capsLockOnRef.current = e.getModifierState('CapsLock');
+      }
+    };
+    window.addEventListener('keydown', trackCapsLock);
+    return () => window.removeEventListener('keydown', trackCapsLock);
   }, []);
 
   useEffect(() => {
@@ -1558,6 +1576,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
                               // finishes — swallowing that click instead of acting on it.
                               if (!capsNoticeShownRef.current && (row.descriptions[0] ?? '').trim()) {
                                 capsNoticeShownRef.current = true;
+                                setCapsNoticeSuggestCapsLock(capsLockOnRef.current === false);
                                 setTimeout(() => setShowCapsNotice(true), 0);
                               }
                             }
@@ -1915,7 +1934,10 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
               e.stopPropagation();
             }}
           >
-            <p>All headings should be capitalized</p>
+            <p>
+              All headings should be capitalized
+              {capsNoticeSuggestCapsLock ? ' — please turn Caps Lock on.' : ''}
+            </p>
             <button type="button" onClick={() => setShowCapsNotice(false)}>
               OK
             </button>
