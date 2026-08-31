@@ -286,15 +286,16 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     return { upper, lower };
   }
 
-  // Fills columns [fromLevel, numLevels) of the row at editIndex with the padding character,
-  // then cascades that same padding down through each of those columns independently into
-  // every row below within the same parent group, stopping at the first non-blank cell in
-  // each column — identical mechanics whether triggered by the user typing the padding
-  // character directly, or automatically once a leaf row's own real code is completed
-  // (Section 5: "the remaining Code Columns on that row will auto populate with '.'"). Always
-  // reaches the actual last configured code column — there's no reason a posting-level entry's
-  // trailing padding should stop short of it just because no other row happens to go as deep.
-  function padFromLevel(rowsIn: TaxonomyRow[], editIndex: number, fromLevel: number): TaxonomyRow[] {
+  // Fills columns [fromLevel, toLevel] of the row at editIndex with the padding character, then
+  // cascades that same padding down through each of those columns independently into every row
+  // below within the same parent group, stopping at the first non-blank cell in each column —
+  // identical mechanics whether triggered by the user typing the padding character directly, or
+  // automatically once a leaf row's own real code is completed (Section 5: "the remaining Code
+  // Columns on that row will auto populate with '.'"). toLevel is always the deepest description
+  // column written anywhere in the taxonomy (the caller passes getMaxDescriptionColumn()) —
+  // padding only ever spans the range of columns that actually correspond to a description
+  // somewhere; there's no level of hierarchy deeper than that yet for it to mean anything.
+  function padFromLevel(rowsIn: TaxonomyRow[], editIndex: number, fromLevel: number, toLevel: number): TaxonomyRow[] {
     const parentValue = fromLevel > 0 ? (rowsIn[editIndex].codes[fromLevel - 1] ?? '') : null;
     let end = rowsIn.length;
     for (let i = editIndex + 1; i < rowsIn.length; i++) {
@@ -306,10 +307,10 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     }
     const updated = rowsIn.map((row, idx) => {
       if (idx !== editIndex) return { ...row, codes: [...row.codes] };
-      const codes = row.codes.map((c, i) => (i >= fromLevel ? paddingChar : c));
+      const codes = row.codes.map((c, i) => (i >= fromLevel && i <= toLevel ? paddingChar : c));
       return { ...row, codes };
     });
-    for (let c = fromLevel; c < numLevels; c++) {
+    for (let c = fromLevel; c <= toLevel; c++) {
       for (let i = editIndex + 1; i < end; i++) {
         if ((updated[i].codes[c] ?? '') === '') {
           updated[i].codes[c] = paddingChar;
@@ -345,11 +346,15 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
       return;
     }
 
-    // Codes must populate left to right — every column before this one must already hold
-    // a value (real or padding) before this one can.
+    // Codes must populate left to right — every column before this one must already hold a
+    // value before this one can. The padding character is a filler that only ever belongs at
+    // the end of a code string (Section 4.4) — it's never a valid "real" code to build on top
+    // of, so a padding character sitting to the left doesn't satisfy this for a genuinely new
+    // real code (only for more padding continuing the same run rightward).
     if (char !== '') {
       for (let i = 0; i < level; i++) {
-        if (!(rows[editIndex].codes[i] ?? '')) {
+        const leftValue = rows[editIndex].codes[i] ?? '';
+        if (!leftValue || (!isPadding && leftValue === paddingChar)) {
           showValidationError('Codes must advance from left to right');
           return;
         }
@@ -411,7 +416,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     }
 
     if (isPadding) {
-      onChange(padFromLevel(rows, editIndex, level), `code:${level}:${rowId}`);
+      onChange(padFromLevel(rows, editIndex, level, maxDescCol), `code:${level}:${rowId}`);
       return;
     }
 
@@ -445,10 +450,10 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
 
     // Completing a leaf row's own code (Section 5: "the remaining Code Columns on that row
     // will auto populate with '.'") — any row that just received this real value at exactly
-    // its own significant level, and has no children, gets its remaining columns padded all
-    // the way to the last configured code column, exactly as if the user had typed the
-    // padding character into the next column themselves — rather than left for them to fill
-    // in by hand one at a time.
+    // its own significant level, and has no children, gets its remaining columns padded up to
+    // the deepest description written anywhere (never further — there's no code delimiter
+    // "-" or otherwise deeper hierarchy for padding to mean anything past that), exactly as
+    // if the user had typed the padding character into the next column themselves.
     if (char !== '' && !isPadding) {
       for (let idx = editIndex; idx < updated.length; idx++) {
         const row = updated[idx];
@@ -456,8 +461,8 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
         if (row.codes[level] !== char) continue;
         if (levelOf(row) !== level) continue;
         if (getDescendantEndIndex(idx) > idx + 1) continue; // has children — real codes still needed
-        if (level + 1 >= numLevels) continue; // already the last column — nothing to pad
-        updated = padFromLevel(updated, idx, level + 1);
+        if (level + 1 > maxDescCol) continue; // nothing deeper in use anywhere — nothing to pad
+        updated = padFromLevel(updated, idx, level + 1, maxDescCol);
       }
     }
 

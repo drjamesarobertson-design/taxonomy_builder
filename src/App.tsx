@@ -37,6 +37,11 @@ export default function App() {
   const [exportChoice, setExportChoice] = useState<{ format: 'csv' | 'xlsx' } | null>(null);
   const exportDialogRef = useRef<HTMLDivElement>(null);
 
+  // A save gave no visible sign it had happened — the button looked identical before and
+  // after. Flash its label to confirm the click actually registered and the file was written.
+  const [justSaved, setJustSaved] = useState(false);
+  const savedFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Item 14: a way back to the taxonomy's own settings from the working screen, since it's
   // easy to forget to adjust something (e.g. the description length limit) before the grid
   // fills up with rows built against it.
@@ -163,6 +168,9 @@ export default function App() {
     setDirty(false);
     if (usedFolder) peekExportFolderName().then(setExportFolderName);
     else setExportFolderName(null);
+    if (savedFlashTimer.current) clearTimeout(savedFlashTimer.current);
+    setJustSaved(true);
+    savedFlashTimer.current = setTimeout(() => setJustSaved(false), 1600);
   }
 
   function handleLoadClick() {
@@ -252,8 +260,8 @@ export default function App() {
               </button>
             )}
             {project && (
-              <button type="button" onClick={handleSave}>
-                Save to File
+              <button type="button" className={justSaved ? 'save-flash' : undefined} onClick={handleSave}>
+                {justSaved ? 'Saved ✓' : 'Save to File'}
               </button>
             )}
             {project && (
