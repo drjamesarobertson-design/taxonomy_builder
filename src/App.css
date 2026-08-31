@@ -142,6 +142,40 @@
   border-color: #124fa8;
 }
 
+/* Sits above the New Taxonomy form, on the dark page background — loading a file replaces
+   whatever's been typed into the form below, so it's offered as the first choice, not buried
+   at the bottom of the create-new flow. */
+.load-from-file-section {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  margin-top: 1.5rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.25);
+  max-width: 480px;
+}
+
+.load-from-file-section button {
+  padding: 0.5rem 1.2rem;
+  cursor: pointer;
+  background: #1660d1;
+  color: #fff;
+  border: 1px solid #1660d1;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.load-from-file-section button:hover {
+  background: #124fa8;
+  border-color: #124fa8;
+}
+
+.load-from-file-section p {
+  margin: 0;
+  color: #cfe0ff;
+  font-size: 0.85rem;
+}
+
 .app-footer {
   margin-top: 2.5rem;
   padding-top: 1rem;

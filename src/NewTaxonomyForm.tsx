@@ -15,7 +15,6 @@ interface NewTaxonomyFormProps {
     paddingChar: string,
     codeDelimiterChar: string,
   ) => void;
-  onLoadClick: () => void;
 }
 
 const CODE_DELIMITER_OPTIONS = ['-', '_', '+', '=', '/'];
@@ -24,7 +23,7 @@ function defaultSuffix(): SuffixField {
   return { width: 4, delimiter: '-', mode: 'editable', constantValue: '' };
 }
 
-export default function NewTaxonomyForm({ onCreate, onLoadClick }: NewTaxonomyFormProps) {
+export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
   const [title, setTitle] = useState('');
   const [tableName, setTableName] = useState('');
   const [purpose, setPurpose] = useState('');
@@ -348,9 +347,6 @@ export default function NewTaxonomyForm({ onCreate, onLoadClick }: NewTaxonomyFo
 
       <div className="form-actions">
         <button type="submit">Create Taxonomy</button>
-        <button type="button" onClick={onLoadClick}>
-          Load from File
-        </button>
       </div>
 
       {showPaddingWarning && (
