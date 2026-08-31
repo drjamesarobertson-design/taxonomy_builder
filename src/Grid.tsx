@@ -4,6 +4,8 @@ import { createEmptyRow } from './types';
 import { getLevelColor } from './colors';
 import { toggleCase } from './caseUtils';
 import { isValidCodeChar } from './codeValidation';
+import type { TaxonomyBlock } from './blockTransfer';
+import { parseBlockFile } from './blockTransfer';
 
 interface GridProps {
   settings: TaxonomySettings;
@@ -14,6 +16,11 @@ interface GridProps {
    * field into one undo step, without Grid needing to know anything about undo itself.
    */
   onChange: (rows: TaxonomyRow[], coalesceKey?: string) => void;
+  /** Import Block (the counterpart to "Create Block"): unlike onChange, this can also grow
+   * settings.numLevels — Grid works out the whole anchor/level-growth/suffix-merge flow
+   * itself and hands back the final settings + rows together in one call, so the caller
+   * never sees an inconsistent settings/rows pairing along the way. */
+  onImportBlock: (settings: TaxonomySettings, rows: TaxonomyRow[]) => void;
   /** Focus the first row's first description cell once, on mount (freshly created taxonomy). */
   autoFocusFirstRow?: boolean;
 }
@@ -41,7 +48,7 @@ const codeInputId = (level: number, rowId: string) => `code-${level}-${rowId}`;
 const descInputId = (level: number, rowId: string) => `desc-${level}-${rowId}`;
 const suffixInputId = (index: number, rowId: string) => `suffix-${index}-${rowId}`;
 
-export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: GridProps) {
+export default function Grid({ settings, rows, onChange, onImportBlock, autoFocusFirstRow }: GridProps) {
   const { numLevels, delimiterPositions, maxDescriptionLength, suffixes, paddingChar, codeDelimiterChar } = settings;
   const levels = Array.from({ length: numLevels }, (_, i) => i);
   // The wide overflow column gets whatever's left of the configured max description length
@@ -109,6 +116,23 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
   // Right-clicking a delimiter cell (item 11) shows a tiny "Not editable" notice instead of
   // either doing nothing or leaking the browser's own native context menu through.
   const [delimNotice, setDelimNotice] = useState<{ x: number; y: number } | null>(null);
+
+  // Import Block: right-clicking a code cell and choosing "Import Block" stashes that cell as
+  // the anchor, then opens a hidden file picker — the rest of the flow (level-growth
+  // confirmation, suffix-1 concatenate/right-justify choice, dropped-suffix notice) runs off
+  // pendingImport, which carries everything the later steps need to finish the job.
+  const importBlockFileInputRef = useRef<HTMLInputElement>(null);
+  const importBlockAnchorRef = useRef<{ rowId: string; level: number } | null>(null);
+  const [pendingImport, setPendingImport] = useState<{
+    block: TaxonomyBlock;
+    anchorRowId: string;
+    anchorLevel: number;
+    requiredLevels: number;
+  } | null>(null);
+  const [addColumnsChoice, setAddColumnsChoice] = useState<{ addCount: number } | null>(null);
+  const [suffixChoicePending, setSuffixChoicePending] = useState(false);
+  const [droppingSuffixesNotice, setDroppingSuffixesNotice] = useState(false);
+
   const dialogRef = useRef<HTMLDivElement>(null);
   const capsNoticeDialogRef = useRef<HTMLDivElement>(null);
   const confirmDialogRef = useRef<HTMLDivElement>(null);
@@ -116,6 +140,9 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
   const suffixDuplicateDialogRef = useRef<HTMLDivElement>(null);
   const moveDialogRef = useRef<HTMLDivElement>(null);
   const copyDialogRef = useRef<HTMLDivElement>(null);
+  const addColumnsDialogRef = useRef<HTMLDivElement>(null);
+  const suffixChoiceDialogRef = useRef<HTMLDivElement>(null);
+  const droppingSuffixesDialogRef = useRef<HTMLDivElement>(null);
   // Tracks a click-and-drag range-select in progress; a ref (not state) since it doesn't
   // itself need to trigger a render, only the selection it produces does.
   const isDraggingRef = useRef(false);
@@ -152,6 +179,18 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
   useEffect(() => {
     if (copyTarget) copyDialogRef.current?.focus();
   }, [copyTarget]);
+
+  useEffect(() => {
+    if (addColumnsChoice) addColumnsDialogRef.current?.focus();
+  }, [addColumnsChoice]);
+
+  useEffect(() => {
+    if (suffixChoicePending) suffixChoiceDialogRef.current?.focus();
+  }, [suffixChoicePending]);
+
+  useEffect(() => {
+    if (droppingSuffixesNotice) droppingSuffixesDialogRef.current?.focus();
+  }, [droppingSuffixesNotice]);
 
   useEffect(() => {
     // Ends a click-and-drag range-select no matter where the mouse is released.
@@ -1125,6 +1164,127 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     setContextMenu(null);
   }
 
+  // Right-click a code cell → "Import Block": stashes that cell as the anchor for wherever the
+  // block's own top row should land, then opens a hidden file picker. The rest of the flow
+  // (handleBlockFileSelected → beginImport → continueImportAfterColumns → finalizeImport) runs
+  // off pendingImport once a file is chosen.
+  function handleImportBlockMenuClick() {
+    if (!contextMenu || contextMenu.kind !== 'code') return;
+    importBlockAnchorRef.current = { rowId: contextMenu.rowId, level: contextMenu.level };
+    setContextMenu(null);
+    importBlockFileInputRef.current?.click();
+  }
+
+  async function handleBlockFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    const anchor = importBlockAnchorRef.current;
+    if (!file || !anchor) return;
+    try {
+      const block = await parseBlockFile(file);
+      beginImport(block, anchor.rowId, anchor.level);
+    } catch (err) {
+      showValidationError(err instanceof Error ? err.message : 'Could not load this block file.');
+    }
+  }
+
+  // Works out whether the block needs more columns than the taxonomy currently has (the
+  // block's own deepest entry, shifted right by the anchor's column) and, if so, asks before
+  // growing the grid — the one step in this flow the user might genuinely want to abort on,
+  // since it changes the shape of the whole table, not just the rows being inserted.
+  function beginImport(block: TaxonomyBlock, anchorRowId: string, anchorLevel: number) {
+    if (block.entries.length === 0) {
+      showValidationError('This block has no entries to import.');
+      return;
+    }
+    const maxBlockDepth = Math.max(...block.entries.map((entry) => entry.codes.length - 1));
+    const requiredLevels = anchorLevel + maxBlockDepth + 1;
+    const pending = { block, anchorRowId, anchorLevel, requiredLevels };
+    if (requiredLevels > numLevels) {
+      setPendingImport(pending);
+      setAddColumnsChoice({ addCount: requiredLevels - numLevels });
+    } else {
+      continueImportAfterColumns(pending);
+    }
+  }
+
+  function continueImportAfterColumns(pending: NonNullable<typeof pendingImport>) {
+    const maxSuffixCount = Math.max(0, ...pending.block.entries.map((entry) => entry.suffixValues.length));
+    if (maxSuffixCount >= 1) {
+      setPendingImport(pending);
+      setSuffixChoicePending(true);
+    } else {
+      finalizeImport(pending, null);
+    }
+  }
+
+  // Builds the new rows, grows the grid's own columns if the earlier step called for it, and
+  // hands the finished settings + rows to the caller in one shot (Section 4.4: delimiters and
+  // padding are the target's own — this only ever carries over real code characters and text).
+  function finalizeImport(pending: NonNullable<typeof pendingImport>, suffix1Mode: 'concatenate' | 'rightJustify' | null) {
+    const { block, anchorRowId, anchorLevel, requiredLevels } = pending;
+    const newNumLevels = Math.max(numLevels, requiredLevels);
+    const anchorIndex = rows.findIndex((r) => r.id === anchorRowId);
+    if (anchorIndex === -1) {
+      setPendingImport(null);
+      return;
+    }
+
+    // Columns to the left of the anchor are inherited from the anchor row's own current codes
+    // — the same "insert here, nested under this context" convention Add Row/Insert Row already
+    // use — rather than invented or left for the user to fill in from scratch.
+    const prefixCodes = rows[anchorIndex].codes.slice(0, anchorLevel);
+    const targetSuffixCount = suffixes.length;
+    let droppedSuffixes = false;
+
+    const newRows: TaxonomyRow[] = block.entries.map((entry) => {
+      const codes = Array(newNumLevels).fill('');
+      for (let i = 0; i < anchorLevel; i++) codes[i] = prefixCodes[i] ?? '';
+      for (let i = 0; i < entry.codes.length; i++) codes[anchorLevel + i] = entry.codes[i] ?? '';
+
+      let description = entry.description;
+      // Constant-mode suffixes the block doesn't cover fall back to their configured default —
+      // the same seeding createEmptyRow already does for a brand-new row.
+      const suffixValues = suffixes.map((s) => (s.mode === 'constant' ? s.constantValue : ''));
+      entry.suffixValues.forEach((value, i) => {
+        if (i === 0 && suffix1Mode === 'concatenate') {
+          if (value) description = `${description}-${value}`;
+          return;
+        }
+        if (i < targetSuffixCount) {
+          suffixValues[i] = value;
+        } else if (value) {
+          droppedSuffixes = true;
+        }
+      });
+
+      const descriptions = Array(newNumLevels).fill('');
+      descriptions[anchorLevel + entry.codes.length - 1] = description;
+      return { id: crypto.randomUUID(), codes, descriptions, suffixValues };
+    });
+
+    // Every existing row grows to match, so the grid stays rectangular (Section 6.1: added
+    // columns go to the right of everything already there).
+    const pad = newNumLevels - numLevels;
+    const updatedExisting =
+      pad === 0
+        ? rows
+        : rows.map((row) => ({
+            ...row,
+            codes: [...row.codes, ...Array(pad).fill('')],
+            descriptions: [...row.descriptions, ...Array(pad).fill('')],
+          }));
+
+    const insertAt = anchorIndex + 1;
+    const finalRows = [...updatedExisting.slice(0, insertAt), ...newRows, ...updatedExisting.slice(insertAt)];
+    const newSettings: TaxonomySettings = pad === 0 ? settings : { ...settings, numLevels: newNumLevels };
+
+    onImportBlock(newSettings, finalRows);
+    setPendingImport(null);
+    setSelection(null);
+    if (droppedSuffixes) setDroppingSuffixesNotice(true);
+  }
+
   // Right-click "Check Ascending Order" — an on-demand audit distinct from the hard rule
   // enforced as codes are typed (Section 4.4/6.7), since Override, promote/demote, Move, and
   // sort can all rearrange rows without necessarily re-checking every column afterward. On
@@ -1434,6 +1594,13 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
 
   return (
     <div className="grid-wrapper">
+      <input
+        ref={importBlockFileInputRef}
+        type="file"
+        accept="application/json"
+        style={{ display: 'none' }}
+        onChange={handleBlockFileSelected}
+      />
       <table className="taxonomy-grid">
         <thead>
           <tr>
@@ -1687,6 +1854,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
               <li onClick={handleCheckAscendingOrder}>Check Ascending Order</li>
               <li onClick={handleCopyCodesBlock}>Copy Codes</li>
               {codeClipboard && <li onClick={handlePasteCodesBlock}>Paste Codes</li>}
+              <li onClick={handleImportBlockMenuClick}>Import Block</li>
             </>
           )}
           {contextMenu.kind === 'suffix' && (
@@ -1939,6 +2107,126 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
               {capsNoticeSuggestCapsLock ? ' — please turn Caps Lock on.' : ''}
             </p>
             <button type="button" onClick={() => setShowCapsNotice(false)}>
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      {addColumnsChoice && (
+        <div
+          className="validation-overlay"
+          onClick={() => {
+            setAddColumnsChoice(null);
+            setPendingImport(null);
+          }}
+        >
+          <div
+            ref={addColumnsDialogRef}
+            className="validation-dialog"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <p>
+              This will add {addColumnsChoice.addCount} column{addColumnsChoice.addCount === 1 ? '' : 's'}
+            </p>
+            <div className="confirm-dialog-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setAddColumnsChoice(null);
+                  setPendingImport(null);
+                }}
+              >
+                Abort
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const pending = pendingImport;
+                  setAddColumnsChoice(null);
+                  if (pending) continueImportAfterColumns(pending);
+                }}
+              >
+                Add Columns
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {suffixChoicePending && (
+        <div
+          className="validation-overlay"
+          onClick={() => {
+            setSuffixChoicePending(false);
+            setPendingImport(null);
+          }}
+        >
+          <div
+            ref={suffixChoiceDialogRef}
+            className="validation-dialog"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <p>Concatenate Suffix 1 or Right Justify?</p>
+            <div className="confirm-dialog-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setSuffixChoicePending(false);
+                  setPendingImport(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const pending = pendingImport;
+                  setSuffixChoicePending(false);
+                  if (pending) finalizeImport(pending, 'concatenate');
+                }}
+              >
+                Concatenate
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const pending = pendingImport;
+                  setSuffixChoicePending(false);
+                  if (pending) finalizeImport(pending, 'rightJustify');
+                }}
+              >
+                Right Justify
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {droppingSuffixesNotice && (
+        <div className="validation-overlay" onClick={() => setDroppingSuffixesNotice(false)}>
+          <div
+            ref={droppingSuffixesDialogRef}
+            className="validation-dialog"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <p>Dropping Excess Suffixes</p>
+            <button type="button" onClick={() => setDroppingSuffixesNotice(false)}>
               OK
             </button>
           </div>

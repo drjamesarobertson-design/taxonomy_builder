@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { TaxonomyProject, TaxonomyRow, SuffixField } from './types';
+import type { TaxonomyProject, TaxonomyRow, TaxonomySettings, SuffixField } from './types';
 import { createEmptyRow, createProject } from './types';
 import { saveProjectToFile, loadProjectFromFile } from './storage';
 import {
@@ -8,6 +8,7 @@ import {
   exportConcatenatedCsv,
   exportConcatenatedXlsx,
 } from './gridExport';
+import { exportBlock } from './blockTransfer';
 import { chooseExportFolder, peekExportFolderName, supportsFileSystemAccess } from './exportFolder';
 import { hasBlankCodeGaps } from './codeValidation';
 import NewTaxonomyForm from './NewTaxonomyForm';
@@ -231,6 +232,36 @@ export default function App() {
     performExport(mode);
   }
 
+  async function performCreateBlock() {
+    if (!project) return;
+    const { project: versioned, usedFolder } = await exportBlock(project);
+    setProject(versioned);
+    if (usedFolder) peekExportFolderName().then(setExportFolderName);
+    else setExportFolderName(null);
+  }
+
+  function handleCreateBlock() {
+    if (!project) return;
+    if (hasBlankCodeGaps(project.rows)) {
+      setBlankCodeWarning({ action: performCreateBlock });
+      return;
+    }
+    performCreateBlock();
+  }
+
+  // Import Block (the counterpart to "Create Block"): Grid owns the whole anchor-cell,
+  // level-growth, and suffix-merge flow, then hands back the final settings + rows in one
+  // shot — folded into undo history exactly like any other row edit, since adding levels here
+  // is a side effect of a single user action, not a separate Settings-screen change.
+  function handleImportBlock(settings: TaxonomySettings, rows: TaxonomyRow[]) {
+    if (!project) return;
+    setUndoStack((stack) => [...stack, project.rows]);
+    setRedoStack([]);
+    lastEditKeyRef.current = null;
+    setProject({ ...project, settings, rows });
+    setDirty(true);
+  }
+
   async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -312,6 +343,15 @@ export default function App() {
               </button>
             )}
             {project && (
+              <button
+                type="button"
+                onClick={handleCreateBlock}
+                title="Export the whole table as a block another taxonomy can import"
+              >
+                Create Block
+              </button>
+            )}
+            {project && (
               <button type="button" onClick={handleLoadClick}>
                 Load from File
               </button>
@@ -368,6 +408,7 @@ export default function App() {
             settings={project.settings}
             rows={project.rows}
             onChange={handleRowsChange}
+            onImportBlock={handleImportBlock}
             autoFocusFirstRow={autoFocusFirstRow}
           />
           <footer className="app-footer">
