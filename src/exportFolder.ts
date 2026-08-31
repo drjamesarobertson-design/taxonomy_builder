@@ -1,8 +1,9 @@
-// Optional integration with the File System Access API (Chromium browsers): lets Save/Export
-// write straight into a folder the user picks once, remembered across the session (and, via
-// IndexedDB, across reloads) rather than prompting a fresh "Save As" dialog every time.
-// Firefox and Safari don't support this API — everything here degrades to the existing plain
-// browser download when it's unavailable, or if the user cancels the folder picker.
+// Optional integration with the File System Access API (Chromium browsers): every Save/Export
+// shows the browser's native "Save As" dialog, so the filename and destination folder are a
+// per-save choice — starting, for convenience, in whichever folder was set via "Choose Export
+// Folder" (remembered across the session and, via IndexedDB, across reloads) rather than
+// forcing every file into that one folder. Firefox and Safari don't support this API —
+// everything here degrades to the existing plain browser download when it's unavailable.
 
 import { downloadBlob } from './download';
 
@@ -12,6 +13,10 @@ const KEY = 'exportFolder';
 
 export function supportsFileSystemAccess(): boolean {
   return typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function';
+}
+
+function supportsSaveFilePicker(): boolean {
+  return typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function';
 }
 
 function openDb(): Promise<IDBDatabase> {
@@ -87,10 +92,10 @@ export async function chooseExportFolder(): Promise<FileSystemDirectoryHandle | 
   }
 }
 
-/** Returns the remembered export folder, prompting the user to pick one only the first time.
- * Never throws — any failure along the way (a revoked permission, a moved/deleted folder, an
- * unexpected API rejection) is treated the same as "no folder available". */
-async function ensureExportFolder(): Promise<FileSystemDirectoryHandle | null> {
+/** The remembered folder, with permission already verified — without prompting to pick one if
+ * there isn't one yet. Used as a starting-location hint for the per-save "Save As" dialog, so
+ * it's fine for this to come back empty; the dialog itself still lets the user browse anywhere. */
+async function peekVerifiedFolder(): Promise<FileSystemDirectoryHandle | null> {
   try {
     if (!supportsFileSystemAccess()) return null;
     if (cachedHandle && (await verifyPermission(cachedHandle))) return cachedHandle;
@@ -99,10 +104,10 @@ async function ensureExportFolder(): Promise<FileSystemDirectoryHandle | null> {
       cachedHandle = stored;
       return stored;
     }
-    return await chooseExportFolder();
   } catch {
-    return null;
+    // Falls through to null below.
   }
+  return null;
 }
 
 /** The remembered folder's name, without prompting for permission — for a UI label only. */
@@ -112,25 +117,47 @@ export async function peekExportFolderName(): Promise<string | null> {
   return stored?.name ?? null;
 }
 
+function acceptTypesFor(filename: string, mimeType: string): FilePickerAcceptType[] {
+  const dot = filename.lastIndexOf('.');
+  const ext = dot === -1 ? '' : filename.slice(dot).toLowerCase();
+  return [{ description: ext ? ext.slice(1).toUpperCase() : 'File', accept: { [mimeType]: ext ? [ext] : [] } }];
+}
+
 /**
- * Saves a blob to the remembered export folder if the browser supports it and the user has
- * granted access, otherwise falls back to a normal browser download. Returns whether the
- * folder was actually used, so a caller showing "Folder: X" in its UI can tell the label is no
- * longer accurate (permission lapsed, folder moved, etc.) and stop claiming files go there.
+ * Saves a blob via the browser's native "Save As" dialog — filename and destination folder are
+ * the user's choice every time, not fixed to one remembered folder — starting, when the browser
+ * supports it, in whichever folder was set via "Choose Export Folder" (a default location, not
+ * a silent destination). Falls back to a normal browser download when the picker API isn't
+ * supported (Firefox, Safari) or the save otherwise can't go through the picker.
+ *
+ * `usedFolder` tells a caller showing "Folder: X" in its UI whether the remembered default is
+ * still worth trusting (a permission lapse etc. would make that label inaccurate). `cancelled`
+ * is set when the user backs out of the Save dialog rather than the save simply falling back —
+ * callers should treat that as "nothing happened," not as a completed save to a fresh download.
  */
-export async function saveExportFile(blob: Blob, filename: string): Promise<{ usedFolder: boolean }> {
-  const folder = await ensureExportFolder();
-  if (folder) {
+export async function saveExportFile(
+  blob: Blob,
+  filename: string,
+): Promise<{ usedFolder: boolean; cancelled: boolean }> {
+  if (supportsSaveFilePicker()) {
     try {
-      const fileHandle = await folder.getFileHandle(filename, { create: true });
-      const writable = await fileHandle.createWritable();
+      const startIn = (await peekVerifiedFolder()) ?? undefined;
+      const handle = await window.showSaveFilePicker!({
+        suggestedName: filename,
+        types: acceptTypesFor(filename, blob.type),
+        ...(startIn ? { startIn } : {}),
+      });
+      const writable = await handle.createWritable();
       await writable.write(blob);
       await writable.close();
-      return { usedFolder: true };
-    } catch {
-      // Fall through to a normal download if writing to the folder failed for some reason.
+      return { usedFolder: true, cancelled: false };
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        return { usedFolder: false, cancelled: true };
+      }
+      // Fall through to a normal download if the picker failed for some other reason.
     }
   }
   downloadBlob(blob, filename);
-  return { usedFolder: false };
+  return { usedFolder: false, cancelled: false };
 }

@@ -5,16 +5,17 @@ import { bumpFileVersion } from './fileVersion';
 /** Saves the project to a file and returns the project with its "save" version counter
  * bumped — callers must persist this back into state so the next save continues counting —
  * plus whether it actually landed in the remembered export folder or fell back to a plain
- * download. */
+ * download. If the user cancels the "Save As" dialog, the original (unbumped) project is
+ * returned instead — cancelling shouldn't consume a version number for nothing. */
 export async function saveProjectToFile(
   project: TaxonomyProject,
-): Promise<{ project: TaxonomyProject; usedFolder: boolean }> {
+): Promise<{ project: TaxonomyProject; usedFolder: boolean; cancelled: boolean }> {
   const { project: versioned, versionLabel } = bumpFileVersion(project, 'save');
   const json = JSON.stringify(versioned, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
   const base = project.tableName || project.title || 'taxonomy';
-  const { usedFolder } = await saveExportFile(blob, `${base}${versionLabel}.json`);
-  return { project: versioned, usedFolder };
+  const { usedFolder, cancelled } = await saveExportFile(blob, `${base}${versionLabel}.json`);
+  return { project: cancelled ? project : versioned, usedFolder, cancelled };
 }
 
 function isTaxonomyProject(data: unknown): data is TaxonomyProject {

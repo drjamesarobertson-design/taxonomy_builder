@@ -182,7 +182,8 @@ export default function App() {
     // landed in the remembered folder or fell back to a plain download (e.g. permission
     // lapsed) — if it fell back, the "Folder: X" button is no longer telling the truth, so
     // clear it back to "Choose Export Folder" rather than leave a stale, inoperative label.
-    const { project: versioned, usedFolder } = await saveProjectToFile(project);
+    const { project: versioned, usedFolder, cancelled } = await saveProjectToFile(project);
+    if (cancelled) return; // backed out of the Save As dialog — nothing happened
     setProject(versioned);
     setDirty(false);
     if (usedFolder) peekExportFolderName().then(setExportFolderName);
@@ -210,15 +211,17 @@ export default function App() {
     const { format } = exportChoice;
     let versioned: TaxonomyProject;
     let usedFolder: boolean;
+    let cancelled: boolean;
     if (format === 'csv') {
-      ({ project: versioned, usedFolder } =
+      ({ project: versioned, usedFolder, cancelled } =
         mode === 'discrete' ? await exportDiscreteCsv(project) : await exportConcatenatedCsv(project));
     } else {
-      ({ project: versioned, usedFolder } =
+      ({ project: versioned, usedFolder, cancelled } =
         mode === 'discrete' ? await exportDiscreteXlsx(project) : await exportConcatenatedXlsx(project));
     }
-    setProject(versioned);
     setExportChoice(null);
+    if (cancelled) return; // backed out of the Save As dialog — nothing happened
+    setProject(versioned);
     if (usedFolder) peekExportFolderName().then(setExportFolderName);
     else setExportFolderName(null);
   }
@@ -234,7 +237,8 @@ export default function App() {
 
   async function performCreateBlock() {
     if (!project) return;
-    const { project: versioned, usedFolder } = await exportBlock(project);
+    const { project: versioned, usedFolder, cancelled } = await exportBlock(project);
+    if (cancelled) return; // backed out of the Save As dialog — nothing happened
     setProject(versioned);
     if (usedFolder) peekExportFolderName().then(setExportFolderName);
     else setExportFolderName(null);

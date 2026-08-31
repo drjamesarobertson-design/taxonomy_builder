@@ -23,7 +23,20 @@ declare global {
     startIn?: FileSystemHandle | WellKnownDirectory;
   }
 
+  interface FilePickerAcceptType {
+    description?: string;
+    accept: Record<string, string[]>;
+  }
+
+  interface SaveFilePickerOptions {
+    id?: string;
+    startIn?: FileSystemHandle | WellKnownDirectory;
+    suggestedName?: string;
+    types?: FilePickerAcceptType[];
+  }
+
   interface Window {
     showDirectoryPicker?: (options?: DirectoryPickerOptions) => Promise<FileSystemDirectoryHandle>;
+    showSaveFilePicker?: (options?: SaveFilePickerOptions) => Promise<FileSystemFileHandle>;
   }
 }

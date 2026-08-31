@@ -63,13 +63,13 @@ function exportFilename(project: TaxonomyProject, versionLabel: string): string 
 
 export async function exportBlock(
   project: TaxonomyProject,
-): Promise<{ project: TaxonomyProject; usedFolder: boolean }> {
+): Promise<{ project: TaxonomyProject; usedFolder: boolean; cancelled: boolean }> {
   const { project: versioned, versionLabel } = bumpFileVersion(project, 'block-json');
   const block = buildBlock(project);
   const json = JSON.stringify(block, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
-  const { usedFolder } = await saveExportFile(blob, exportFilename(project, versionLabel));
-  return { project: versioned, usedFolder };
+  const { usedFolder, cancelled } = await saveExportFile(blob, exportFilename(project, versionLabel));
+  return { project: cancelled ? project : versioned, usedFolder, cancelled };
 }
 
 function isTaxonomyBlock(data: unknown): data is TaxonomyBlock {
