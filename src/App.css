@@ -66,6 +66,13 @@
   cursor: default;
 }
 
+/* Save to File gave no visible sign a click had registered — briefly flash to green so it's
+   unmistakable the save actually happened. */
+.toolbar button.save-flash {
+  background: #1d8a4c;
+  border-color: #1d8a4c;
+}
+
 .load-error {
   color: #b00020;
   font-weight: 600;
@@ -77,6 +84,13 @@
   gap: 0.75rem;
   max-width: 480px;
   margin-top: 2rem;
+  /* A white card with fully black text, like the grid and every dialog — rather than letting
+     the dark theme's near-white text color reach the form's own controls, where a native
+     <select>'s light background made that text unreadably faint. */
+  background: #fff;
+  color: #1a1a1a;
+  padding: 1.5rem;
+  border-radius: 8px;
 }
 
 .new-taxonomy-form label {
@@ -99,7 +113,8 @@
 }
 
 .new-taxonomy-form input,
-.new-taxonomy-form textarea {
+.new-taxonomy-form textarea,
+.new-taxonomy-form select {
   background: #fff;
   color: #1a1a1a;
 }
@@ -154,29 +169,6 @@ body.app-dark-theme .taxonomy-meta .table-name {
 
 body.app-dark-theme .taxonomy-meta .purpose {
   color: #b9c9ef;
-}
-
-body.app-dark-theme .delimiter-row {
-  border-bottom-color: rgba(255, 255, 255, 0.15);
-}
-
-body.app-dark-theme .delimiter-setup,
-body.app-dark-theme .indent-char-setup,
-body.app-dark-theme .suffix-setup {
-  border-color: rgba(255, 255, 255, 0.3);
-}
-
-body.app-dark-theme .suffix-row {
-  border-bottom-color: rgba(255, 255, 255, 0.15);
-}
-
-body.app-dark-theme .delimiter-remove-btn {
-  border-color: rgba(255, 255, 255, 0.4);
-  color: #eaf2ff;
-}
-
-body.app-dark-theme .delimiter-empty {
-  color: #c9d6f5;
 }
 
 .delimiter-setup,
