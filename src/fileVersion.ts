@@ -9,7 +9,8 @@ export type FileVersionKey =
   | 'discrete-csv'
   | 'discrete-xlsx'
   | 'concatenated-csv'
-  | 'concatenated-xlsx';
+  | 'concatenated-xlsx'
+  | 'block-json';
 
 export function bumpFileVersion(
   project: TaxonomyProject,
