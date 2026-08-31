@@ -95,6 +95,22 @@ export function createEmptyRow(numLevels: number, suffixes: SuffixField[] = []):
   };
 }
 
+// Grows every row's codes/descriptions arrays to a new (larger) column count, padding with ''
+// — used whenever numLevels increases, whether from Import Block needing more depth or from
+// adding columns directly (Settings, or the grid's own right-click "Add Column"). Never shrinks
+// — a caller wanting fewer columns is responsible for confirming that's actually safe first.
+export function growRowsToLevels(rows: TaxonomyRow[], newNumLevels: number): TaxonomyRow[] {
+  return rows.map((row) => {
+    const pad = newNumLevels - row.codes.length;
+    if (pad <= 0) return row;
+    return {
+      ...row,
+      codes: [...row.codes, ...Array(pad).fill('')],
+      descriptions: [...row.descriptions, ...Array(pad).fill('')],
+    };
+  });
+}
+
 export function createProject(
   title: string,
   tableName: string,

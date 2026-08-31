@@ -1,6 +1,6 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { TaxonomyRow, TaxonomySettings } from './types';
-import { createEmptyRow } from './types';
+import { createEmptyRow, growRowsToLevels } from './types';
 import { getLevelColor } from './colors';
 import { toggleCase } from './caseUtils';
 import { isValidCodeChar } from './codeValidation';
@@ -16,11 +16,11 @@ interface GridProps {
    * field into one undo step, without Grid needing to know anything about undo itself.
    */
   onChange: (rows: TaxonomyRow[], coalesceKey?: string) => void;
-  /** Import Block (the counterpart to "Create Block"): unlike onChange, this can also grow
-   * settings.numLevels — Grid works out the whole anchor/level-growth/suffix-merge flow
-   * itself and hands back the final settings + rows together in one call, so the caller
-   * never sees an inconsistent settings/rows pairing along the way. */
-  onImportBlock: (settings: TaxonomySettings, rows: TaxonomyRow[]) => void;
+  /** For a change that touches settings and rows together — Import Block's anchor/level-growth
+   * flow, or the grid's own right-click "Add Column" — unlike onChange, this can also grow
+   * settings.numLevels. The caller applies both in one update, so it never sees an inconsistent
+   * settings/rows pairing along the way. */
+  onSettingsAndRowsChange: (settings: TaxonomySettings, rows: TaxonomyRow[]) => void;
   /** Focus the first row's first description cell once, on mount (freshly created taxonomy). */
   autoFocusFirstRow?: boolean;
 }
@@ -48,7 +48,7 @@ const codeInputId = (level: number, rowId: string) => `code-${level}-${rowId}`;
 const descInputId = (level: number, rowId: string) => `desc-${level}-${rowId}`;
 const suffixInputId = (index: number, rowId: string) => `suffix-${index}-${rowId}`;
 
-export default function Grid({ settings, rows, onChange, onImportBlock, autoFocusFirstRow }: GridProps) {
+export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange, autoFocusFirstRow }: GridProps) {
   const { numLevels, delimiterPositions, maxDescriptionLength, suffixes, paddingChar, codeDelimiterChar } = settings;
   const levels = Array.from({ length: numLevels }, (_, i) => i);
   // The wide overflow column gets whatever's left of the configured max description length
@@ -144,6 +144,7 @@ export default function Grid({ settings, rows, onChange, onImportBlock, autoFocu
   } | null>(null);
   const [droppingSuffixesNotice, setDroppingSuffixesNotice] = useState(false);
 
+  const contextMenuRef = useRef<HTMLUListElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const capsNoticeDialogRef = useRef<HTMLDivElement>(null);
   const confirmDialogRef = useRef<HTMLDivElement>(null);
@@ -168,6 +169,25 @@ export default function Grid({ settings, rows, onChange, onImportBlock, autoFocu
     // keystroke — buffered or otherwise — can activate anything.
     if (validationError) dialogRef.current?.focus();
   }, [validationError]);
+
+  useLayoutEffect(() => {
+    // Right-clicking a row near the bottom of a long grid opened the menu at the click
+    // position with no regard for whether it would actually fit — with enough rows above it,
+    // the menu ran off the bottom of the screen with no way to scroll to its lower items.
+    // Runs before paint, so it corrects the position in place rather than flashing the
+    // overflowing menu first and re-rendering a moment later.
+    if (!contextMenu || !contextMenuRef.current) return;
+    const el = contextMenuRef.current;
+    const rect = el.getBoundingClientRect();
+    const overflowY = rect.bottom - window.innerHeight;
+    if (overflowY > 0) {
+      el.style.top = `${Math.max(8, contextMenu.y - overflowY - 8)}px`;
+    }
+    const overflowX = rect.right - window.innerWidth;
+    if (overflowX > 0) {
+      el.style.left = `${Math.max(8, contextMenu.x - overflowX - 8)}px`;
+    }
+  }, [contextMenu]);
 
   useEffect(() => {
     if (showCapsNotice) capsNoticeDialogRef.current?.focus();
@@ -1312,14 +1332,7 @@ export default function Grid({ settings, rows, onChange, onImportBlock, autoFocu
     // Every existing row grows to match, so the grid stays rectangular (Section 6.1: added
     // columns go to the right of everything already there).
     const pad = newNumLevels - numLevels;
-    const updatedExisting =
-      pad === 0
-        ? rows
-        : rows.map((row) => ({
-            ...row,
-            codes: [...row.codes, ...Array(pad).fill('')],
-            descriptions: [...row.descriptions, ...Array(pad).fill('')],
-          }));
+    const updatedExisting = pad === 0 ? rows : growRowsToLevels(rows, newNumLevels);
 
     // Inserted right at the anchor position itself (pushing the anchor row and everything
     // below it down), not after it — more intuitive when the anchor is a blank row already
@@ -1328,10 +1341,29 @@ export default function Grid({ settings, rows, onChange, onImportBlock, autoFocu
     const finalRows = [...updatedExisting.slice(0, insertAt), ...newRows, ...updatedExisting.slice(insertAt)];
     const newSettings: TaxonomySettings = pad === 0 ? settings : { ...settings, numLevels: newNumLevels };
 
-    onImportBlock(newSettings, finalRows);
+    onSettingsAndRowsChange(newSettings, finalRows);
     setPendingImport(null);
     setSelection(null);
     if (droppedSuffixes) setDroppingSuffixesNotice(true);
+  }
+
+  // Right-click "Add Column" (on either a code or a description cell) — the quick, one-off
+  // counterpart to changing "Number of Code Columns" in Settings: adds exactly one more
+  // code/description column pair at the far right. Always safe (Section 6.1: new columns start
+  // blank), so it's a plain Yes/No confirm rather than a data-loss warning.
+  function handleAddColumnClick() {
+    if (!contextMenu) return;
+    setContextMenu(null);
+    setConfirmDialog({
+      message: 'Add a new code and description column at the far right?',
+      confirmLabel: 'Yes',
+      onConfirm: () => {
+        onSettingsAndRowsChange(
+          { ...settings, numLevels: numLevels + 1 },
+          growRowsToLevels(rows, numLevels + 1),
+        );
+      },
+    });
   }
 
   // Right-click "Check Ascending Order" — an on-demand audit distinct from the hard rule
@@ -1881,6 +1913,7 @@ export default function Grid({ settings, rows, onChange, onImportBlock, autoFocu
 
       {contextMenu && (
         <ul
+          ref={contextMenuRef}
           className="context-menu"
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(e) => e.stopPropagation()}
@@ -1909,6 +1942,7 @@ export default function Grid({ settings, rows, onChange, onImportBlock, autoFocu
           {contextMenu.kind === 'suffix' && (
             <li onClick={handleDuplicateSuffixToSelection}>Duplicate to Selected Rows</li>
           )}
+          {contextMenu.kind !== 'suffix' && <li onClick={handleAddColumnClick}>Add Column</li>}
           <li className="context-menu-separator" onClick={() => handleInsertRow('above')}>
             {pendingInsertCount() > 1 ? `Insert ${pendingInsertCount()} Rows Above` : 'Insert Row Above'}
           </li>

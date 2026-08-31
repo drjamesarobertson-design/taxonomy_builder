@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { TaxonomyProject, TaxonomyRow, TaxonomySettings, SuffixField } from './types';
-import { createEmptyRow, createProject } from './types';
+import { createEmptyRow, createProject, growRowsToLevels } from './types';
 import { saveProjectToFile, loadProjectFromFile } from './storage';
 import {
   exportDiscreteCsv,
@@ -253,11 +253,11 @@ export default function App() {
     performCreateBlock();
   }
 
-  // Import Block (the counterpart to "Create Block"): Grid owns the whole anchor-cell,
-  // level-growth, and suffix-merge flow, then hands back the final settings + rows in one
-  // shot — folded into undo history exactly like any other row edit, since adding levels here
-  // is a side effect of a single user action, not a separate Settings-screen change.
-  function handleImportBlock(settings: TaxonomySettings, rows: TaxonomyRow[]) {
+  // For Grid actions that touch settings and rows together — Import Block's anchor/level-growth
+  // flow, and the grid's own right-click "Add Column" — Grid works out the details itself and
+  // hands back the final settings + rows in one shot, folded into undo history exactly like any
+  // other row edit, since these are grid actions, not a separate Settings-screen change.
+  function handleSettingsAndRowsChange(settings: TaxonomySettings, rows: TaxonomyRow[]) {
     if (!project) return;
     setUndoStack((stack) => [...stack, project.rows]);
     setRedoStack([]);
@@ -287,17 +287,36 @@ export default function App() {
 
   function handleSaveSettings(fields: SettingsFields) {
     if (!project) return;
+    // Number of code columns can move either way here — SettingsModal only ever submits a
+    // decrease once it's confirmed no row actually has content beyond the new limit, so
+    // trimming is as safe as growing. Not folded into undo history, matching every other
+    // Settings field — this is a setup correction, not a row edit to step back through.
+    const newNumLevels = fields.numLevels;
+    const oldNumLevels = project.settings.numLevels;
+    let rows = project.rows;
+    if (newNumLevels > oldNumLevels) {
+      rows = growRowsToLevels(rows, newNumLevels);
+    } else if (newNumLevels < oldNumLevels) {
+      rows = rows.map((row) => ({
+        ...row,
+        codes: row.codes.slice(0, newNumLevels),
+        descriptions: row.descriptions.slice(0, newNumLevels),
+      }));
+    }
     setProject({
       ...project,
       title: fields.title,
       tableName: fields.tableName,
       purpose: fields.purpose,
+      rows,
       settings: {
         ...project.settings,
         maxDescriptionLength: fields.maxDescriptionLength,
         paddingChar: fields.paddingChar,
         codeDelimiterChar: fields.codeDelimiterChar,
         indentChar: fields.indentChar,
+        numLevels: newNumLevels,
+        delimiterPositions: fields.delimiterPositions,
       },
     });
     setDirty(true);
@@ -412,7 +431,7 @@ export default function App() {
             settings={project.settings}
             rows={project.rows}
             onChange={handleRowsChange}
-            onImportBlock={handleImportBlock}
+            onSettingsAndRowsChange={handleSettingsAndRowsChange}
             autoFocusFirstRow={autoFocusFirstRow}
           />
           <footer className="app-footer">
