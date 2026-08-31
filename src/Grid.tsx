@@ -130,10 +130,18 @@ export default function Grid({ settings, rows, onChange, onImportBlock, autoFocu
     requiredLevels: number;
   } | null>(null);
   const [addColumnsChoice, setAddColumnsChoice] = useState<{ addCount: number } | null>(null);
-  const [suffixChoicePending, setSuffixChoicePending] = useState(false);
-  // The text typed for Suffix 1 — a fresh value entered once for this import, not read from
-  // the source block's own data (see finalizeImport).
+  // Suffix 1's value can come from a fresh value typed just for this import, or from the
+  // source block's own per-row data — asked as three small sequential steps: which source,
+  // then (only for "Enter Text") the text itself, then where it goes (Concatenate/Right
+  // Justify) — rather than one crowded dialog trying to cover all of it at once.
+  const [suffix1SourceChoice, setSuffix1SourceChoice] = useState(false);
+  const [suffixTextEntryPending, setSuffixTextEntryPending] = useState(false);
+  // The text typed for Suffix 1 when "Enter Text" is chosen — unused for "Use Existing Text".
   const [suffixTextValue, setSuffixTextValue] = useState('');
+  const [suffixModePending, setSuffixModePending] = useState<{
+    suffix1Source: 'enterText' | 'useExisting';
+    suffix1Text: string;
+  } | null>(null);
   const [droppingSuffixesNotice, setDroppingSuffixesNotice] = useState(false);
 
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -144,7 +152,9 @@ export default function Grid({ settings, rows, onChange, onImportBlock, autoFocu
   const moveDialogRef = useRef<HTMLDivElement>(null);
   const copyDialogRef = useRef<HTMLDivElement>(null);
   const addColumnsDialogRef = useRef<HTMLDivElement>(null);
+  const suffix1SourceDialogRef = useRef<HTMLDivElement>(null);
   const suffixTextInputRef = useRef<HTMLInputElement>(null);
+  const suffixModeDialogRef = useRef<HTMLDivElement>(null);
   const droppingSuffixesDialogRef = useRef<HTMLDivElement>(null);
   // Tracks a click-and-drag range-select in progress; a ref (not state) since it doesn't
   // itself need to trigger a render, only the selection it produces does.
@@ -188,11 +198,19 @@ export default function Grid({ settings, rows, onChange, onImportBlock, autoFocu
   }, [addColumnsChoice]);
 
   useEffect(() => {
+    if (suffix1SourceChoice) suffix1SourceDialogRef.current?.focus();
+  }, [suffix1SourceChoice]);
+
+  useEffect(() => {
     // Focuses the text field itself, not the dialog container — unlike the app's other
     // OK/Cancel-only dialogs, this one has a real field to type into, so it needs actual
     // keyboard input to reach it rather than being trapped at the dialog level.
-    if (suffixChoicePending) suffixTextInputRef.current?.focus();
-  }, [suffixChoicePending]);
+    if (suffixTextEntryPending) suffixTextInputRef.current?.focus();
+  }, [suffixTextEntryPending]);
+
+  useEffect(() => {
+    if (suffixModePending) suffixModeDialogRef.current?.focus();
+  }, [suffixModePending]);
 
   useEffect(() => {
     if (droppingSuffixesNotice) droppingSuffixesDialogRef.current?.focus();
@@ -1218,10 +1236,9 @@ export default function Grid({ settings, rows, onChange, onImportBlock, autoFocu
     const maxSuffixCount = Math.max(0, ...pending.block.entries.map((entry) => entry.suffixValues.length));
     if (maxSuffixCount >= 1) {
       setPendingImport(pending);
-      setSuffixTextValue('');
-      setSuffixChoicePending(true);
+      setSuffix1SourceChoice(true);
     } else {
-      finalizeImport(pending, null, '');
+      finalizeImport(pending, null, 'useExisting', '');
     }
   }
 
@@ -1229,14 +1246,15 @@ export default function Grid({ settings, rows, onChange, onImportBlock, autoFocu
   // hands the finished settings + rows to the caller in one shot (Section 4.4: delimiters and
   // padding are the target's own — this only ever carries over real code characters and text).
   //
-  // Suffix 1 is a fresh value entered once for this whole import, not read from the source
-  // block's own per-row data — a block built from a "master" table (e.g. a Chart of Accounts
-  // template) typically has nothing instance-specific filled in yet, and the whole point of
-  // Suffix 1 here is to tag this import (e.g. with the Division or Location it's landing in).
-  // Suffixes beyond the first still carry over verbatim from the source block, per row.
+  // Suffix 1's value is either a fresh value typed once for this whole import ("Enter Text" —
+  // e.g. tagging this import with the Division or Location it's landing in, since a block built
+  // from a "master" table typically has nothing instance-specific filled in yet), applied the
+  // same way to every row, or each row's own value from the source block ("Use Existing Text").
+  // Suffixes beyond the first always come straight from the source block's own per-row values.
   function finalizeImport(
     pending: NonNullable<typeof pendingImport>,
     suffix1Mode: 'concatenate' | 'rightJustify' | null,
+    suffix1Source: 'enterText' | 'useExisting',
     suffix1Text: string,
   ) {
     const { block, anchorRowId, anchorLevel, requiredLevels } = pending;
@@ -1252,7 +1270,7 @@ export default function Grid({ settings, rows, onChange, onImportBlock, autoFocu
     // use — rather than invented or left for the user to fill in from scratch.
     const prefixCodes = rows[anchorIndex].codes.slice(0, anchorLevel);
     const targetSuffixCount = suffixes.length;
-    let droppedSuffixes = suffix1Mode === 'rightJustify' && targetSuffixCount === 0 && suffix1Text !== '';
+    let droppedSuffixes = false;
 
     const newRows: TaxonomyRow[] = block.entries.map((entry) => {
       const codes = Array(newNumLevels).fill('');
@@ -1264,10 +1282,15 @@ export default function Grid({ settings, rows, onChange, onImportBlock, autoFocu
       // the same seeding createEmptyRow already does for a brand-new row.
       const suffixValues = suffixes.map((s) => (s.mode === 'constant' ? s.constantValue : ''));
 
+      const suffix1Value = suffix1Source === 'enterText' ? suffix1Text : (entry.suffixValues[0] ?? '');
       if (suffix1Mode === 'concatenate') {
-        if (suffix1Text) description = `${description}-${suffix1Text}`;
-      } else if (suffix1Mode === 'rightJustify' && targetSuffixCount >= 1) {
-        suffixValues[0] = suffix1Text;
+        if (suffix1Value) description = `${description}-${suffix1Value}`;
+      } else if (suffix1Mode === 'rightJustify') {
+        if (targetSuffixCount >= 1) {
+          suffixValues[0] = suffix1Value;
+        } else if (suffix1Value) {
+          droppedSuffixes = true;
+        }
       }
 
       // Suffixes beyond the first still come straight from the source block's own per-row
@@ -2185,20 +2208,74 @@ export default function Grid({ settings, rows, onChange, onImportBlock, autoFocu
         </div>
       )}
 
-      {suffixChoicePending && (
+      {suffix1SourceChoice && (
         <div
           className="validation-overlay"
           onClick={() => {
-            setSuffixChoicePending(false);
+            setSuffix1SourceChoice(false);
+            setPendingImport(null);
+          }}
+        >
+          <div
+            ref={suffix1SourceDialogRef}
+            className="validation-dialog"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <p>Enter Text for Suffix 1 or Use Existing Text?</p>
+            <div className="confirm-dialog-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setSuffix1SourceChoice(false);
+                  setPendingImport(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSuffix1SourceChoice(false);
+                  setSuffixTextValue('');
+                  setSuffixTextEntryPending(true);
+                }}
+              >
+                Enter Text
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSuffix1SourceChoice(false);
+                  setSuffixModePending({ suffix1Source: 'useExisting', suffix1Text: '' });
+                }}
+              >
+                Use Existing Text
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {suffixTextEntryPending && (
+        <div
+          className="validation-overlay"
+          onClick={() => {
+            setSuffixTextEntryPending(false);
             setPendingImport(null);
           }}
         >
           <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
-            <p>Enter Text for Suffix 1</p>
+            <p>Enter Text for Suffix 1{suffixes[0] ? ` (up to ${suffixes[0].width} characters)` : ''}</p>
             <input
               ref={suffixTextInputRef}
               type="text"
               value={suffixTextValue}
+              maxLength={suffixes[0]?.width}
               onChange={(e) => setSuffixTextValue(e.target.value)}
               onKeyDown={(e) => {
                 // Stops here rather than reaching a dialog-level trap (this field needs to
@@ -2207,10 +2284,8 @@ export default function Grid({ settings, rows, onChange, onImportBlock, autoFocu
                 e.stopPropagation();
                 if (e.key === 'Enter') {
                   e.preventDefault();
-                  const pending = pendingImport;
-                  const text = suffixTextValue;
-                  setSuffixChoicePending(false);
-                  if (pending) finalizeImport(pending, 'concatenate', text);
+                  setSuffixTextEntryPending(false);
+                  setSuffixModePending({ suffix1Source: 'enterText', suffix1Text: suffixTextValue });
                 }
               }}
             />
@@ -2218,7 +2293,50 @@ export default function Grid({ settings, rows, onChange, onImportBlock, autoFocu
               <button
                 type="button"
                 onClick={() => {
-                  setSuffixChoicePending(false);
+                  setSuffixTextEntryPending(false);
+                  setPendingImport(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSuffixTextEntryPending(false);
+                  setSuffixModePending({ suffix1Source: 'enterText', suffix1Text: suffixTextValue });
+                }}
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {suffixModePending && (
+        <div
+          className="validation-overlay"
+          onClick={() => {
+            setSuffixModePending(null);
+            setPendingImport(null);
+          }}
+        >
+          <div
+            ref={suffixModeDialogRef}
+            className="validation-dialog"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <p>Concatenate Suffix 1 or Right Justify?</p>
+            <div className="confirm-dialog-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setSuffixModePending(null);
                   setPendingImport(null);
                 }}
               >
@@ -2228,9 +2346,9 @@ export default function Grid({ settings, rows, onChange, onImportBlock, autoFocu
                 type="button"
                 onClick={() => {
                   const pending = pendingImport;
-                  const text = suffixTextValue;
-                  setSuffixChoicePending(false);
-                  if (pending) finalizeImport(pending, 'concatenate', text);
+                  const { suffix1Source, suffix1Text } = suffixModePending;
+                  setSuffixModePending(null);
+                  if (pending) finalizeImport(pending, 'concatenate', suffix1Source, suffix1Text);
                 }}
               >
                 Concatenate
@@ -2239,9 +2357,9 @@ export default function Grid({ settings, rows, onChange, onImportBlock, autoFocu
                 type="button"
                 onClick={() => {
                   const pending = pendingImport;
-                  const text = suffixTextValue;
-                  setSuffixChoicePending(false);
-                  if (pending) finalizeImport(pending, 'rightJustify', text);
+                  const { suffix1Source, suffix1Text } = suffixModePending;
+                  setSuffixModePending(null);
+                  if (pending) finalizeImport(pending, 'rightJustify', suffix1Source, suffix1Text);
                 }}
               >
                 Right Justify
