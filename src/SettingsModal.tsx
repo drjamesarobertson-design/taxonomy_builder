@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { TaxonomyProject, TaxonomyRow } from './types';
 import { MAX_LEVELS } from './types';
+import HelpIcon from './HelpIcon';
+import type { HelpTextMap } from './helpText';
 
 export interface SettingsFields {
   title: string;
@@ -18,6 +20,7 @@ interface SettingsModalProps {
   project: TaxonomyProject;
   onSave: (fields: SettingsFields) => void;
   onClose: () => void;
+  helpText: HelpTextMap;
 }
 
 const CODE_DELIMITER_OPTIONS = ['-', '_', '+', '=', '/'];
@@ -41,7 +44,7 @@ function levelOf(row: TaxonomyRow): number {
 // data — so they're freely editable regardless of what's already in the grid. Suffix
 // configuration remains genuinely structural (each row's own suffixValues are keyed by
 // position), so it's still left out of this modal — a new taxonomy is the way to change that.
-export default function SettingsModal({ project, onSave, onClose }: SettingsModalProps) {
+export default function SettingsModal({ project, onSave, onClose, helpText }: SettingsModalProps) {
   const [title, setTitle] = useState(project.title);
   const [tableName, setTableName] = useState(project.tableName);
   const [purpose, setPurpose] = useState(project.purpose);
@@ -127,18 +130,22 @@ export default function SettingsModal({ project, onSave, onClose }: SettingsModa
         <h2>Settings</h2>
         <label>
           Title
+          <HelpIcon field="title" helpText={helpText} />
           <input value={title} onChange={(e) => setTitle(e.target.value)} required />
         </label>
         <label>
           Table Name
+          <HelpIcon field="tableName" helpText={helpText} />
           <input value={tableName} onChange={(e) => setTableName(e.target.value)} required />
         </label>
         <label>
           Purpose
+          <HelpIcon field="purpose" helpText={helpText} />
           <textarea value={purpose} onChange={(e) => setPurpose(e.target.value)} rows={2} />
         </label>
         <label>
           Maximum ERP Description Field Length
+          <HelpIcon field="maxDescriptionLength" helpText={helpText} />
           <input
             type="number"
             min={1}
@@ -148,6 +155,7 @@ export default function SettingsModal({ project, onSave, onClose }: SettingsModa
         </label>
         <label>
           Number of Code Columns
+          <HelpIcon field="numLevels" helpText={helpText} />
           <input
             type="number"
             min={minSafeLevels}
@@ -167,6 +175,7 @@ export default function SettingsModal({ project, onSave, onClose }: SettingsModa
         {numLevelsError && <p className="field-error">{numLevelsError}</p>}
         <label>
           Pad codes with trailing
+          <HelpIcon field="paddingChar" helpText={helpText} />
           <select
             value={paddingChar}
             onChange={(e) => {
@@ -181,6 +190,7 @@ export default function SettingsModal({ project, onSave, onClose }: SettingsModa
         </label>
         <label>
           Delimit codes with
+          <HelpIcon field="codeDelimiterChar" helpText={helpText} />
           <select value={codeDelimiterChar} onChange={(e) => setCodeDelimiterChar(e.target.value)}>
             {CODE_DELIMITER_OPTIONS.map((c) => (
               <option key={c} value={c}>
@@ -190,7 +200,10 @@ export default function SettingsModal({ project, onSave, onClose }: SettingsModa
           </select>
         </label>
         <fieldset className="delimiter-setup">
-          <legend>Code Delimiters ("{codeDelimiterChar}")</legend>
+          <legend>
+            Code Delimiters ("{codeDelimiterChar}")
+            <HelpIcon field="delimiterPositions" helpText={helpText} />
+          </legend>
           {delimiterPositions.length === 0 && (
             <p className="delimiter-empty">No delimiters — Insert "{codeDelimiterChar}" Code Delimiter?</p>
           )}
@@ -227,10 +240,12 @@ export default function SettingsModal({ project, onSave, onClose }: SettingsModa
             }}
           />
           Replace leading space with other ASCII character on Concatenated exports?
+          <HelpIcon field="indentToggle" helpText={helpText} />
         </label>
         {replaceIndentChar && (
           <label>
             Leading Pad Character
+            <HelpIcon field="indentChar" helpText={helpText} />
             <input
               value={indentChar}
               maxLength={1}

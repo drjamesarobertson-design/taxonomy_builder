@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { DEFAULT_SETTINGS, MAX_LEVELS } from './types';
 import type { SuffixField } from './types';
+import HelpIcon from './HelpIcon';
+import type { HelpTextMap } from './helpText';
 
 interface NewTaxonomyFormProps {
   onCreate: (
@@ -15,6 +17,7 @@ interface NewTaxonomyFormProps {
     paddingChar: string,
     codeDelimiterChar: string,
   ) => void;
+  helpText: HelpTextMap;
 }
 
 const CODE_DELIMITER_OPTIONS = ['-', '_', '+', '=', '/'];
@@ -23,7 +26,7 @@ function defaultSuffix(): SuffixField {
   return { width: 4, delimiter: '-', mode: 'editable', constantValue: '' };
 }
 
-export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
+export default function NewTaxonomyForm({ onCreate, helpText }: NewTaxonomyFormProps) {
   const [title, setTitle] = useState('');
   const [tableName, setTableName] = useState('');
   const [purpose, setPurpose] = useState('');
@@ -139,6 +142,7 @@ export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
       <h2>Create a New Taxonomy</h2>
       <label>
         Title
+        <HelpIcon field="title" helpText={helpText} />
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -148,6 +152,7 @@ export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
       </label>
       <label>
         Table Name
+        <HelpIcon field="tableName" helpText={helpText} />
         <input
           value={tableName}
           onChange={(e) => setTableName(e.target.value)}
@@ -157,6 +162,7 @@ export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
       </label>
       <label>
         Purpose
+        <HelpIcon field="purpose" helpText={helpText} />
         <textarea
           value={purpose}
           onChange={(e) => setPurpose(e.target.value)}
@@ -166,6 +172,7 @@ export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
       </label>
       <label>
         Maximum ERP Description Field Length
+        <HelpIcon field="maxDescriptionLength" helpText={helpText} />
         <input
           type="number"
           min={1}
@@ -182,6 +189,7 @@ export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
       </label>
       <label>
         Maximum Number of Code Columns
+        <HelpIcon field="numLevels" helpText={helpText} />
         <input
           type="number"
           min={1}
@@ -202,6 +210,7 @@ export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
 
       <label>
         Pad codes with trailing
+        <HelpIcon field="paddingChar" helpText={helpText} />
         <select
           value={paddingChar}
           onChange={(e) => {
@@ -217,6 +226,7 @@ export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
       </label>
       <label>
         Delimit codes with
+        <HelpIcon field="codeDelimiterChar" helpText={helpText} />
         <select value={codeDelimiterChar} onChange={(e) => setCodeDelimiterChar(e.target.value)} title="Some ERPs need a different code delimiter character">
           {CODE_DELIMITER_OPTIONS.map((c) => (
             <option key={c} value={c}>
@@ -227,7 +237,10 @@ export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
       </label>
 
       <fieldset className="delimiter-setup">
-        <legend>Code Delimiters ("{codeDelimiterChar}")</legend>
+        <legend>
+          Code Delimiters ("{codeDelimiterChar}")
+          <HelpIcon field="delimiterPositions" helpText={helpText} />
+        </legend>
         {delimiterPositions.length === 0 && (
           <p className="delimiter-empty">No delimiters — Insert "{codeDelimiterChar}" Code Delimiter?</p>
         )}
@@ -267,10 +280,12 @@ export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
             }}
           />
           Replace leading space with other ASCII character?
+          <HelpIcon field="indentToggle" helpText={helpText} />
         </label>
         {replaceIndentChar && (
           <label>
             Leading Pad Character
+            <HelpIcon field="indentChar" helpText={helpText} />
             <input
               value={indentChar}
               maxLength={1}
@@ -289,6 +304,7 @@ export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
         <legend>Description Suffixes</legend>
         <label>
           Description Suffixes required (0 to 6)
+          <HelpIcon field="suffixCount" helpText={helpText} />
           <input
             type="number"
             min={0}
@@ -303,6 +319,7 @@ export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
             <span className="suffix-row-label">Suffix {index + 1}</span>
             <label>
               Width (up to 8 characters)
+              <HelpIcon field="suffixWidth" helpText={helpText} />
               <input
                 type="number"
                 min={1}
@@ -313,6 +330,7 @@ export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
             </label>
             <label>
               Delimiter before this suffix
+              <HelpIcon field="suffixDelimiter" helpText={helpText} />
               <input
                 value={suffix.delimiter}
                 maxLength={1}
@@ -322,6 +340,7 @@ export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
             </label>
             <label>
               Constant or Editable
+              <HelpIcon field="suffixMode" helpText={helpText} />
               <select
                 value={suffix.mode}
                 onChange={(e) => updateSuffix(index, { mode: e.target.value as SuffixField['mode'] })}
@@ -333,6 +352,7 @@ export default function NewTaxonomyForm({ onCreate }: NewTaxonomyFormProps) {
             {suffix.mode === 'constant' && (
               <label>
                 Constant Value
+                <HelpIcon field="suffixConstantValue" helpText={helpText} />
                 <input
                   value={suffix.constantValue}
                   maxLength={suffix.width}

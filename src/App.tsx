@@ -11,6 +11,8 @@ import {
 import { exportBlock } from './blockTransfer';
 import { chooseExportFolder, peekExportFolderName, supportsFileSystemAccess } from './exportFolder';
 import { hasBlankCodeGaps } from './codeValidation';
+import { loadHelpText } from './helpText';
+import type { HelpTextMap } from './helpText';
 import NewTaxonomyForm from './NewTaxonomyForm';
 import SettingsModal from './SettingsModal';
 import type { SettingsFields } from './SettingsModal';
@@ -71,6 +73,14 @@ export default function App() {
   const [exportFolderName, setExportFolderName] = useState<string | null>(null);
   useEffect(() => {
     peekExportFolderName().then(setExportFolderName);
+  }, []);
+
+  // Field-level help text (item: help icons on the setup screens): loaded once from
+  // public/help-text.csv, a plain file meant to be edited directly and pushed to the repo —
+  // no code change or rebuild step of its own needed for new help text to go live.
+  const [helpText, setHelpText] = useState<HelpTextMap>({});
+  useEffect(() => {
+    loadHelpText().then(setHelpText);
   }, []);
 
   async function handleChooseFolder() {
@@ -411,7 +421,7 @@ export default function App() {
             </button>
             <p>Already have a saved taxonomy? Loading one replaces anything entered below.</p>
           </section>
-          <NewTaxonomyForm onCreate={handleCreate} />
+          <NewTaxonomyForm onCreate={handleCreate} helpText={helpText} />
           <footer className="app-footer">
             The ERP Doctor Taxonomy Builder is the Intellectual Property of the ERP Doctor and
             James A Robertson and Associates Limited, it is copyright © 2026
@@ -442,7 +452,12 @@ export default function App() {
       )}
 
       {showSettings && project && (
-        <SettingsModal project={project} onSave={handleSaveSettings} onClose={() => setShowSettings(false)} />
+        <SettingsModal
+          project={project}
+          onSave={handleSaveSettings}
+          onClose={() => setShowSettings(false)}
+          helpText={helpText}
+        />
       )}
 
       {exportChoice && (
