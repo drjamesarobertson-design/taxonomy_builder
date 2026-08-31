@@ -1366,6 +1366,43 @@ export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange
     });
   }
 
+  // Right-click "Delete Column" — the mirror of Add Column: removes the far-right code and
+  // description column pair, but only when it's genuinely unused (both cells blank in every
+  // row) — never trims real content, so this is a plain Yes/No confirm rather than a data-loss
+  // warning.
+  function handleDeleteColumnClick() {
+    if (!contextMenu) return;
+    setContextMenu(null);
+    if (numLevels <= 1) {
+      showValidationError('This is the last column — a taxonomy needs at least one.');
+      return;
+    }
+    const lastLevel = numLevels - 1;
+    const isBlank = rows.every(
+      (row) => !(row.codes[lastLevel] ?? '') && !(row.descriptions[lastLevel] ?? '').trim(),
+    );
+    if (!isBlank) {
+      showValidationError(`Column ${numLevels} still holds a code or description — clear it first.`);
+      return;
+    }
+    setConfirmDialog({
+      message: 'Delete the last code and description column?',
+      confirmLabel: 'Yes',
+      onConfirm: () => {
+        const newNumLevels = numLevels - 1;
+        const newRows = rows.map((row) => ({
+          ...row,
+          codes: row.codes.slice(0, newNumLevels),
+          descriptions: row.descriptions.slice(0, newNumLevels),
+        }));
+        onSettingsAndRowsChange(
+          { ...settings, numLevels: newNumLevels, delimiterPositions: delimiterPositions.filter((p) => p < newNumLevels) },
+          newRows,
+        );
+      },
+    });
+  }
+
   // Right-click "Check Ascending Order" — an on-demand audit distinct from the hard rule
   // enforced as codes are typed (Section 4.4/6.7), since Override, promote/demote, Move, and
   // sort can all rearrange rows without necessarily re-checking every column afterward. On
@@ -1943,6 +1980,7 @@ export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange
             <li onClick={handleDuplicateSuffixToSelection}>Duplicate to Selected Rows</li>
           )}
           {contextMenu.kind !== 'suffix' && <li onClick={handleAddColumnClick}>Add Column</li>}
+          {contextMenu.kind !== 'suffix' && <li onClick={handleDeleteColumnClick}>Delete Column</li>}
           <li className="context-menu-separator" onClick={() => handleInsertRow('above')}>
             {pendingInsertCount() > 1 ? `Insert ${pendingInsertCount()} Rows Above` : 'Insert Row Above'}
           </li>
