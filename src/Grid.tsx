@@ -59,6 +59,13 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
   // Check Ascending Order jumping the cursor to the first offending cell, so the user lands
   // right where they need to fix it instead of having to hunt for it themselves.
   const validationFollowUpRef = useRef<(() => void) | null>(null);
+  // A one-time reminder shown the first time text is typed into the very first description
+  // cell (row 1, column 1) of a taxonomy — explains why it's forced to ALL CAPS (Section 4.3)
+  // rather than leaving the user to wonder. Grid remounts (via its key in App.tsx) on every
+  // genuinely new or freshly-loaded project, so this naturally resets per taxonomy rather than
+  // firing only once ever.
+  const [showCapsNotice, setShowCapsNotice] = useState(false);
+  const capsNoticeShownRef = useRef(false);
   const [confirmDialog, setConfirmDialog] = useState<{
     message: string;
     confirmLabel?: string;
@@ -98,6 +105,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
   // either doing nothing or leaking the browser's own native context menu through.
   const [delimNotice, setDelimNotice] = useState<{ x: number; y: number } | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const capsNoticeDialogRef = useRef<HTMLDivElement>(null);
   const confirmDialogRef = useRef<HTMLDivElement>(null);
   const promoteDemoteDialogRef = useRef<HTMLDivElement>(null);
   const suffixDuplicateDialogRef = useRef<HTMLDivElement>(null);
@@ -115,6 +123,10 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     // keystroke — buffered or otherwise — can activate anything.
     if (validationError) dialogRef.current?.focus();
   }, [validationError]);
+
+  useEffect(() => {
+    if (showCapsNotice) capsNoticeDialogRef.current?.focus();
+  }, [showCapsNotice]);
 
   useEffect(() => {
     if (confirmDialog) confirmDialogRef.current?.focus();
@@ -495,6 +507,7 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
     // A description can move left any number of columns, but rightward only one column
     // at a time — it can't skip a level of the hierarchy that was never established.
     const wasEmpty = !(rows[editIndex].descriptions[level] ?? '').trim();
+
     let prevDepth: number | null = null;
     let prevDepthIdx = -1;
     if (wasEmpty && value.trim()) {
@@ -1533,6 +1546,23 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
                       value={row.descriptions[level] ?? ''}
                       onChange={(e) => updateDescription(row.id, level, e.target.value)}
                       onKeyDown={(e) => handleCellKeyDown(e, 'desc', level, rowIndex)}
+                      onBlur={
+                        rowIndex === 0 && level === 0
+                          ? () => {
+                              // Shown once leaving the cell, not on the first keystroke — a
+                              // popup grabbing focus mid-word would swallow the rest of what's
+                              // being typed. Deferred a tick past the blur itself: blur fires as
+                              // part of whatever click moved focus away (e.g. "+ Add Row"), and
+                              // showing the overlay within that same synchronous dispatch can
+                              // cover the very element being clicked before its own click
+                              // finishes — swallowing that click instead of acting on it.
+                              if (!capsNoticeShownRef.current && (row.descriptions[0] ?? '').trim()) {
+                                capsNoticeShownRef.current = true;
+                                setTimeout(() => setShowCapsNotice(true), 0);
+                              }
+                            }
+                          : undefined
+                      }
                     />
                   </td>
                 );
@@ -1867,6 +1897,26 @@ export default function Grid({ settings, rows, onChange, autoFocusFirstRow }: Gr
           >
             <p>{validationError}</p>
             <button type="button" onClick={dismissValidationError}>
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showCapsNotice && (
+        <div className="validation-overlay" onClick={() => setShowCapsNotice(false)}>
+          <div
+            ref={capsNoticeDialogRef}
+            className="validation-dialog"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <p>All headings should be capitalized</p>
+            <button type="button" onClick={() => setShowCapsNotice(false)}>
               OK
             </button>
           </div>

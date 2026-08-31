@@ -1,6 +1,33 @@
 // Code character rules, per CLAUDE.md Section 4.4 / 6.7 (hard rule): within any column,
 // codes must sort in ascending ASCII order top to bottom. Only '.', 0-9, a-z, A-Z are valid.
 
+import type { TaxonomyRow } from './types';
+
+// A row's level is the position of its deepest populated description column (Section 4.1);
+// -1 means the row has no description at all yet.
+function levelOf(row: TaxonomyRow): number {
+  for (let i = row.descriptions.length - 1; i >= 0; i--) {
+    if ((row.descriptions[i] ?? '').trim()) return i;
+  }
+  return -1;
+}
+
+// Before Save/Export, check every row that has a description for a blank code cell within its
+// own "valid range" — column 1 up through the column matching its own level (its full ancestor
+// path plus its own code). A cell out here left empty (as opposed to a genuine "." padding
+// character, which counts as filled) usually means a code was simply forgotten partway through
+// data entry, so this is worth flagging before the file goes out the door.
+export function hasBlankCodeGaps(rows: TaxonomyRow[]): boolean {
+  return rows.some((row) => {
+    const level = levelOf(row);
+    if (level === -1) return false;
+    for (let i = 0; i <= level; i++) {
+      if (!(row.codes[i] ?? '')) return true;
+    }
+    return false;
+  });
+}
+
 export const CODE_CHARSET = [
   '.',
   ...'0123456789'.split(''),

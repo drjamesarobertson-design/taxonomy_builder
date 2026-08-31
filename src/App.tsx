@@ -9,6 +9,7 @@ import {
   exportConcatenatedXlsx,
 } from './gridExport';
 import { chooseExportFolder, peekExportFolderName, supportsFileSystemAccess } from './exportFolder';
+import { hasBlankCodeGaps } from './codeValidation';
 import NewTaxonomyForm from './NewTaxonomyForm';
 import SettingsModal from './SettingsModal';
 import type { SettingsFields } from './SettingsModal';
@@ -23,6 +24,12 @@ export default function App() {
   const [autoFocusFirstRow, setAutoFocusFirstRow] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Bumped every time a genuinely new or freshly-loaded project replaces the current one (never
+  // on an ordinary edit) — passed to Grid as its React key, so Grid remounts cleanly instead of
+  // carrying over stale internal state (selection, the one-time capitalization notice, etc.)
+  // from whatever taxonomy was open before.
+  const [projectGeneration, setProjectGeneration] = useState(0);
+
   // Undo/redo (Section 6.8) over the grid's rows. Consecutive edits to the same field (the
   // same code or description cell, identified by Grid's coalesceKey) merge into one undo
   // step rather than one step per keystroke; every other kind of change — promote/demote,
@@ -36,6 +43,16 @@ export default function App() {
   // Concatenated (Section 9, one combined code/description per row for ERP import).
   const [exportChoice, setExportChoice] = useState<{ format: 'csv' | 'xlsx' } | null>(null);
   const exportDialogRef = useRef<HTMLDivElement>(null);
+
+  // Save/Export both check for a code cell left blank within a row's own valid range first —
+  // easy to overlook mid-entry, and worth a nudge before the file goes out the door. "Accept"
+  // proceeds with whichever save/export action was actually requested; "Cancel" backs out
+  // entirely so the user can go fix it.
+  const [blankCodeWarning, setBlankCodeWarning] = useState<{ action: () => void } | null>(null);
+  const blankCodeDialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (blankCodeWarning) blankCodeDialogRef.current?.focus();
+  }, [blankCodeWarning]);
 
   // A save gave no visible sign it had happened — the button looked identical before and
   // after. Flash its label to confirm the click actually registered and the file was written.
@@ -121,6 +138,7 @@ export default function App() {
     setUndoStack([]);
     setRedoStack([]);
     lastEditKeyRef.current = null;
+    setProjectGeneration((g) => g + 1);
   }
 
   function handleRowsChange(rows: TaxonomyRow[], coalesceKey?: string) {
@@ -155,7 +173,7 @@ export default function App() {
     setDirty(true);
   }
 
-  async function handleSave() {
+  async function performSave() {
     if (!project) return;
     // saveProjectToFile bumps and returns the project's own "save" version counter (used to
     // build its " v1.NN" filename) — persisted back into state, bypassing undo/redo, since
@@ -173,11 +191,20 @@ export default function App() {
     savedFlashTimer.current = setTimeout(() => setJustSaved(false), 1600);
   }
 
+  function handleSave() {
+    if (!project) return;
+    if (hasBlankCodeGaps(project.rows)) {
+      setBlankCodeWarning({ action: performSave });
+      return;
+    }
+    performSave();
+  }
+
   function handleLoadClick() {
     fileInputRef.current?.click();
   }
 
-  async function runExport(mode: 'discrete' | 'concatenated') {
+  async function performExport(mode: 'discrete' | 'concatenated') {
     if (!project || !exportChoice) return;
     const { format } = exportChoice;
     let versioned: TaxonomyProject;
@@ -195,6 +222,15 @@ export default function App() {
     else setExportFolderName(null);
   }
 
+  function runExport(mode: 'discrete' | 'concatenated') {
+    if (!project) return;
+    if (hasBlankCodeGaps(project.rows)) {
+      setBlankCodeWarning({ action: () => performExport(mode) });
+      return;
+    }
+    performExport(mode);
+  }
+
   async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -208,6 +244,7 @@ export default function App() {
       setUndoStack([]);
       setRedoStack([]);
       lastEditKeyRef.current = null;
+      setProjectGeneration((g) => g + 1);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Could not load this file.');
     }
@@ -305,7 +342,13 @@ export default function App() {
 
       {!project && (
         <>
-          <NewTaxonomyForm onCreate={handleCreate} onLoadClick={handleLoadClick} />
+          <section className="load-from-file-section">
+            <button type="button" onClick={handleLoadClick}>
+              Load from File
+            </button>
+            <p>Already have a saved taxonomy? Loading one replaces anything entered below.</p>
+          </section>
+          <NewTaxonomyForm onCreate={handleCreate} />
           <footer className="app-footer">
             The ERP Doctor Taxonomy Builder is the Intellectual Property of the ERP Doctor and
             James A Robertson and Associates Limited, it is copyright © 2026
@@ -321,6 +364,7 @@ export default function App() {
             {project.purpose && <p className="purpose">{project.purpose}</p>}
           </section>
           <Grid
+            key={projectGeneration}
             settings={project.settings}
             rows={project.rows}
             onChange={handleRowsChange}
@@ -362,6 +406,38 @@ export default function App() {
               </button>
               <button type="button" onClick={() => runExport('concatenated')}>
                 Concatenated
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {blankCodeWarning && (
+        <div className="validation-overlay" onClick={() => setBlankCodeWarning(null)}>
+          <div
+            ref={blankCodeDialogRef}
+            className="validation-dialog"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <p>Blank cells in code range, all cells in code range must contain a character</p>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setBlankCodeWarning(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const { action } = blankCodeWarning;
+                  setBlankCodeWarning(null);
+                  action();
+                }}
+              >
+                Accept
               </button>
             </div>
           </div>
