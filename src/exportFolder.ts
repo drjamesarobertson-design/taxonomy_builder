@@ -120,7 +120,12 @@ export async function peekExportFolderName(): Promise<string | null> {
 function acceptTypesFor(filename: string, mimeType: string): FilePickerAcceptType[] {
   const dot = filename.lastIndexOf('.');
   const ext = dot === -1 ? '' : filename.slice(dot).toLowerCase();
-  return [{ description: ext ? ext.slice(1).toUpperCase() : 'File', accept: { [mimeType]: ext ? [ext] : [] } }];
+  // showSaveFilePicker wants a bare MIME type ("text/csv") and rejects the whole call with a
+  // TypeError — not the AbortError this function's caller already handles — if it's given a
+  // full Content-Type-style string with parameters ("text/csv;charset=utf-8"), so only the part
+  // before any ";" is usable here regardless of what a Blob's own .type happens to carry.
+  const bareMimeType = mimeType.split(';')[0].trim();
+  return [{ description: ext ? ext.slice(1).toUpperCase() : 'File', accept: { [bareMimeType]: ext ? [ext] : [] } }];
 }
 
 /**

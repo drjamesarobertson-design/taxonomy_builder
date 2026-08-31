@@ -16,12 +16,12 @@ type ExportColumn =
   | { type: 'gap' }
   | { type: 'suffix'; index: number };
 
-function buildExportColumns(project: TaxonomyProject): ExportColumn[] {
+function buildExportColumns(project: TaxonomyProject, options?: { excludeDelimiters?: boolean }): ExportColumn[] {
   const { numLevels, delimiterPositions, suffixes, codeDelimiterChar } = project.settings;
   const columns: ExportColumn[] = [];
   for (let level = 0; level < numLevels; level++) {
     columns.push({ type: 'code', level });
-    if (delimiterPositions.includes(level + 1)) {
+    if (!options?.excludeDelimiters && delimiterPositions.includes(level + 1)) {
       columns.push({ type: 'delimiter', char: codeDelimiterChar || '-' });
     }
   }
@@ -40,8 +40,11 @@ function buildExportColumns(project: TaxonomyProject): ExportColumn[] {
   return columns;
 }
 
-function buildDiscreteGrid(project: TaxonomyProject): { header: string[]; rows: string[][]; columns: ExportColumn[] } {
-  const columns = buildExportColumns(project);
+function buildDiscreteGrid(
+  project: TaxonomyProject,
+  options?: { excludeDelimiters?: boolean },
+): { header: string[]; rows: string[][]; columns: ExportColumn[] } {
+  const columns = buildExportColumns(project, options);
   const header = columns.map((c) => {
     if (c.type === 'code' || c.type === 'desc') return String(c.level + 1);
     if (c.type === 'suffix') return `Suffix ${c.index + 1}`;
@@ -73,11 +76,16 @@ function levelOf(row: TaxonomyRow): number {
 // Inserts the taxonomy's configured "-" delimiters into a full code string at the same
 // positions they appear in the grid and the Discrete Columns export, e.g. codes ["1","2","3"]
 // with a delimiter after column 2 becomes "12-3".
-function joinCodeWithDelimiters(codes: string[], delimiterPositions: number[], delimiterChar: string): string {
+function joinCodeWithDelimiters(
+  codes: string[],
+  delimiterPositions: number[],
+  delimiterChar: string,
+  options?: { excludeDelimiters?: boolean },
+): string {
   let result = '';
   for (let i = 0; i < codes.length; i++) {
     result += codes[i] ?? '';
-    if (delimiterPositions.includes(i + 1)) result += delimiterChar;
+    if (!options?.excludeDelimiters && delimiterPositions.includes(i + 1)) result += delimiterChar;
   }
   return result;
 }
@@ -95,14 +103,17 @@ function joinCodeWithDelimiters(codes: string[], delimiterPositions: number[], d
 //   character per level above the top (a space by default, or another ASCII character set
 //   on the New Taxonomy form), so depth is visible at a glance.
 // Rows with no description at all (level -1) are skipped — there's nothing to export.
-function buildConcatenatedGrid(project: TaxonomyProject): { header: string[]; rows: string[][] } {
+function buildConcatenatedGrid(
+  project: TaxonomyProject,
+  options?: { excludeDelimiters?: boolean },
+): { header: string[]; rows: string[][] } {
   const { indentChar: rawIndentChar, delimiterPositions, codeDelimiterChar } = project.settings;
   const indentChar = rawIndentChar || ' ';
   const rows: string[][] = [];
   for (const row of project.rows) {
     const level = levelOf(row);
     if (level === -1) continue;
-    const code = joinCodeWithDelimiters(row.codes, delimiterPositions, codeDelimiterChar || '-');
+    const code = joinCodeWithDelimiters(row.codes, delimiterPositions, codeDelimiterChar || '-', options);
     const description = indentChar.repeat(level) + (row.descriptions[level] ?? '');
     rows.push([code, description]);
   }
@@ -153,13 +164,14 @@ function exportFilename(project: TaxonomyProject, descriptor: string, extension:
 
 export async function exportDiscreteCsv(
   project: TaxonomyProject,
-  options?: { paddingOverride?: string },
+  options?: { paddingOverride?: string; excludeDelimiters?: boolean },
 ): Promise<{ project: TaxonomyProject; usedFolder: boolean; cancelled: boolean }> {
   const { project: versioned, versionLabel } = bumpFileVersion(project, 'discrete-csv');
-  const { header, rows } = buildDiscreteGrid(withPaddingSubstitution(project, options?.paddingOverride));
+  const { header, rows } = buildDiscreteGrid(withPaddingSubstitution(project, options?.paddingOverride), options);
   const csv = [header, ...rows].map((line) => line.map(csvEscape).join(',')).join('\r\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const { usedFolder, cancelled } = await saveExportFile(blob, exportFilename(project, 'Per Column', 'csv', versionLabel));
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const descriptor = options?.excludeDelimiters ? 'Per Column No Delimiter' : 'Per Column';
+  const { usedFolder, cancelled } = await saveExportFile(blob, exportFilename(project, descriptor, 'csv', versionLabel));
   return { project: cancelled ? project : versioned, usedFolder, cancelled };
 }
 
@@ -239,13 +251,14 @@ export async function exportDiscreteXlsx(
 
 export async function exportConcatenatedCsv(
   project: TaxonomyProject,
-  options?: { paddingOverride?: string },
+  options?: { paddingOverride?: string; excludeDelimiters?: boolean },
 ): Promise<{ project: TaxonomyProject; usedFolder: boolean; cancelled: boolean }> {
   const { project: versioned, versionLabel } = bumpFileVersion(project, 'concatenated-csv');
-  const { header, rows } = buildConcatenatedGrid(withPaddingSubstitution(project, options?.paddingOverride));
+  const { header, rows } = buildConcatenatedGrid(withPaddingSubstitution(project, options?.paddingOverride), options);
   const csv = [header, ...rows].map((line) => line.map(csvEscape).join(',')).join('\r\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const { usedFolder, cancelled } = await saveExportFile(blob, exportFilename(project, 'Concatenated', 'csv', versionLabel));
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const descriptor = options?.excludeDelimiters ? 'Concatenated No Delimiter' : 'Concatenated';
+  const { usedFolder, cancelled } = await saveExportFile(blob, exportFilename(project, descriptor, 'csv', versionLabel));
   return { project: cancelled ? project : versioned, usedFolder, cancelled };
 }
 
