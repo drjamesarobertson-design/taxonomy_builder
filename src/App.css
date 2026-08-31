@@ -340,7 +340,8 @@ body.app-dark-theme .taxonomy-meta .purpose {
   border-radius: 6px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
   padding: 0.6rem 0.75rem;
-  font-size: 0.85rem;
+  /* +2pt over the base 0.85rem (10.2pt at a 16px/12pt root) */
+  font-size: 1.02rem;
   font-weight: normal;
   text-align: left;
   white-space: pre-wrap;
@@ -430,6 +431,53 @@ body.app-dark-theme .taxonomy-meta .purpose {
 
 .taxonomy-meta {
   margin-bottom: 1rem;
+}
+
+.worksheet-guidance {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9rem;
+  margin-bottom: 1rem;
+  padding: 0.6rem 0.9rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  max-width: 62rem;
+}
+
+.worksheet-guidance-text {
+  flex: 1;
+  margin: 0;
+  color: #cfe0ff;
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+}
+
+.worksheet-guidance.collapsed .worksheet-guidance-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.worksheet-guidance.expanded .worksheet-guidance-text {
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.worksheet-guidance-toggle {
+  flex-shrink: 0;
+  padding: 0.35rem 0.8rem;
+  cursor: pointer;
+  background: transparent;
+  color: #cfe0ff;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.worksheet-guidance-toggle:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .taxonomy-meta h2 {

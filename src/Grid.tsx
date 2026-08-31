@@ -6,6 +6,7 @@ import { toggleCase } from './caseUtils';
 import { isValidCodeChar } from './codeValidation';
 import type { TaxonomyBlock } from './blockTransfer';
 import { parseBlockFile } from './blockTransfer';
+import type { HelpTextMap } from './helpText';
 
 interface GridProps {
   settings: TaxonomySettings;
@@ -21,6 +22,9 @@ interface GridProps {
    * settings.numLevels. The caller applies both in one update, so it never sees an inconsistent
    * settings/rows pairing along the way. */
   onSettingsAndRowsChange: (settings: TaxonomySettings, rows: TaxonomyRow[]) => void;
+  /** Field-level help text (see helpText.ts) — also covers the right-click menus' own "Help"
+   * entries here (gridCodeMenuHelp / gridDescMenuHelp / gridSuffixMenuHelp). */
+  helpText: HelpTextMap;
   /** Focus the first row's first description cell once, on mount (freshly created taxonomy). */
   autoFocusFirstRow?: boolean;
 }
@@ -48,7 +52,7 @@ const codeInputId = (level: number, rowId: string) => `code-${level}-${rowId}`;
 const descInputId = (level: number, rowId: string) => `desc-${level}-${rowId}`;
 const suffixInputId = (index: number, rowId: string) => `suffix-${index}-${rowId}`;
 
-export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange, autoFocusFirstRow }: GridProps) {
+export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange, helpText, autoFocusFirstRow }: GridProps) {
   const { numLevels, delimiterPositions, maxDescriptionLength, suffixes, paddingChar, codeDelimiterChar } = settings;
   const levels = Array.from({ length: numLevels }, (_, i) => i);
   // The wide overflow column gets whatever's left of the configured max description length
@@ -787,6 +791,31 @@ export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange
     if (idx === -1) return;
     const refLevel = Math.max(0, levelOf(rows[idx]));
     const insertAt = position === 'above' ? idx : idx + 1;
+
+    // If the rows that would end up immediately either side of the new gap already have
+    // ASCII-adjacent codes at this level (e.g. "1" then "2", nothing able to fit between them),
+    // there's no obvious code left for the new row without recoding a neighbour too — worth
+    // flagging before creating a row that starts out in exactly that spot.
+    const above = insertAt > 0 ? rows[insertAt - 1] : undefined;
+    const below = insertAt < rows.length ? rows[insertAt] : undefined;
+    const aboveCode = above?.codes[refLevel] ?? '';
+    const belowCode = below?.codes[refLevel] ?? '';
+    const noGap = aboveCode !== '' && belowCode !== '' && belowCode.charCodeAt(0) - aboveCode.charCodeAt(0) === 1;
+
+    const doInsert = () => performInsertRow(insertAt, count, refLevel);
+    if (noGap) {
+      setContextMenu(null);
+      setConfirmDialog({
+        message: 'There is no gap in the codes to insert this row',
+        confirmLabel: 'Insert Anyway',
+        onConfirm: doInsert,
+      });
+    } else {
+      doInsert();
+    }
+  }
+
+  function performInsertRow(insertAt: number, count: number, refLevel: number) {
     // Each new row's codes are duplicated from whichever row ends up directly above it —
     // the same "inherit, then recode manually" convention Add Row already uses — rather
     // than left blank; only the descriptions start empty.
@@ -1349,6 +1378,13 @@ export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange
 
   // Right-click "Add Column" (on either a code or a description cell) — the quick, one-off
   // counterpart to changing "Number of Code Columns" in Settings: adds exactly one more
+  // Right-click "Help" (on any of the three menu kinds) — shows that menu's own guidance text
+  // from public/help-text.csv, the same mechanism as the setup screens' field-level help icons.
+  function handleGridMenuHelp(field: 'gridCodeMenuHelp' | 'gridDescMenuHelp' | 'gridSuffixMenuHelp') {
+    setContextMenu(null);
+    showValidationError(helpText[field]?.trim() || 'No help text has been added for this menu yet.');
+  }
+
   // code/description column pair at the far right. Always safe (Section 6.1: new columns start
   // blank), so it's a plain Yes/No confirm rather than a data-loss warning.
   function handleAddColumnClick() {
@@ -1963,6 +1999,7 @@ export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange
               <li onClick={() => requestPromoteDemote('demote')}>Demote</li>
               <li onClick={handleMoveStart}>Move</li>
               <li onClick={handleCopyStart}>Copy Rows</li>
+              <li onClick={() => handleGridMenuHelp('gridDescMenuHelp')}>Help</li>
             </>
           )}
           {contextMenu.kind === 'code' && (
@@ -1974,10 +2011,14 @@ export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange
               <li onClick={handleCopyCodesBlock}>Copy Codes</li>
               {codeClipboard && <li onClick={handlePasteCodesBlock}>Paste Codes</li>}
               <li onClick={handleImportBlockMenuClick}>Import Block</li>
+              <li onClick={() => handleGridMenuHelp('gridCodeMenuHelp')}>Help</li>
             </>
           )}
           {contextMenu.kind === 'suffix' && (
-            <li onClick={handleDuplicateSuffixToSelection}>Duplicate to Selected Rows</li>
+            <>
+              <li onClick={handleDuplicateSuffixToSelection}>Duplicate to Selected Rows</li>
+              <li onClick={() => handleGridMenuHelp('gridSuffixMenuHelp')}>Help</li>
+            </>
           )}
           {contextMenu.kind !== 'suffix' && <li onClick={handleAddColumnClick}>Add Column</li>}
           {contextMenu.kind !== 'suffix' && <li onClick={handleDeleteColumnClick}>Delete Column</li>}
