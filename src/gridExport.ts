@@ -135,16 +135,20 @@ function exportFilename(project: TaxonomyProject, descriptor: string, extension:
   return `${base} ${descriptor}${versionLabel}.${extension}`;
 }
 
-export async function exportDiscreteCsv(project: TaxonomyProject): Promise<{ project: TaxonomyProject; usedFolder: boolean }> {
+export async function exportDiscreteCsv(
+  project: TaxonomyProject,
+): Promise<{ project: TaxonomyProject; usedFolder: boolean; cancelled: boolean }> {
   const { project: versioned, versionLabel } = bumpFileVersion(project, 'discrete-csv');
   const { header, rows } = buildDiscreteGrid(project);
   const csv = [header, ...rows].map((line) => line.map(csvEscape).join(',')).join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const { usedFolder } = await saveExportFile(blob, exportFilename(project, 'Per Column', 'csv', versionLabel));
-  return { project: versioned, usedFolder };
+  const { usedFolder, cancelled } = await saveExportFile(blob, exportFilename(project, 'Per Column', 'csv', versionLabel));
+  return { project: cancelled ? project : versioned, usedFolder, cancelled };
 }
 
-export async function exportDiscreteXlsx(project: TaxonomyProject): Promise<{ project: TaxonomyProject; usedFolder: boolean }> {
+export async function exportDiscreteXlsx(
+  project: TaxonomyProject,
+): Promise<{ project: TaxonomyProject; usedFolder: boolean; cancelled: boolean }> {
   const { project: versioned, versionLabel } = bumpFileVersion(project, 'discrete-xlsx');
   // exceljs is a large dependency needed only for this one export path — code-split so it
   // doesn't inflate the initial bundle for everyone who never exports to Excel.
@@ -211,20 +215,24 @@ export async function exportDiscreteXlsx(project: TaxonomyProject): Promise<{ pr
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });
-  const { usedFolder } = await saveExportFile(blob, exportFilename(project, 'Per Column', 'xlsx', versionLabel));
-  return { project: versioned, usedFolder };
+  const { usedFolder, cancelled } = await saveExportFile(blob, exportFilename(project, 'Per Column', 'xlsx', versionLabel));
+  return { project: cancelled ? project : versioned, usedFolder, cancelled };
 }
 
-export async function exportConcatenatedCsv(project: TaxonomyProject): Promise<{ project: TaxonomyProject; usedFolder: boolean }> {
+export async function exportConcatenatedCsv(
+  project: TaxonomyProject,
+): Promise<{ project: TaxonomyProject; usedFolder: boolean; cancelled: boolean }> {
   const { project: versioned, versionLabel } = bumpFileVersion(project, 'concatenated-csv');
   const { header, rows } = buildConcatenatedGrid(project);
   const csv = [header, ...rows].map((line) => line.map(csvEscape).join(',')).join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const { usedFolder } = await saveExportFile(blob, exportFilename(project, 'Concatenated', 'csv', versionLabel));
-  return { project: versioned, usedFolder };
+  const { usedFolder, cancelled } = await saveExportFile(blob, exportFilename(project, 'Concatenated', 'csv', versionLabel));
+  return { project: cancelled ? project : versioned, usedFolder, cancelled };
 }
 
-export async function exportConcatenatedXlsx(project: TaxonomyProject): Promise<{ project: TaxonomyProject; usedFolder: boolean }> {
+export async function exportConcatenatedXlsx(
+  project: TaxonomyProject,
+): Promise<{ project: TaxonomyProject; usedFolder: boolean; cancelled: boolean }> {
   const { project: versioned, versionLabel } = bumpFileVersion(project, 'concatenated-xlsx');
   const ExcelJS = (await import('exceljs')).default;
   const { header, rows } = buildConcatenatedGrid(project);
@@ -241,6 +249,6 @@ export async function exportConcatenatedXlsx(project: TaxonomyProject): Promise<
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });
-  const { usedFolder } = await saveExportFile(blob, exportFilename(project, 'Concatenated', 'xlsx', versionLabel));
-  return { project: versioned, usedFolder };
+  const { usedFolder, cancelled } = await saveExportFile(blob, exportFilename(project, 'Concatenated', 'xlsx', versionLabel));
+  return { project: cancelled ? project : versioned, usedFolder, cancelled };
 }

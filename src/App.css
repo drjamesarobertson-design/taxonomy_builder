@@ -617,6 +617,15 @@ body.app-dark-theme .taxonomy-meta .purpose {
   cursor: pointer;
 }
 
+.validation-dialog input[type='text'] {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.4rem 0.6rem;
+  margin: 0 0 1rem;
+  font-size: 0.95rem;
+}
+
 .confirm-dialog-actions {
   display: flex;
   flex-wrap: wrap;
