@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #60, 2026-09-01)
+## Current status (as of PR #62, 2026-09-01)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -103,14 +103,22 @@ further rounds of testing feedback. The tool currently supports, in full:
   shallowest entry was itself two levels deep landed two columns to the
   right of the anchor — and the required-levels calculation, using that
   same absolute depth, could also demand columns the import didn't
-  actually need, matching James's separate "'.' in columns 6 and 7" report
-  (both were the one bug). Fixed by computing `baseLevel` — the shallowest
-  entry's own depth — and stripping every entry's ancestor prefix above it
-  before placing codes/descriptions relative to the anchor. Verified with
-  a Playwright test importing the real block file at the exact anchor
-  James described (right-click on a level-3 code cell showing "1"), into
-  a taxonomy with a configured suffix column so the previously-untested
+  actually need. Fixed by computing `baseLevel` — the shallowest entry's
+  own depth — and stripping every entry's ancestor prefix above it before
+  placing codes/descriptions relative to the anchor. Verified with a
+  Playwright test importing the real block file at the exact anchor James
+  described (right-click on a level-3 code cell showing "1"), into a
+  taxonomy with a configured suffix column so the previously-untested
   suffix1Source dialog branch is exercised too.
+- CSV import "columns 6 and 7 filled with '.'" report turned out **not to
+  be a bug** — checked directly against James's actual Milling CSV: the
+  file genuinely has 7 code-column levels (3 columns, a delimiter, then 4
+  more), and columns 6 and 7 hold real, non-padding codes in 530 and 172
+  of the 1840 rows respectively, with matching real description text —
+  not artifacts of parsing. The `.` seen elsewhere is padding already
+  present in the source file itself for the (majority of) rows that don't
+  go that deep, exactly per Section 4.4's padding convention. Confirmed
+  with James; no code change needed.
 
 ---
 
