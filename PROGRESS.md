@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #72, 2026-09-01)
+## Current status (as of PR #74, 2026-09-01)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -555,15 +555,26 @@ with one mechanism (session autosave, `storage.ts`): the open taxonomy is
 written to a `localStorage` slot on every change, independent of sign-in
 state. "Back to Menu" (new toolbar button) returns to the landing menu
 without discarding anything; "Resume Work in Progress" there brings it
-back by name. Turns out a same-tab log-out/log-in didn't even need this —
-`project` is plain React state that a sign-out never actually touches, so
-logging back in the same tab already dropped James straight back into his
-taxonomy with zero extra clicks; the autosave/Resume mechanism is what
-covers the case that genuinely does lose in-memory state (a real reload
-or browser restart). Also: James decided the multi-user/access-model
-question (see "Known open questions") — one shared login list for now,
-real separate-instance deployments later if the tool's adoption justifies
-it.
+back by name. Also: James decided the multi-user/access-model question
+(see "Known open questions") — one shared login list for now, real
+separate-instance deployments later if the tool's adoption justifies it.
+
+**Correction shipped in PR #74**: this round shipped Log Out without
+resetting `project`/`signOnStage` — reasoning (wrongly) that since
+`project` is plain React state untouched by signing out, dropping
+straight back into the open taxonomy on a same-tab log-out/log-in was a
+*better* outcome than detouring through the menu. James confirmed that
+was actually the same bug restated, not a fix: the landing menu should
+always be where sign-in lands, full stop, with Resume Work in Progress as
+the one deliberate way back in. See PR #74 below.
+
+### Fix: log-out/log-in must land on the workflow menu (PR #74)
+James's exact repro: "if I log out on the worksheet ... login ... go
+directly to the worksheet, should be going to the workflow menu screen —
+same issue as before." `handleLogOut` now also runs the same reset
+`handleBackToMenu` does (clearing `project`/`signOnStage`) before clearing
+auth, so every sign-in — same-tab or otherwise — lands on the landing
+menu, with Resume Work in Progress as the way back into whatever was open.
 
 ---
 
