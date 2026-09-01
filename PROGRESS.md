@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #54, 2026-09-01)
+## Current status (as of PR #56, 2026-09-01)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -50,9 +50,11 @@ further rounds of testing feedback. The tool currently supports, in full:
 - A Library sidebar (left-hand, collapsible) for saving multiple taxonomies
   under eight fixed headings, independent of file-based Save/Load: "Add to
   Library" (prompts for a heading, or updates the linked entry in place),
-  right-click Move to Work Area / Edit Title / Remove from Library, and
-  drag-and-drop reordering within or across headings. Persisted in this
-  browser's own IndexedDB — per-browser, not a file, and not synced anywhere.
+  right-click Move to Work Area / Edit Title / Move Up / Move Down / Move
+  to Category… / Remove from Library, and drag-and-drop reordering within
+  or across headings (both the right-click and drag mechanisms work side
+  by side). Persisted in this browser's own IndexedDB — per-browser, not a
+  file, and not synced anywhere.
 - A "Code Restrictions" dropdown at the top of the work area, narrowing
   real codes to Numeric Only / Alpha Numeric with All Alpha / Alpha Numeric
   with Upper Case Alpha Only / Alpha Upper Case Only / Alpha Both Cases
@@ -214,17 +216,34 @@ IndexedDB, separate from the file-based save/export the spec describes.
   CSV shape — level count, delimiter positions, and suffix columns are
   inferred from the file's header/structure — then asks only for what a
   CSV can't carry (title/table name/purpose/max description length).
-  Note: this expects the exact column layout this app's own CSV export
-  produces (numbered code/description headers, one blank spacer column,
-  "Suffix N" headers) — a spreadsheet built independently with a similar
-  but not identical layout won't parse correctly. Padding character always
-  defaults to "." on import (not inferred), and suffix mode always defaults
-  to "editable" since that can't be reliably inferred from static data.
+  Note: this originally required the exact column layout this app's own
+  CSV export produces (including a blank spacer column between the code
+  and description blocks) — loosened in PR #56 to make that spacer column
+  optional, since James's real files don't have one. Padding character
+  always defaults to "." on import (not inferred), and suffix mode always
+  defaults to "editable" since that can't be reliably inferred from
+  static data.
 - Grid's own right-click "Export Block" exports just a selected row range
   as a block, alongside the toolbar's existing whole-table "Create Block".
 - CSV/Excel export now asks whether to concatenate suffix values onto the
   description or keep them right-aligned in their own column(s), only when
   the taxonomy has suffix columns configured.
+
+### Export Block range fix, Library move/reorder, looser CSV import (PR #56)
+- Export Block's row-range selection was actually broken: dragging or
+  shift-clicking from a code cell across to a description cell (PR #54's
+  own described gesture) silently failed to extend the selection, since
+  the drag/shift-click logic required the cell kind to match throughout,
+  and right-clicking a different-kind cell afterward reset the selection
+  to a single cell. Fixed so the row range extends across a kind change;
+  same-kind selections are unaffected.
+- Library: right-click "Move Up" / "Move Down" / "Move to Category…",
+  alongside the existing drag-and-drop, for reordering/recategorising
+  without needing to drag.
+- CSV import: the blank spacer column between the code and description
+  blocks is now optional (see the corrected PR #54 note above) — James's
+  real files are just code columns immediately followed by description
+  columns, adjacent, nothing in between.
 - Fixed a dialog-stacking bug found while building the suffix-mode choice:
   the CSV/Excel format-choice dialog stayed mounted underneath later-step
   dialogs (its state was still needed for the eventual export call),
