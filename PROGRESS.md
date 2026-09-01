@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #68, 2026-09-01)
+## Current status (as of PR #70, 2026-09-01)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -102,6 +102,15 @@ further rounds of testing feedback. The tool currently supports, in full:
   built"). Also: a larger header logo and a "Taxonomy Builder by the ERP
   Doctor James A Robertson and Associates Limited" tagline on the sign-on
   screens.
+- A simple email/password sign-on gate (`Login.tsx`/`auth.ts`), shown
+  before anything else: checks a salted SHA-256 hash (via the browser's
+  built-in `crypto.subtle`), remembers a successful login in this
+  browser's `localStorage` (Log Out button clears it), and points a
+  forgotten password at emailing James rather than an automated reset
+  (there's no backend to send email or manage tokens). Explicitly a speed
+  bump against casual access, not real security — see "Known open
+  questions" for why that's an inherent limit of a backend-less static
+  app, not a shortcut taken here.
 
 ### Not yet built
 - **Guided, step-by-step taxonomy-building workflows**, one per complexity
@@ -118,15 +127,6 @@ further rounds of testing feedback. The tool currently supports, in full:
   PR #68's round, not yet built — James will give more detailed guidance
   per level before implementation starts. See the design commentary below
   under "Known open questions" for the suggested approach.
-- **A real login screen.** James wants a simple email/password gate
-  (password file keyed by email, "email me to reset" for a forgotten
-  password) — flagged back to him that since this is a fully static,
-  client-side app with no backend, this can only ever be a speed bump
-  against casual access, never real security (anything shipped to the
-  browser, including a hashed-password file, is downloadable and
-  inspectable by anyone). Waiting on the actual email/password to seed
-  before building this, since that's not something to invent on his
-  behalf.
 - **A larger, crisper logo with a genuinely transparent background.**
   James pasted a bigger version of the logo inline in chat, but it didn't
   come through as an attachable file — there's no real pixel data to
@@ -232,6 +232,16 @@ further rounds of testing feedback. The tool currently supports, in full:
   big obvious buttons for them, not a rebuild. "Highly Experienced User"
   needs no new work at all — it's already today's ungated flow. James will
   give more detailed per-level guidance before this gets built.
+- **Sign-on gate is a speed bump, not real security (PR #70)** — worth
+  restating plainly since it's easy to mistake a login *screen* for actual
+  access control: this app is a fully static, client-side site with no
+  backend (Section 2/9), deployed straight to GitHub Pages. Everything
+  shipped to the browser, including `auth.ts`'s salted password hash, is
+  downloadable and inspectable by anyone who opens dev tools or clones the
+  repo. Salting and hashing (rather than storing the password in plain
+  text) is worth doing since it's nearly free, but neither changes that
+  fact. James confirmed he wants the simple version anyway, with this
+  limitation understood.
 
 ---
 
@@ -498,6 +508,21 @@ approach wasn't repeated).
 
 Also gave requested design commentary (not implementation) on the guided
 per-level workflow concept — see "Known open questions" above.
+
+### Sign-on gate (PR #70)
+James supplied the login credentials to seed (`jamesar@jar-and-a.com`,
+same value for both email and password "for now"), unblocking the login
+screen held back from PR #68. Built `Login.tsx` (email/password form,
+same colour scheme/font/logo treatment as the rest of the sign-on flow)
+and `auth.ts` (a salted SHA-256 hash checked via the browser's built-in
+`crypto.subtle`, no new dependency; a successful login is remembered in
+`localStorage`; a new Log Out button in the header clears it). Restated
+the security limitation directly in `auth.ts` and in "Known open
+questions" above: this can only ever be a speed bump against casual
+access, never real security, since the app is fully static with no
+backend. Also asked James how to actually attach the larger logo file
+(his first attempt came through as an inline chat image, not a file
+Claude Code can open) — still pending for a future round.
 
 ---
 
