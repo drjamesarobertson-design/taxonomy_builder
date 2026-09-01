@@ -1,7 +1,7 @@
 // Code character rules, per CLAUDE.md Section 4.4 / 6.7 (hard rule): within any column,
 // codes must sort in ascending ASCII order top to bottom. Only '.', 0-9, a-z, A-Z are valid.
 
-import type { TaxonomyRow } from './types';
+import type { CodeRestriction, TaxonomyRow } from './types';
 
 // A row's level is the position of its deepest populated description column (Section 4.1);
 // -1 means the row has no description at all yet.
@@ -45,6 +45,25 @@ export function validCodesInRange(upper: string | null, lower: string | null): s
     if (lower !== null && c.charCodeAt(0) >= lower.charCodeAt(0)) return false;
     return true;
   });
+}
+
+// Item 1: narrower, per-taxonomy restrictions on real code characters, on top of the fixed
+// global charset above. Checked only for a genuinely new, non-padding character — the padding
+// character itself always stays valid regardless of restriction (it marks "no further
+// hierarchy here", not a code value).
+export function isAllowedByCodeRestriction(ch: string, restriction: CodeRestriction): boolean {
+  switch (restriction) {
+    case 'Numeric Only':
+      return /^[0-9]$/.test(ch);
+    case 'Alpha Numeric with All Alpha':
+      return /^[0-9A-Za-z]$/.test(ch);
+    case 'Alpha Numeric with Upper Case Alpha Only':
+      return /^[0-9A-Z]$/.test(ch);
+    case 'Alpha Upper Case Only':
+      return /^[A-Z]$/.test(ch);
+    case 'Alpha Both Cases Only':
+      return /^[A-Za-z]$/.test(ch);
+  }
 }
 
 /** Compresses a sorted list of single characters into "X" / "X-Y" runs for display. */

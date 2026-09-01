@@ -16,7 +16,10 @@ type ExportColumn =
   | { type: 'gap' }
   | { type: 'suffix'; index: number };
 
-function buildExportColumns(project: TaxonomyProject, options?: { excludeDelimiters?: boolean }): ExportColumn[] {
+function buildExportColumns(
+  project: TaxonomyProject,
+  options?: { excludeDelimiters?: boolean; excludeSuffixColumns?: boolean },
+): ExportColumn[] {
   const { numLevels, delimiterPositions, suffixes, codeDelimiterChar } = project.settings;
   const columns: ExportColumn[] = [];
   for (let level = 0; level < numLevels; level++) {
@@ -32,35 +35,58 @@ function buildExportColumns(project: TaxonomyProject, options?: { excludeDelimit
   for (let level = 0; level < numLevels; level++) {
     columns.push({ type: 'desc', level });
   }
-  // User-defined suffix columns, each preceded by its own configured delimiter character.
-  suffixes.forEach((suffix, index) => {
-    columns.push({ type: 'delimiter', char: suffix.delimiter || '-' });
-    columns.push({ type: 'suffix', index });
-  });
+  // User-defined suffix columns, each preceded by its own configured delimiter character —
+  // omitted entirely when suffixes are being concatenated onto the description instead
+  // (item 4), since there's nothing left for a separate column to hold.
+  if (!options?.excludeSuffixColumns) {
+    suffixes.forEach((suffix, index) => {
+      columns.push({ type: 'delimiter', char: suffix.delimiter || '-' });
+      columns.push({ type: 'suffix', index });
+    });
+  }
   return columns;
+}
+
+// Item 4: folds every configured suffix's value (prefixed by its own delimiter) onto the end
+// of a description, in suffix order — skipped for a row where that suffix is blank, so a row
+// that never used a given suffix doesn't pick up a bare trailing delimiter.
+function appendSuffixesToText(project: TaxonomyProject, row: TaxonomyRow, text: string): string {
+  let result = text;
+  project.settings.suffixes.forEach((suffix, i) => {
+    const value = row.suffixValues[i] ?? '';
+    if (value) result += (suffix.delimiter || '-') + value;
+  });
+  return result;
 }
 
 function buildDiscreteGrid(
   project: TaxonomyProject,
-  options?: { excludeDelimiters?: boolean },
+  options?: { excludeDelimiters?: boolean; suffixMode?: 'concatenate' | 'rightAlign' },
 ): { header: string[]; rows: string[][]; columns: ExportColumn[] } {
-  const columns = buildExportColumns(project, options);
+  const concatenateSuffixes = options?.suffixMode === 'concatenate';
+  const columns = buildExportColumns(project, { excludeDelimiters: options?.excludeDelimiters, excludeSuffixColumns: concatenateSuffixes });
   const header = columns.map((c) => {
     if (c.type === 'code' || c.type === 'desc') return String(c.level + 1);
     if (c.type === 'suffix') return `Suffix ${c.index + 1}`;
     return '';
   });
-  const rows = project.rows.map((row) =>
-    columns.map((c) => {
+  const rows = project.rows.map((row) => {
+    const rowLevel = levelOf(row);
+    return columns.map((c) => {
       if (c.type === 'delimiter') return c.char;
       if (c.type === 'gap') return '';
       if (c.type === 'code') return row.codes[c.level] ?? '';
-      if (c.type === 'desc') return row.descriptions[c.level] ?? '';
+      if (c.type === 'desc') {
+        const text = row.descriptions[c.level] ?? '';
+        // Only the one description column matching this row's own level ever holds text
+        // (Section 4.1) — that's the only cell suffixes should ever land on.
+        return concatenateSuffixes && c.level === rowLevel ? appendSuffixesToText(project, row, text) : text;
+      }
       // Both suffix modes are per-row now — "constant" only means new rows are seeded with
       // the configured default, not that every row is forced to share the same value.
       return row.suffixValues[c.index] ?? '';
-    }),
-  );
+    });
+  });
   return { header, rows, columns };
 }
 
@@ -105,7 +131,7 @@ function joinCodeWithDelimiters(
 // Rows with no description at all (level -1) are skipped — there's nothing to export.
 function buildConcatenatedGrid(
   project: TaxonomyProject,
-  options?: { excludeDelimiters?: boolean },
+  options?: { excludeDelimiters?: boolean; suffixMode?: 'concatenate' | 'rightAlign' },
 ): { header: string[]; rows: string[][] } {
   const { indentChar: rawIndentChar, delimiterPositions, codeDelimiterChar } = project.settings;
   const indentChar = rawIndentChar || ' ';
@@ -114,7 +140,11 @@ function buildConcatenatedGrid(
     const level = levelOf(row);
     if (level === -1) continue;
     const code = joinCodeWithDelimiters(row.codes, delimiterPositions, codeDelimiterChar || '-', options);
-    const description = indentChar.repeat(level) + (row.descriptions[level] ?? '');
+    let description = indentChar.repeat(level) + (row.descriptions[level] ?? '');
+    // Concatenated mode never had a separate suffix column to begin with — "concatenate"
+    // folds suffix values onto the description text same as Discrete mode; "right align"
+    // (the default) simply leaves them out, exactly as this export always has.
+    if (options?.suffixMode === 'concatenate') description = appendSuffixesToText(project, row, description);
     rows.push([code, description]);
   }
   return { header: ['Code', 'Description'], rows };
@@ -164,7 +194,7 @@ function exportFilename(project: TaxonomyProject, descriptor: string, extension:
 
 export async function exportDiscreteCsv(
   project: TaxonomyProject,
-  options?: { paddingOverride?: string; excludeDelimiters?: boolean },
+  options?: { paddingOverride?: string; excludeDelimiters?: boolean; suffixMode?: 'concatenate' | 'rightAlign' },
 ): Promise<{ project: TaxonomyProject; usedFolder: boolean; cancelled: boolean }> {
   const { project: versioned, versionLabel } = bumpFileVersion(project, 'discrete-csv');
   const { header, rows } = buildDiscreteGrid(withPaddingSubstitution(project, options?.paddingOverride), options);
@@ -177,13 +207,15 @@ export async function exportDiscreteCsv(
 
 export async function exportDiscreteXlsx(
   project: TaxonomyProject,
-  options?: { paddingOverride?: string },
+  options?: { paddingOverride?: string; suffixMode?: 'concatenate' | 'rightAlign' },
 ): Promise<{ project: TaxonomyProject; usedFolder: boolean; cancelled: boolean }> {
   const { project: versioned, versionLabel } = bumpFileVersion(project, 'discrete-xlsx');
   // exceljs is a large dependency needed only for this one export path — code-split so it
   // doesn't inflate the initial bundle for everyone who never exports to Excel.
   const ExcelJS = (await import('exceljs')).default;
-  const { header, rows, columns } = buildDiscreteGrid(withPaddingSubstitution(project, options?.paddingOverride));
+  const { header, rows, columns } = buildDiscreteGrid(withPaddingSubstitution(project, options?.paddingOverride), {
+    suffixMode: options?.suffixMode,
+  });
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet((project.tableName || 'Taxonomy').slice(0, 31));
 
@@ -251,7 +283,7 @@ export async function exportDiscreteXlsx(
 
 export async function exportConcatenatedCsv(
   project: TaxonomyProject,
-  options?: { paddingOverride?: string; excludeDelimiters?: boolean },
+  options?: { paddingOverride?: string; excludeDelimiters?: boolean; suffixMode?: 'concatenate' | 'rightAlign' },
 ): Promise<{ project: TaxonomyProject; usedFolder: boolean; cancelled: boolean }> {
   const { project: versioned, versionLabel } = bumpFileVersion(project, 'concatenated-csv');
   const { header, rows } = buildConcatenatedGrid(withPaddingSubstitution(project, options?.paddingOverride), options);
@@ -264,11 +296,13 @@ export async function exportConcatenatedCsv(
 
 export async function exportConcatenatedXlsx(
   project: TaxonomyProject,
-  options?: { paddingOverride?: string },
+  options?: { paddingOverride?: string; suffixMode?: 'concatenate' | 'rightAlign' },
 ): Promise<{ project: TaxonomyProject; usedFolder: boolean; cancelled: boolean }> {
   const { project: versioned, versionLabel } = bumpFileVersion(project, 'concatenated-xlsx');
   const ExcelJS = (await import('exceljs')).default;
-  const { header, rows } = buildConcatenatedGrid(withPaddingSubstitution(project, options?.paddingOverride));
+  const { header, rows } = buildConcatenatedGrid(withPaddingSubstitution(project, options?.paddingOverride), {
+    suffixMode: options?.suffixMode,
+  });
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet((project.tableName || 'Taxonomy').slice(0, 31));
 

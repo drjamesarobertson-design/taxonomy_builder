@@ -37,15 +37,25 @@ function levelOf(row: TaxonomyRow): number {
   return -1;
 }
 
-export function buildBlock(project: TaxonomyProject): TaxonomyBlock {
+// `rowsOverride` (item 3): exports only a chosen range of rows — e.g. one branch of a large
+// taxonomy — rather than the whole table, via the grid's own multi-row selection. Each row's
+// own code path is still trimmed to its own level exactly as for a whole-table export; nothing
+// about the block format itself changes, only which rows feed it. `includeSuffixes` (also item
+// 3, "Include Suffix? Y/N") lets the block leave suffix values out entirely, for a plain
+// structure-and-wording transfer into a target that may not share the same suffix setup.
+export function buildBlock(
+  project: TaxonomyProject,
+  options?: { rowsOverride?: TaxonomyRow[]; includeSuffixes?: boolean },
+): TaxonomyBlock {
   const entries: BlockEntry[] = [];
-  for (const row of project.rows) {
+  const includeSuffixes = options?.includeSuffixes ?? true;
+  for (const row of options?.rowsOverride ?? project.rows) {
     const level = levelOf(row);
     if (level === -1) continue;
     entries.push({
       codes: row.codes.slice(0, level + 1).map((c) => c ?? ''),
       description: row.descriptions[level] ?? '',
-      suffixValues: project.settings.suffixes.map((_, i) => row.suffixValues[i] ?? ''),
+      suffixValues: includeSuffixes ? project.settings.suffixes.map((_, i) => row.suffixValues[i] ?? '') : [],
     });
   }
   return {
@@ -56,19 +66,21 @@ export function buildBlock(project: TaxonomyProject): TaxonomyBlock {
   };
 }
 
-function exportFilename(project: TaxonomyProject, versionLabel: string): string {
+function exportFilename(project: TaxonomyProject, versionLabel: string, descriptor?: string): string {
   const base = project.tableName || project.title || 'taxonomy';
-  return `${base} Block${versionLabel}.json`;
+  return `${base} ${descriptor ? `${descriptor} ` : ''}Block${versionLabel}.json`;
 }
 
 export async function exportBlock(
   project: TaxonomyProject,
+  options?: { rowsOverride?: TaxonomyRow[]; includeSuffixes?: boolean },
 ): Promise<{ project: TaxonomyProject; usedFolder: boolean; cancelled: boolean }> {
   const { project: versioned, versionLabel } = bumpFileVersion(project, 'block-json');
-  const block = buildBlock(project);
+  const block = buildBlock(project, options);
   const json = JSON.stringify(block, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
-  const { usedFolder, cancelled } = await saveExportFile(blob, exportFilename(project, versionLabel));
+  const descriptor = options?.rowsOverride ? 'Selection' : undefined;
+  const { usedFolder, cancelled } = await saveExportFile(blob, exportFilename(project, versionLabel, descriptor));
   return { project: cancelled ? project : versioned, usedFolder, cancelled };
 }
 

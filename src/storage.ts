@@ -1,4 +1,5 @@
 import type { TaxonomyProject } from './types';
+import { CODE_RESTRICTIONS } from './types';
 import { saveExportFile } from './exportFolder';
 import { bumpFileVersion } from './fileVersion';
 
@@ -60,6 +61,11 @@ export function loadProjectFromFile(file: File): Promise<TaxonomyProject> {
         }
         if (typeof settings.codeDelimiterChar !== 'string' || settings.codeDelimiterChar.length !== 1) {
           settings.codeDelimiterChar = '-';
+        }
+        // Older files predate the Code Restrictions dropdown (item 1) — default to the
+        // unrestricted option, matching the full charset every taxonomy used before this.
+        if (!CODE_RESTRICTIONS.includes(settings.codeRestriction as never)) {
+          settings.codeRestriction = 'Alpha Numeric with All Alpha';
         }
         const project = data as unknown as Record<string, unknown>;
         if (typeof project.fileVersions !== 'object' || project.fileVersions === null) {
