@@ -17,6 +17,20 @@ export const CODE_RESTRICTIONS = [
 
 export type CodeRestriction = (typeof CODE_RESTRICTIONS)[number];
 
+// The sign-on landing menu's six starting points for a new taxonomy (WorkflowMenu). All six
+// currently open the same taxonomy setup screen — per-level guided workflows (hiding/revealing
+// columns, step-by-step prompts) are the next piece of work, not yet built.
+export const WORKFLOW_LEVELS = [
+  'Simple Taxonomy',
+  'Intermediate Complexity Taxonomy',
+  'Advanced Complexity Taxonomy',
+  'Chart of Accounts',
+  'Item Master',
+  'Highly Experienced User — No Guidance',
+] as const;
+
+export type WorkflowLevel = (typeof WORKFLOW_LEVELS)[number];
+
 export interface SuffixField {
   /** Max characters this suffix column can hold (1 to 8). */
   width: number;

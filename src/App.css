@@ -157,6 +157,11 @@
   padding: 0.75rem 0;
 }
 
+.app-heading-block {
+  flex-shrink: 0;
+  min-width: 0;
+}
+
 .app-heading {
   font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   font-size: 36pt;
@@ -164,7 +169,12 @@
   margin: 0;
   text-align: left;
   white-space: nowrap;
-  flex-shrink: 0;
+}
+
+.app-tagline {
+  margin: 0.15rem 0 0;
+  font-size: 0.95rem;
+  color: #cfe0ff;
 }
 
 .header-right {
@@ -180,7 +190,7 @@
 }
 
 .app-logo {
-  width: 4.5rem;
+  width: 7.5rem;
   height: auto;
   flex-shrink: 0;
 }
@@ -329,6 +339,85 @@
   font-size: 11pt;
   color: #b9c9ef;
   max-width: 480px;
+}
+
+/* Sign-on landing menu (WorkflowMenu) — same dark-blue-page / white-card language as the New
+   Taxonomy form below it, just laid out as two side-by-side choices instead of one form. */
+.workflow-menu {
+  margin-top: 1.5rem;
+  max-width: 900px;
+}
+
+.workflow-menu > h2 {
+  margin: 0 0 1rem;
+}
+
+.workflow-menu-columns {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.workflow-menu-column {
+  flex: 1 1 320px;
+  background: #fff;
+  color: #1a1a1a;
+  border-radius: 6px;
+  padding: 1.25rem 1.5rem;
+}
+
+.workflow-menu-column h3 {
+  margin: 0 0 0.5rem;
+}
+
+.workflow-menu-hint {
+  margin: 0 0 1rem;
+  color: #555;
+  font-size: 0.85rem;
+}
+
+.workflow-level-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.workflow-level-buttons button,
+.workflow-existing-btn {
+  padding: 0.6rem 1rem;
+  cursor: pointer;
+  background: #1660d1;
+  color: #fff;
+  border: 1px solid #1660d1;
+  border-radius: 4px;
+  text-align: left;
+  font-size: 0.95rem;
+}
+
+.workflow-level-buttons button:hover,
+.workflow-existing-btn:hover {
+  background: #124fa8;
+  border-color: #124fa8;
+}
+
+.sign-on-back-btn {
+  margin-top: 1.5rem;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+  background: transparent;
+  color: #cfe0ff;
+  border: 1px solid #4a6cad;
+  border-radius: 4px;
+}
+
+.sign-on-back-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.chosen-workflow-level {
+  margin: 0.75rem 0 0;
+  color: #cfe0ff;
+  font-weight: 600;
 }
 
 /* App-wide theme — a dark blue matching the ERP Doctor logo, with light sans-serif text for
