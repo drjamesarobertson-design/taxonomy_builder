@@ -164,6 +164,7 @@ export default function Grid({
     anchorRowId: string;
     anchorLevel: number;
     requiredLevels: number;
+    baseLevel: number;
   } | null>(null);
   const [addColumnsChoice, setAddColumnsChoice] = useState<{ addCount: number } | null>(null);
   // Suffix 1's value can come from a fresh value typed just for this import, or from the
@@ -1381,9 +1382,18 @@ export default function Grid({
       showValidationError('This block has no entries to import.');
       return;
     }
-    const maxBlockDepth = Math.max(...block.entries.map((entry) => entry.codes.length - 1));
+    // Each entry's `codes` is the row's FULL ancestor path from the SOURCE taxonomy's own root
+    // (buildBlock: `row.codes.slice(0, level + 1)`) — not a path relative to the block's own
+    // shallowest entry. A block cut from deep inside a table (e.g. a level-2 heading and its
+    // level-3 children) still carries 3- and 4-element `codes` arrays, even though the heading
+    // itself is meant to land exactly on the anchor. Only the portion from that shallowest
+    // entry downward belongs at the destination; the ancestor prefix above it is context from
+    // the source table that means nothing here (prefixCodes below supplies the destination's
+    // own ancestor context instead) and must be stripped before placing anything.
+    const baseLevel = Math.min(...block.entries.map((entry) => entry.codes.length - 1));
+    const maxBlockDepth = Math.max(...block.entries.map((entry) => entry.codes.length - 1 - baseLevel));
     const requiredLevels = anchorLevel + maxBlockDepth + 1;
-    const pending = { block, anchorRowId, anchorLevel, requiredLevels };
+    const pending = { block, anchorRowId, anchorLevel, requiredLevels, baseLevel };
     if (requiredLevels > numLevels) {
       setPendingImport(pending);
       setAddColumnsChoice({ addCount: requiredLevels - numLevels });
@@ -1417,7 +1427,7 @@ export default function Grid({
     suffix1Source: 'enterText' | 'useExisting',
     suffix1Text: string,
   ) {
-    const { block, anchorRowId, anchorLevel, requiredLevels } = pending;
+    const { block, anchorRowId, anchorLevel, requiredLevels, baseLevel } = pending;
     const newNumLevels = Math.max(numLevels, requiredLevels);
     const anchorIndex = rows.findIndex((r) => r.id === anchorRowId);
     if (anchorIndex === -1) {
@@ -1433,9 +1443,10 @@ export default function Grid({
     let droppedSuffixes = false;
 
     const newRows: TaxonomyRow[] = block.entries.map((entry) => {
+      const ownCodes = entry.codes.slice(baseLevel);
       const codes = Array(newNumLevels).fill('');
       for (let i = 0; i < anchorLevel; i++) codes[i] = prefixCodes[i] ?? '';
-      for (let i = 0; i < entry.codes.length; i++) codes[anchorLevel + i] = entry.codes[i] ?? '';
+      for (let i = 0; i < ownCodes.length; i++) codes[anchorLevel + i] = ownCodes[i] ?? '';
 
       let description = entry.description;
       // Constant-mode suffixes the block doesn't cover fall back to their configured default —
@@ -1465,7 +1476,7 @@ export default function Grid({
       });
 
       const descriptions = Array(newNumLevels).fill('');
-      descriptions[anchorLevel + entry.codes.length - 1] = description;
+      descriptions[anchorLevel + ownCodes.length - 1] = description;
       return { id: crypto.randomUUID(), codes, descriptions, suffixValues };
     });
 
