@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #58, 2026-09-01)
+## Current status (as of PR #60, 2026-09-01)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -86,15 +86,21 @@ further rounds of testing feedback. The tool currently supports, in full:
 - The collapse/filter caret's two different behaviours (description
   columns collapse by level; code columns filter literally on the padding
   character) were flagged and confirmed correct by James in PR #49.
-- **Open bug, unresolved:** CSV import rejects a file James says looks
-  correct, with "Expected 1 description columns (matching the 1 code
-  columns) but found 0" — meaning the parser is only recognising a single
-  code column when the real file has several. Two rounds of fixes to
-  csvImport.ts's structural assumptions (PR #54, #56) haven't resolved it,
-  most likely because the actual file's delimiter/encoding doesn't match
-  what's been guessed from a pasted table in chat (e.g. it may be
-  tab-separated, not comma-separated). Waiting on James to share the
-  actual file for direct diagnosis rather than guessing further.
+- CSV import's "Expected 1 description columns... found 0" bug is
+  **resolved** (PR #60) — root-caused directly against James's actual
+  uploaded file rather than a pasted-table guess: the real file has no
+  header row at all (data starts on line 1) and uses two blank spacer
+  columns, not one. Verified end-to-end against the real 1840-row file.
+- **Open bug, unresolved:** Import Block reportedly inserts a block "2
+  columns to the right of the cursor" instead of superimposing its
+  leftmost code column on the right-clicked anchor column. Tried to
+  reproduce three ways (a plain taxonomy, the real Milling taxonomy with a
+  delimiter, and a case that triggers the "Add Columns" growth dialog) —
+  in every test the block landed exactly on the anchor column, matching
+  the code's own logic in Grid.tsx's `finalizeImport`. Flagged back to
+  James rather than shipping a speculative fix; needs either a repro he
+  can walk through live, or confirmation he's testing the latest deploy
+  (not a cached older build).
 
 ---
 
@@ -276,6 +282,22 @@ IndexedDB, separate from the file-based save/export the spec describes.
 - The CSV-import/Load-from-File error banner was dark red text directly on
   the app's dark blue background — barely legible. Now a solid bright
   yellow box with dark text.
+
+### CSV import fixed for real, headerless files (PR #60)
+Root-caused directly against the actual file James uploaded (1840 rows,
+his Milling Master Chart) rather than guessing further from a pasted
+table. The real cause: his file has no header row at all — data starts on
+line 1 — and uses two blank spacer columns between the code and
+description blocks (this app's own export uses one). The parser rewrite
+tries the original header-based read first (unchanged, still handles this
+app's own export), then falls back to a data-driven detection that
+identifies code/delimiter columns from their own content, skips any
+number of blank filler columns rather than exactly one, and tolerates a
+small minority of malformed rows (90% threshold per column) rather than
+requiring unanimous agreement — the real file has 9 rows out of 1840
+missing a trailing padding character. Verified end-to-end against the
+real file: all 1840 rows import with the correct 7 levels and delimiter
+position.
 
 ---
 
