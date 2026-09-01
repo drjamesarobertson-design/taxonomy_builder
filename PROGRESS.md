@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #70, 2026-09-01)
+## Current status (as of PR #72, 2026-09-01)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -111,6 +111,14 @@ further rounds of testing feedback. The tool currently supports, in full:
   bump against casual access, not real security — see "Known open
   questions" for why that's an inherent limit of a backend-less static
   app, not a shortcut taken here.
+- Session autosave (`storage.ts`): the open taxonomy is written to a
+  single `localStorage` slot on every change, independent of sign-in
+  state. A "Back to Menu" toolbar button returns to the landing menu
+  without discarding it, and "Resume Work in Progress" there brings it
+  straight back — covering both a same-tab log-out/log-in (where it's
+  actually unnecessary, since `project` state survives that untouched
+  anyway) and a real reload/browser-restart (where it's the only way
+  back).
 
 ### Not yet built
 - **Guided, step-by-step taxonomy-building workflows**, one per complexity
@@ -242,6 +250,20 @@ further rounds of testing feedback. The tool currently supports, in full:
   text) is worth doing since it's nearly free, but neither changes that
   fact. James confirmed he wants the simple version anyway, with this
   limitation understood.
+- **Multi-user / multi-instance access model — decided, not yet built.**
+  James asked about tracking individual users across "instances" of the
+  software (giving each a username/password when he hands it out) and
+  floated a separate "taxonomy_builder_access" app for it. Given three
+  options — (1) more rows in the one shared `AUTH_USERS` list this app
+  already has, (2) a small separate admin app just to self-serve editing
+  that same list, (3) genuinely separate per-client deployments each with
+  their own credentials, matching "instance" literally — James chose (1)
+  for now, with (3) explicitly anticipated "in due course" if things go
+  well. So: adding a user today is still "tell me the email/password, I
+  add a row to `auth.ts`" — no new work needed until (3) actually becomes
+  the ask, at which point it's a real distribution-model conversation
+  (separate deployments, a way to push updates to all of them, a way to
+  track who has which), not a small addition.
 
 ---
 
@@ -523,6 +545,25 @@ access, never real security, since the app is fully static with no
 backend. Also asked James how to actually attach the larger logo file
 (his first attempt came through as an inline chat image, not a file
 Claude Code can open) — still pending for a future round.
+
+### Session autosave, Resume Work in Progress, Back to Menu (PR #72)
+James found the sign-on flow had two related gaps: logging out and back
+in while a taxonomy was open dropped him onto the workflow picker instead
+of back into his work, and there was no way to get back to that picker at
+all once a taxonomy was open — no "Close Session" or similar. Fixed both
+with one mechanism (session autosave, `storage.ts`): the open taxonomy is
+written to a `localStorage` slot on every change, independent of sign-in
+state. "Back to Menu" (new toolbar button) returns to the landing menu
+without discarding anything; "Resume Work in Progress" there brings it
+back by name. Turns out a same-tab log-out/log-in didn't even need this —
+`project` is plain React state that a sign-out never actually touches, so
+logging back in the same tab already dropped James straight back into his
+taxonomy with zero extra clicks; the autosave/Resume mechanism is what
+covers the case that genuinely does lose in-memory state (a real reload
+or browser restart). Also: James decided the multi-user/access-model
+question (see "Known open questions") — one shared login list for now,
+real separate-instance deployments later if the tool's adoption justifies
+it.
 
 ---
 
