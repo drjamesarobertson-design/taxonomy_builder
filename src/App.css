@@ -1,4 +1,12 @@
+.app-shell {
+  display: flex;
+  align-items: flex-start;
+  min-height: 100vh;
+}
+
 .app {
+  flex: 1;
+  min-width: 0;
   max-width: 1400px;
   margin: 0 auto;
   padding: 1.5rem;
@@ -6,10 +14,127 @@
   color: #1a1a1a;
 }
 
+.library-sidebar {
+  flex-shrink: 0;
+  width: 15rem;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  background: #0b1f47;
+  color: #eaf2ff;
+  font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  padding: 0.75rem;
+  box-sizing: border-box;
+  border-right: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.library-sidebar-collapsed {
+  width: auto;
+  padding: 0.5rem 0.25rem;
+}
+
+.library-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.library-header h2 {
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+.library-collapse-toggle {
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  color: inherit;
+  border-radius: 4px;
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+  writing-mode: horizontal-tb;
+}
+
+.library-sidebar-collapsed .library-collapse-toggle {
+  writing-mode: vertical-rl;
+  padding: 0.6rem 0.3rem;
+}
+
+.library-empty {
+  font-size: 0.8rem;
+  color: #b9c9ef;
+  margin: 0.5rem 0;
+}
+
+.library-category {
+  margin-bottom: 0.6rem;
+}
+
+.library-category-heading {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #9db4e0;
+  margin: 0.6rem 0 0.25rem;
+  padding-bottom: 0.15rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  min-height: 1rem;
+}
+
+.library-entry-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-height: 0.4rem;
+}
+
+.library-entry {
+  padding: 0.3rem 0.4rem;
+  border-radius: 4px;
+  cursor: grab;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.library-entry:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.library-entry-selected {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.library-dragover {
+  outline: 2px dashed #7fb0ff;
+  outline-offset: -2px;
+}
+
+.library-rename-input {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  padding: 0.15rem 0.3rem;
+  color: #1a1a1a;
+}
+
+.library-category-select {
+  display: block;
+  width: 100%;
+  margin: 0 0 1rem;
+  padding: 0.4rem;
+  font-size: 0.95rem;
+}
+
 .app-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  row-gap: 0.5rem;
   margin-bottom: 1rem;
   /* Freeze Titles-style: the header (title, Undo/Redo/Save/etc., logo) stays pinned to the
      top of the viewport as a long grid scrolls beneath it, rather than scrolling away with
@@ -27,6 +152,8 @@
   font-weight: 700;
   margin: 0;
   text-align: left;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .header-right {
@@ -37,6 +164,7 @@
 
 .toolbar {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
 }
 
