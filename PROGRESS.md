@@ -12,9 +12,14 @@ actually exists in `main` right now and how it got there.
 `claude/review-claude-md-5ktqcm`, tested (build, lint, Playwright), opened as
 a PR against `main`, squash-merged, and verified live before moving on.
 
+**Milestone:** James considers Phase 1 complete as of PR #52 (2026-09-01) —
+not a hard stop, but a marker in what he sees as one continuous progressive
+learning-and-refinement process. Work keeps going the same way; "Phase 2"
+just means whatever comes next, not a different process or a rewrite.
+
 ---
 
-## Current status (as of PR #51, 2026-09-01)
+## Current status (as of PR #52, 2026-09-01)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
