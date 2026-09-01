@@ -24,6 +24,8 @@ import Grid from './Grid';
 import Logo from './Logo';
 import LibrarySidebar from './LibrarySidebar';
 import WorkflowMenu from './WorkflowMenu';
+import Login from './Login';
+import { getStoredAuthEmail, clearAuthEmail } from './auth';
 import {
   LIBRARY_CATEGORIES,
   listLibraryEntries,
@@ -37,6 +39,10 @@ import type { LibraryCategory, LibraryEntry } from './library';
 import './App.css';
 
 export default function App() {
+  // Sign-on gate (see auth.ts for what this can and can't actually guard). Remembered in this
+  // browser's localStorage so it isn't asked on every visit — only Log Out or clearing site
+  // data forgets it.
+  const [authedEmail, setAuthedEmail] = useState<string | null>(() => getStoredAuthEmail());
   const [project, setProject] = useState<TaxonomyProject | null>(null);
   // The sign-on landing menu (WorkflowMenu) shows first with no taxonomy open; picking either
   // path reveals today's existing screens underneath. `chosenWorkflowLevel` is purely a label
@@ -687,6 +693,16 @@ export default function App() {
     setSignOnStage('new');
   }
 
+  function handleLogOut() {
+    if (dirty && !confirm('Log out? Any unsaved changes to the current taxonomy will be lost.')) return;
+    clearAuthEmail();
+    setAuthedEmail(null);
+  }
+
+  if (!authedEmail) {
+    return <Login onSuccess={setAuthedEmail} />;
+  }
+
   return (
     <div className="app-shell">
       <LibrarySidebar
@@ -814,6 +830,9 @@ export default function App() {
               onChange={handleCsvFileSelected}
             />
           </div>
+          <button type="button" className="log-out-btn" onClick={handleLogOut} title={`Signed in as ${authedEmail}`}>
+            Log Out
+          </button>
           <Logo className="app-logo" />
         </div>
       </header>
