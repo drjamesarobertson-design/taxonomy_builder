@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { TaxonomyProject, TaxonomyRow, TaxonomySettings, SuffixField, CodeRestriction } from './types';
+import type { TaxonomyProject, TaxonomyRow, TaxonomySettings, SuffixField, CodeRestriction, WorkflowLevel } from './types';
 import { createEmptyRow, createProject, growRowsToLevels, CODE_RESTRICTIONS } from './types';
 import { saveProjectToFile, loadProjectFromFile } from './storage';
 import {
@@ -23,6 +23,7 @@ import type { SettingsFields } from './SettingsModal';
 import Grid from './Grid';
 import Logo from './Logo';
 import LibrarySidebar from './LibrarySidebar';
+import WorkflowMenu from './WorkflowMenu';
 import {
   LIBRARY_CATEGORIES,
   listLibraryEntries,
@@ -37,6 +38,12 @@ import './App.css';
 
 export default function App() {
   const [project, setProject] = useState<TaxonomyProject | null>(null);
+  // The sign-on landing menu (WorkflowMenu) shows first with no taxonomy open; picking either
+  // path reveals today's existing screens underneath. `chosenWorkflowLevel` is purely a label
+  // shown above the setup form for now — the six levels don't yet drive different behaviour,
+  // so it isn't persisted into the project itself (that's the next piece of work).
+  const [signOnStage, setSignOnStage] = useState<'menu' | 'new' | 'existing'>('menu');
+  const [chosenWorkflowLevel, setChosenWorkflowLevel] = useState<WorkflowLevel | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [autoFocusFirstRow, setAutoFocusFirstRow] = useState(false);
@@ -671,6 +678,13 @@ export default function App() {
     setProject(null);
     setLoadError(null);
     setCurrentLibraryEntryId(null);
+    setSignOnStage('menu');
+    setChosenWorkflowLevel(null);
+  }
+
+  function handleChooseWorkflowLevel(level: WorkflowLevel) {
+    setChosenWorkflowLevel(level);
+    setSignOnStage('new');
   }
 
   return (
@@ -684,7 +698,12 @@ export default function App() {
       />
       <div className="app">
       <header className="app-header">
-        <h1 className="app-heading">The ERP Doctor Taxonomy Builder</h1>
+        <div className="app-heading-block">
+          <h1 className="app-heading">The ERP Doctor Taxonomy Builder</h1>
+          {!project && (
+            <p className="app-tagline">Taxonomy Builder by the ERP Doctor James A Robertson and Associates Limited</p>
+          )}
+        </div>
         <div className="header-right">
           <div className="toolbar">
             {project && (
@@ -801,8 +820,21 @@ export default function App() {
 
       {loadError && <p className="load-error">{loadError}</p>}
 
-      {!project && (
+      {!project && signOnStage === 'menu' && (
         <>
+          <WorkflowMenu onChooseNew={handleChooseWorkflowLevel} onChooseExisting={() => setSignOnStage('existing')} />
+          <footer className="app-footer">
+            The ERP Doctor Taxonomy Builder is the Intellectual Property of the ERP Doctor and
+            James A Robertson and Associates Limited, it is copyright © 2026
+          </footer>
+        </>
+      )}
+
+      {!project && signOnStage === 'existing' && (
+        <>
+          <button type="button" className="sign-on-back-btn" onClick={() => setSignOnStage('menu')}>
+            ← Back
+          </button>
           <section className="load-from-file-section">
             <button type="button" onClick={handleLoadClick}>
               Load from File
@@ -810,8 +842,21 @@ export default function App() {
             <button type="button" onClick={handleImportCsvClick} title="Import a taxonomy from a Discrete Columns CSV">
               Import CSV
             </button>
-            <p>Already have a saved taxonomy? Loading one replaces anything entered below.</p>
+            <p>Or pick one from your Library on the left.</p>
           </section>
+          <footer className="app-footer">
+            The ERP Doctor Taxonomy Builder is the Intellectual Property of the ERP Doctor and
+            James A Robertson and Associates Limited, it is copyright © 2026
+          </footer>
+        </>
+      )}
+
+      {!project && signOnStage === 'new' && (
+        <>
+          <button type="button" className="sign-on-back-btn" onClick={() => setSignOnStage('menu')}>
+            ← Back
+          </button>
+          {chosenWorkflowLevel && <p className="chosen-workflow-level">Creating a {chosenWorkflowLevel}</p>}
           <NewTaxonomyForm onCreate={handleCreate} helpText={helpText} />
           <footer className="app-footer">
             The ERP Doctor Taxonomy Builder is the Intellectual Property of the ERP Doctor and
