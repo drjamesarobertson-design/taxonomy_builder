@@ -724,10 +724,14 @@ export default function App() {
     setProjectGeneration((g) => g + 1);
   }
 
-  // Logging out no longer risks losing anything — the autosave slot (written on every change,
-  // independent of sign-in state) already has the latest state, and "Resume Work in Progress"
-  // brings it back after logging back in.
+  // Logging out always lands back on the landing menu on the next sign-in — never straight
+  // back into whatever was open (that was the bug: `project` is plain React state, untouched
+  // by signing out, so a same-tab log-out/log-in used to drop straight back into the grid).
+  // The menu is the one consistent landing point after any sign-in; nothing is actually lost
+  // either way, since the autosave slot (written on every change, independent of sign-in
+  // state) already has the latest state, and "Resume Work in Progress" brings it back.
   function handleLogOut() {
+    handleBackToMenu();
     clearAuthEmail();
     setAuthedEmail(null);
   }
