@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #64, 2026-09-01)
+## Current status (as of PR #66, 2026-09-01)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -82,12 +82,15 @@ further rounds of testing feedback. The tool currently supports, in full:
   protected row's own code/description is blocked with an explicit
   warning (also covers Delete Codes, Clear Codes and Start Again, Paste
   Codes, and Promote/Demote — anything else that can overwrite or blank a
-  protected row's code); new rows can only be inserted where a real code
-  gap exists between two neighbours (hard block, no override); "Mark as
-  Delete" (right-click a description) prefixes it with "XXX " as the
-  sanctioned way to retire a protected entry instead of deleting it; and
-  CSV Import (which replaces the whole table outside any per-cell guard)
-  is blocked outright.
+  protected row's code); Toggle Case, Alpha Sort, and Move (the manual-
+  reorder mechanism) are also blocked on a protected row, since reordering
+  or recasing one risks the same kind of integrity loss; new rows can only
+  be inserted where a real code gap exists between two neighbours (hard
+  block, no override) — Import Block's own insertion point goes through
+  the same check; "Mark as Delete" (right-click a description) prefixes
+  it with "XXX " as the sanctioned way to retire a protected entry instead
+  of deleting it; and CSV Import (which replaces the whole table outside
+  any per-cell guard) is blocked outright.
 
 ### Not yet built
 - Section 6.9 comments/notes on entries (no on-row indicator or add/edit UI
@@ -143,17 +146,22 @@ further rounds of testing feedback. The tool currently supports, in full:
   the only way to retire one); the gap-only insert rule applies only while
   locked, not to unlocked taxonomies generally; Mark as Delete prefixes
   ("XXX " + description) rather than replacing or suffixing.
-- **Lock Taxonomy — known gaps not covered by this round**, flagged rather
-  than guessed at: Toggle Case, Alpha Sort, and manual drag reorder are
-  NOT blocked on a protected row (case/order aren't the code or
-  description text itself, so left editable — a judgement call, not
-  explicitly specified); Replicate Codes Above/Below aren't guarded
-  either, but can't actually overwrite a protected row's real code anyway
-  (they only ever fill genuinely blank cells); Import Block's own
-  insertion point doesn't yet go through the same gap-only check Insert
-  Row got. Suffix column values also stay editable on a protected row —
-  only code/description were named as protected. Worth a follow-up round
-  if any of these turn out to matter in practice.
+- **Lock Taxonomy follow-up (PR #66)**: James confirmed the gaps flagged
+  after the initial round did matter — Toggle Case, Alpha Sort, and Move
+  are now all blocked on a protected row too (a new "Reordering an
+  existing entry protected by Lock Taxonomy..." message covers Alpha Sort
+  and Move, since they don't touch the code/description text itself but
+  can still break the ascending-code-order invariant by repositioning a
+  protected row relative to its siblings), and Import Block's insertion
+  point now shares Insert Row's gap-only check. Fixed a UX bug found while
+  testing this: the new guards were leaving the right-click context menu
+  open behind the warning dialog — now closed immediately, matching the
+  rest of the app. Still intentionally unguarded: Replicate Codes
+  Above/Below (can't actually overwrite a protected row's real code
+  anyway — they only ever fill genuinely blank cells) and suffix column
+  values on a protected row (only code/description were named as
+  protected) — worth a follow-up if either turns out to matter in
+  practice.
 
 ---
 
@@ -375,6 +383,22 @@ open questions" for the scope decisions confirmed with James up front and
 the handful of related operations (Toggle Case, Alpha Sort, drag reorder,
 Import Block's insertion point, suffix values) intentionally left
 unguarded this round.
+
+### Lock Taxonomy follow-up: reorder/recase guards, Import Block gap check (PR #66)
+James's answer to the "known gaps" flagged in PR #64: yes, Toggle Case,
+Alpha Sort, and Move should all be blocked on a protected row too, and
+Import Block's insertion needs the same gap check Insert Row got. Alpha
+Sort and Move reuse a new "Reordering an existing entry protected by Lock
+Taxonomy..." message (repositioning a protected row can silently break
+ascending-code-order relative to its siblings even though its own code
+never changes); Toggle Case reuses the existing description-corruption
+message. Import Block inserts right at its anchor, pushing the anchor row
+down — structurally identical to Insert Row's own "wedge between two
+neighbours" — so it now runs the same `hasCodeGap` check before proceeding.
+Along the way, found and fixed a UX bug the new guards introduced: blocking
+Toggle Case/Alpha Sort/Move left the right-click context menu open behind
+the warning dialog; all three now close it immediately, matching every
+other menu action in the app.
 
 ---
 
