@@ -66,6 +66,17 @@ export function isAllowedByCodeRestriction(ch: string, restriction: CodeRestrict
   }
 }
 
+// Lock Taxonomy: while locked, a new row can only be inserted between two existing siblings
+// if a real, usable code actually fits between their two values — otherwise inserting there
+// would force recoding an existing (protected) neighbour, which is exactly what locking is
+// meant to prevent. Uses the taxonomy's own active Code Restriction, so e.g. "1"/"2" has no
+// gap, but "1"/"3" does (a "2" fits), and the same logic holds across the digit/letter
+// boundary (e.g. "9"/"A" has no gap in the fixed charset, "9"/"B" does). The padding character
+// itself is never a usable gap-filler — it isn't a real code.
+export function hasCodeGap(upper: string, lower: string, restriction: CodeRestriction, paddingChar: string): boolean {
+  return validCodesInRange(upper, lower).some((c) => c !== paddingChar && isAllowedByCodeRestriction(c, restriction));
+}
+
 /** Compresses a sorted list of single characters into "X" / "X-Y" runs for display. */
 export function formatCharRanges(chars: string[]): string {
   if (chars.length === 0) return '(none)';

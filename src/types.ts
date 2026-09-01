@@ -63,6 +63,16 @@ export interface TaxonomySettings {
    * Defaults to 'Alpha Numeric with All Alpha' — the full existing charset, i.e. unrestricted —
    * so older project files without this field behave exactly as before. */
   codeRestriction: CodeRestriction;
+  /**
+   * Lock Taxonomy: once a taxonomy has gone live in an ERP and carries real transactions
+   * against its codes, further free-form editing risks corrupting that history. Locking
+   * marks every row currently in the table `protected` (see TaxonomyRow) and switches on:
+   * no editing an existing (protected) row's own code or description, no deleting one
+   * (Mark as Delete instead), and new rows can only be inserted where an actual code gap
+   * exists between neighbours. Unlocking clears none of that history — it only lifts the
+   * enforcement, so the taxonomy can be worked on again (with an explicit warning).
+   */
+  locked: boolean;
 }
 
 export interface TaxonomyRow {
@@ -73,6 +83,14 @@ export interface TaxonomyRow {
   descriptions: string[];
   /** One entry per configured suffix column; only meaningful where that suffix is 'editable'. */
   suffixValues: string[];
+  /**
+   * Lock Taxonomy: set true on every row present at the moment the taxonomy was last locked
+   * (see TaxonomySettings.locked). Persists across a later Unlock — it's a permanent record
+   * of "this row existed when this taxonomy was live", not a live enforcement switch — so a
+   * protected row stays visually flagged (greyed out) even after unlocking, while a
+   * subsequent Lock sweeps in any rows added or left unprotected since.
+   */
+  protected?: boolean;
 }
 
 export interface TaxonomyProject {
@@ -100,6 +118,7 @@ export const DEFAULT_SETTINGS: TaxonomySettings = {
   indentChar: ' ',
   suffixes: [],
   codeRestriction: 'Alpha Numeric with All Alpha',
+  locked: false,
 };
 
 export function createEmptyRow(numLevels: number, suffixes: SuffixField[] = []): TaxonomyRow {
