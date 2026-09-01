@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #74, 2026-09-01)
+## Current status (as of PR #76, 2026-09-01)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -95,13 +95,36 @@ further rounds of testing feedback. The tool currently supports, in full:
   with six starting points (Simple / Intermediate / Advanced Complexity
   Taxonomy, Chart of Accounts, Item Master, Highly Experienced User — No
   Guidance) and "Work on an Existing Taxonomy" (Load from File / Import
-  CSV / Library). All six levels currently open today's same taxonomy
-  setup screen with a "Creating a `<level>`" label — the guided,
-  step-by-step workflow tailored to each level (hiding/revealing columns,
-  staged prompts) is separate, not-yet-built follow-up work (see "Not yet
-  built"). Also: a larger header logo and a "Taxonomy Builder by the ERP
-  Doctor James A Robertson and Associates Limited" tagline on the sign-on
-  screens.
+  CSV / Library). Five of the six levels (all but Simple Taxonomy) still
+  open today's same taxonomy setup screen with a "Creating a `<level>`"
+  label and no further guidance — their guided workflows remain
+  not-yet-built follow-up work (see "Not yet built"). Also: a larger
+  header logo and a "Taxonomy Builder by the ERP Doctor James A Robertson
+  and Associates Limited" tagline on the sign-on screens.
+- **Simple Taxonomy guided wizard** (`SimpleTaxonomySetup.tsx`,
+  `GuidanceBanner.tsx`, `guidance.ts`): choosing "Simple Taxonomy" opens a
+  trimmed setup screen (title, table name, purpose, max description length
+  only — every structural setting defaults silently until the coding stage
+  needs it) and starts a three-stage wizard. **Headings**: one description
+  column, all code columns hidden; a live heading count; "Next Step" warns
+  (with a positive "Continue Anyway" click required, not a dismissible
+  notice) if outside 5–9. **Sub-Items**: a second description column is
+  revealed (code columns stay hidden); any heading may stay flat — only a
+  *non-zero* out-of-range child count triggers the same override-required
+  warning; a heading's first child is auto-capped to ALL CAPS as it's
+  typed. **Coding**: code columns are revealed to exactly the depth
+  actually used, then Numeric vs. Alpha is asked, then — a deliberate,
+  scoped exception to Section 9's "no automatic code generation" that
+  James explicitly asked for ("please ignore previous constraints, we are
+  now pushing the boundaries to create an increasingly intelligent
+  application"), confined to this wizard's coding stage — an optional
+  mnemonic-code suggestion (first usable letter of each description, per
+  sibling group) is pre-filled directly into the grid; suggested codes are
+  ordinary, fully-editable cells from that point on, normal overtype and
+  validation, nothing special once written. "Exit Guidance" drops out to
+  full unrestricted editing at any stage. The other four guided levels
+  (Intermediate/Advanced/Chart of Accounts/Item Master) still open today's
+  ungated setup screen — not yet built.
 - A simple email/password sign-on gate (`Login.tsx`/`auth.ts`), shown
   before anything else: checks a salted SHA-256 hash (via the browser's
   built-in `crypto.subtle`), remembers a successful login in this
@@ -121,20 +144,34 @@ further rounds of testing feedback. The tool currently supports, in full:
   back).
 
 ### Not yet built
-- **Guided, step-by-step taxonomy-building workflows**, one per complexity
-  level chosen on the landing menu (Simple / Intermediate / Advanced /
-  Chart of Accounts / Item Master — "Highly Experienced User" is
-  intentionally just today's ungated grid). James's own worked example for
-  Simple: hide all code columns, show one description column, guide the
-  user to no more than 9 major headings with an alpha-sort option; once
-  done, reveal a second description column and prompt for no more than 9
-  items per heading (alpha sort + case toggle); once done, reveal as many
-  code columns as description levels actually got used, and prompt
-  numeric vs. alpha (and, if alpha, whether to base it on the first letter
-  of each description — a mnemonic code). Discussed as a design concept in
-  PR #68's round, not yet built — James will give more detailed guidance
-  per level before implementation starts. See the design commentary below
-  under "Known open questions" for the suggested approach.
+- **Guided, step-by-step taxonomy-building workflows for the remaining
+  four levels** (Intermediate / Advanced Complexity Taxonomy, Chart of
+  Accounts, Item Master — "Highly Experienced User" is intentionally just
+  today's ungated grid). Simple Taxonomy's wizard shipped in PR #76 (see
+  "Current status" and the History entry below) and was built as a
+  reusable stage-machine shape (`settings.guidance = { level, stage }`
+  driving column visibility and a "Next Step" banner) that the other
+  levels can plug their own stage definitions into — CoA and Item Master
+  would mostly differ in their stage *prompts* (e.g. CoA's first stage
+  plausibly being an account-type choice) rather than needing new
+  mechanics. James will give more detailed per-level guidance before this
+  gets built.
+- **Scheduled autosave-to-a-real-file** (distinct from the always-on,
+  invisible `localStorage` autosave already built): James asked whether a
+  literal "save to file every N minutes" is needed. Flagged back to him
+  that `showSaveFilePicker()` can only run from a user gesture, so a
+  timer-triggered version would either interrupt with a native save dialog
+  every interval or silently pile up a new downloaded file in Downloads
+  every interval — there's no way to keep one file silently up to date on
+  disk. Awaiting his answer on whether to build the "repeated download"
+  version anyway, given the continuous `localStorage` autosave already
+  covers data loss.
+- **Voice-to-text input for descriptions**: James asked purely for
+  information (not a build request). Answered: the Web Speech API only
+  works in Chrome/Edge (no Firefox/Safari), and Chrome's implementation
+  sends audio to Google's servers for transcription — it would be the
+  first feature in the app to transmit any data externally. No action
+  taken pending a decision from James.
 - **A larger, crisper logo with a genuinely transparent background.**
   James pasted a bigger version of the logo inline in chat, but it didn't
   come through as an attachable file — there's no real pixel data to
@@ -212,34 +249,18 @@ further rounds of testing feedback. The tool currently supports, in full:
   values on a protected row (only code/description were named as
   protected) — worth a follow-up if either turns out to matter in
   practice.
-- **Guided-workflow design commentary (requested by James, PR #68 round,
-  not yet built)**: his Simple Taxonomy example — hide code columns, one
-  description column, ≤9 major headings, then reveal a second description
-  column for ≤9 items per heading, then reveal matching code column(s) and
-  ask numeric/alpha/mnemonic — reads as one configurable wizard engine
-  serving all five guided levels, not five separate bespoke code paths.
-  Suggested shape: (1) an explicit stored stage per project (e.g.
-  `settings.guidance = { level, stage }`) rather than inferring "where are
-  we" from the data each time — inference gets ambiguous the moment
-  someone free-types outside the intended sequence; (2) column
-  visibility driven by the stage, decoupled from `numLevels` itself,
-  rather than mutating `numLevels` on every stage transition — a display
-  concern, not a structural resize; (3) advancing a stage as an explicit
-  "Next Step" action in a guidance banner (extending the existing
-  collapsible "Worksheet Guidance" panel), which can run today's existing
-  soft per-level item-count warning before revealing the next column; (4)
-  each level (Simple/Intermediate/Advanced/CoA/Item Master) as a small
-  data-only "stage definition" list (prompt text, min/max items, which
-  column(s) it reveals) fed into one shared wizard component, rather than
-  new code per level — CoA and Item Master would mostly differ in their
-  stage *prompts* (e.g. CoA's first stage plausibly being an account-type
-  choice) rather than needing new mechanics; (5) almost none of the
-  underlying grid mechanics need to change — alpha sort, case toggle, code
-  restrictions, and gap-coding hints already exist; the guided workflow is
-  a choreographed layer sequencing when they become visible and offering
-  big obvious buttons for them, not a rebuild. "Highly Experienced User"
-  needs no new work at all — it's already today's ungated flow. James will
-  give more detailed per-level guidance before this gets built.
+- **Guided-workflow design commentary (PR #68 round) — superseded by the
+  actual Simple Taxonomy build in PR #76.** The original commentary's
+  suggested shape (an explicit stored `settings.guidance = { level,
+  stage }`, column visibility driven by the stage rather than mutating
+  `numLevels` structurally, an explicit "Next Step" action in a guidance
+  banner, per-level "stage definition" data feeding one shared wizard
+  engine) was refined during the actual build: James's answers confirmed
+  per-heading optional depth (not a whole-taxonomy yes/no) let `numLevels`
+  itself just track how many description levels are needed so far, which
+  turned out simpler than keeping visibility fully decoupled from it. The
+  remaining four levels (Intermediate/Advanced/CoA/Item Master) still need
+  their own stage prompts — see "Not yet built".
 - **Sign-on gate is a speed bump, not real security (PR #70)** — worth
   restating plainly since it's easy to mistake a login *screen* for actual
   access control: this app is a fully static, client-side site with no
@@ -575,6 +596,45 @@ same issue as before." `handleLogOut` now also runs the same reset
 `handleBackToMenu` does (clearing `project`/`signOnStage`) before clearing
 auth, so every sign-in — same-tab or otherwise — lands on the landing
 menu, with Resume Work in Progress as the way back into whatever was open.
+
+### Simple Taxonomy guided wizard (PR #76)
+Built the first of the five guided workflows, per James's approval of the
+proposed stage sequence and his answers to six open design questions:
+(1) Simple Taxonomy gets its own trimmed setup screen
+(`SimpleTaxonomySetup.tsx` — title/table name/purpose/max description
+length only); (2) sub-items are optional per heading, not an
+all-or-nothing choice — this let `numLevels` itself just track how many
+description levels are needed so far (1 during Headings, grown to 2 for
+Sub-Items, trimmed to the actually-used depth entering Coding), simpler
+than keeping column visibility fully decoupled from it; (3) mnemonic code
+suggestions are pre-filled directly into the grid, not just shown as a
+hint, and remain ordinary overtype-able cells afterwards — James
+explicitly waived Section 9's "no automatic code generation" for this
+one scoped case ("we are now pushing the boundaries to create an
+increasingly intelligent application"); (4) a heading's first child is
+auto-capped to ALL CAPS as it's typed; (5) "going back" is an "Exit
+Guidance" escape hatch to full unrestricted editing, not per-stage
+backward navigation; (6) the 5-to-9 item-count guidance requires a
+positive "Continue Anyway" click to override, not a passive dismissible
+notice. `Grid.tsx`'s code-column JSX (both header rows and every body
+row) is wrapped in `{!hideAllCodes && (...)}` rather than CSS-hidden per
+cell, avoiding any risk to the existing `colSpan` header math. New:
+`guidance.ts` (heading/child counting, mnemonic suggestion — never
+overwrites a row that already has a real code, best-effort on ascending
+order relying on the wizard's own alpha-sort encouragement, with "Check
+Ascending Order" as the existing fallback), `GuidanceBanner.tsx` (the
+stage-machine driver and its confirm-override / coding-choice dialogs).
+Also fixed a `TaxonomySettings.guidance` narrowing issue where TypeScript
+didn't retain the outer `if (!guidance) return null` narrowing inside
+nested function declarations that captured it — worked around by pulling
+`guidance.level` into its own `const` up front rather than spreading
+`guidance` itself when building the next stage's value. Verified with a
+new Playwright test (`smoke_simple_wizard.mjs`) driving the full flow
+end to end, plus updates to `smoke_workflow_menu.mjs` for the new trimmed
+setup screen; existing Lock Taxonomy, sign-on, and resume-work regression
+scripts all still pass unchanged. The remaining four guided levels
+(Intermediate/Advanced/Chart of Accounts/Item Master) are still not yet
+built — see "Not yet built".
 
 ---
 
