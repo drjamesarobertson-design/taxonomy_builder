@@ -91,16 +91,26 @@ further rounds of testing feedback. The tool currently supports, in full:
   uploaded file rather than a pasted-table guess: the real file has no
   header row at all (data starts on line 1) and uses two blank spacer
   columns, not one. Verified end-to-end against the real 1840-row file.
-- **Open bug, unresolved:** Import Block reportedly inserts a block "2
-  columns to the right of the cursor" instead of superimposing its
-  leftmost code column on the right-clicked anchor column. Tried to
-  reproduce three ways (a plain taxonomy, the real Milling taxonomy with a
-  delimiter, and a case that triggers the "Add Columns" growth dialog) —
-  in every test the block landed exactly on the anchor column, matching
-  the code's own logic in Grid.tsx's `finalizeImport`. Flagged back to
-  James rather than shipping a speculative fix; needs either a repro he
-  can walk through live, or confirmation he's testing the latest deploy
-  (not a cached older build).
+- Import Block "2 columns to the right" bug is **resolved** (PR #62) —
+  root-caused directly against James's actual block file
+  (`Test 16 Milling Asset Range Selection Block v1.01.json`), which the
+  three earlier synthetic reproduction attempts had missed: a block cut
+  from partway down a table (its shallowest entry at level 2, not level 0)
+  carries each entry's FULL ancestor path from the *source* table's own
+  root (`buildBlock`: `row.codes.slice(0, level + 1)`), not a path
+  relative to the block's own top entry. `finalizeImport` placed
+  `entry.codes[0]` straight onto the anchor column, so a block whose
+  shallowest entry was itself two levels deep landed two columns to the
+  right of the anchor — and the required-levels calculation, using that
+  same absolute depth, could also demand columns the import didn't
+  actually need, matching James's separate "'.' in columns 6 and 7" report
+  (both were the one bug). Fixed by computing `baseLevel` — the shallowest
+  entry's own depth — and stripping every entry's ancestor prefix above it
+  before placing codes/descriptions relative to the anchor. Verified with
+  a Playwright test importing the real block file at the exact anchor
+  James described (right-click on a level-3 code cell showing "1"), into
+  a taxonomy with a configured suffix column so the previously-untested
+  suffix1Source dialog branch is exercised too.
 
 ---
 
