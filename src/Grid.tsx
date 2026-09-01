@@ -3,7 +3,7 @@ import type { TaxonomyRow, TaxonomySettings } from './types';
 import { createEmptyRow, growRowsToLevels } from './types';
 import { getLevelColor } from './colors';
 import { toggleCase } from './caseUtils';
-import { isValidCodeChar } from './codeValidation';
+import { isValidCodeChar, isAllowedByCodeRestriction } from './codeValidation';
 import type { TaxonomyBlock } from './blockTransfer';
 import { parseBlockFile } from './blockTransfer';
 import type { HelpTextMap } from './helpText';
@@ -27,6 +27,9 @@ interface GridProps {
   helpText: HelpTextMap;
   /** Focus the first row's first description cell once, on mount (freshly created taxonomy). */
   autoFocusFirstRow?: boolean;
+  /** Item 3: right-click "Export Block" on a selected range of rows — App.tsx owns the actual
+   * Include Suffix?/filename flow, Grid just hands up which rows the selection covered. */
+  onExportBlock: (rowsSubset: TaxonomyRow[]) => void;
 }
 
 type CellKind = 'code' | 'desc' | 'suffix';
@@ -52,8 +55,17 @@ const codeInputId = (level: number, rowId: string) => `code-${level}-${rowId}`;
 const descInputId = (level: number, rowId: string) => `desc-${level}-${rowId}`;
 const suffixInputId = (index: number, rowId: string) => `suffix-${index}-${rowId}`;
 
-export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange, helpText, autoFocusFirstRow }: GridProps) {
-  const { numLevels, delimiterPositions, maxDescriptionLength, suffixes, paddingChar, codeDelimiterChar } = settings;
+export default function Grid({
+  settings,
+  rows,
+  onChange,
+  onSettingsAndRowsChange,
+  helpText,
+  autoFocusFirstRow,
+  onExportBlock,
+}: GridProps) {
+  const { numLevels, delimiterPositions, maxDescriptionLength, suffixes, paddingChar, codeDelimiterChar, codeRestriction } =
+    settings;
   const levels = Array.from({ length: numLevels }, (_, i) => i);
   // The wide overflow column gets whatever's left of the configured max description length
   // after reserving one character per description level (Section 6.7's indent padding) and
@@ -473,6 +485,13 @@ export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange
 
     if (char !== '' && !isValidCodeChar(char)) {
       showValidationError('Invalid code. Valid codes are: ".", 0 to 9, A to Z, a to z');
+      return;
+    }
+
+    // Item 1: a per-taxonomy Code Restriction narrows the charset above further, for any
+    // real (non-padding) character — the padding character itself is always exempt.
+    if (char !== '' && !isPadding && !isAllowedByCodeRestriction(char, codeRestriction)) {
+      showValidationError(`Code Limited to "${codeRestriction}" — Please Correct Your Entry`);
       return;
     }
 
@@ -1241,6 +1260,25 @@ export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange
     }
     onChange(updated);
     setSelection(null);
+    setContextMenu(null);
+  }
+
+  // Right-click "Export Block" (item 3) — an alternative to the toolbar's whole-table Create
+  // Block, for exporting just a range: highlight from a top-left code cell down to a
+  // bottom-right description cell (or any other multi-row selection) and export only that
+  // contiguous run of rows. Available from either the code or description context menu,
+  // whichever the selection happens to be in, since the exported block always carries each
+  // row's full code path and description regardless of which cell kind was dragged over.
+  function handleExportBlockMenuClick() {
+    if (!contextMenu || !selection || selection.rowIds.size === 0) return;
+    const selectedIndices = rows
+      .map((r, i) => (selection.rowIds.has(r.id) ? i : -1))
+      .filter((i) => i !== -1)
+      .sort((a, b) => a - b);
+    if (selectedIndices.length === 0) return;
+    const start = selectedIndices[0];
+    const end = selectedIndices[selectedIndices.length - 1] + 1;
+    onExportBlock(rows.slice(start, end));
     setContextMenu(null);
   }
 
@@ -2130,6 +2168,9 @@ export default function Grid({ settings, rows, onChange, onSettingsAndRowsChange
           )}
           {contextMenu.kind !== 'suffix' && <li onClick={handleAddColumnClick}>Add Column</li>}
           {contextMenu.kind !== 'suffix' && <li onClick={handleDeleteColumnClick}>Delete Column</li>}
+          {contextMenu.kind !== 'suffix' && selection && selection.rowIds.size > 0 && (
+            <li onClick={handleExportBlockMenuClick}>Export Block</li>
+          )}
           <li className="context-menu-separator" onClick={() => handleInsertRow('above')}>
             {pendingInsertCount() > 1 ? `Insert ${pendingInsertCount()} Rows Above` : 'Insert Row Above'}
           </li>

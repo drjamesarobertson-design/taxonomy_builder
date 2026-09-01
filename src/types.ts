@@ -3,6 +3,20 @@
 /** Internal cap on how many code/description levels a taxonomy can have. */
 export const MAX_LEVELS = 15;
 
+// Item 1: a per-taxonomy restriction on what a *real* (non-padding) code character may be,
+// narrower than the fixed global charset (".", 0-9, a-z, A-Z). The padding character itself
+// is always exempt — it marks "no further hierarchy here", not a code value, so it stays
+// enterable no matter which restriction is active.
+export const CODE_RESTRICTIONS = [
+  'Numeric Only',
+  'Alpha Numeric with All Alpha',
+  'Alpha Numeric with Upper Case Alpha Only',
+  'Alpha Upper Case Only',
+  'Alpha Both Cases Only',
+] as const;
+
+export type CodeRestriction = (typeof CODE_RESTRICTIONS)[number];
+
 export interface SuffixField {
   /** Max characters this suffix column can hold (1 to 8). */
   width: number;
@@ -45,6 +59,10 @@ export interface TaxonomySettings {
    * working screen and in the Discrete Columns export, each preceded by its own delimiter.
    */
   suffixes: SuffixField[];
+  /** Item 1: narrows which characters a real code may use, beyond the fixed global charset.
+   * Defaults to 'Alpha Numeric with All Alpha' — the full existing charset, i.e. unrestricted —
+   * so older project files without this field behave exactly as before. */
+  codeRestriction: CodeRestriction;
 }
 
 export interface TaxonomyRow {
@@ -81,6 +99,7 @@ export const DEFAULT_SETTINGS: TaxonomySettings = {
   maxDescriptionLength: 40,
   indentChar: ' ',
   suffixes: [],
+  codeRestriction: 'Alpha Numeric with All Alpha',
 };
 
 export function createEmptyRow(numLevels: number, suffixes: SuffixField[] = []): TaxonomyRow {

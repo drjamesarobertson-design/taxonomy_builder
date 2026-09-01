@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import type { TaxonomyProject, TaxonomyRow, TaxonomySettings, SuffixField } from './types';
-import { createEmptyRow, createProject, growRowsToLevels } from './types';
+import type { TaxonomyProject, TaxonomyRow, TaxonomySettings, SuffixField, CodeRestriction } from './types';
+import { createEmptyRow, createProject, growRowsToLevels, CODE_RESTRICTIONS } from './types';
 import { saveProjectToFile, loadProjectFromFile } from './storage';
 import {
   exportDiscreteCsv,
@@ -15,6 +15,10 @@ import { loadHelpText } from './helpText';
 import type { HelpTextMap } from './helpText';
 import NewTaxonomyForm from './NewTaxonomyForm';
 import SettingsModal from './SettingsModal';
+import { parseDiscreteCsv, readFileAsText } from './csvImport';
+import type { ParsedDiscreteCsv } from './csvImport';
+import CsvImportConfirm from './CsvImportConfirm';
+import type { CsvImportFields } from './CsvImportConfirm';
 import type { SettingsFields } from './SettingsModal';
 import Grid from './Grid';
 import Logo from './Logo';
@@ -37,6 +41,14 @@ export default function App() {
   const [dirty, setDirty] = useState(false);
   const [autoFocusFirstRow, setAutoFocusFirstRow] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Item 2: importing an existing taxonomy already in the same code-columns/description-
+  // columns shape this app's own Discrete Columns CSV export uses (csvImport.ts infers the
+  // structure; the file itself carries no title/table name/purpose, so those are collected
+  // in a small confirm step once parsing succeeds).
+  const csvImportFileInputRef = useRef<HTMLInputElement>(null);
+  const [pendingCsvImport, setPendingCsvImport] = useState<{ parsed: ParsedDiscreteCsv; defaultTitle: string } | null>(
+    null,
+  );
 
   // Bumped every time a genuinely new or freshly-loaded project replaces the current one (never
   // on an ordinary edit) — passed to Grid as its React key, so Grid remounts cleanly instead of
@@ -66,11 +78,35 @@ export default function App() {
   const [paddingSubstituteChoice, setPaddingSubstituteChoice] = useState<{
     mode: 'discrete' | 'concatenated';
     excludeDelimiters?: boolean;
+    suffixMode?: 'concatenate' | 'rightAlign';
   } | null>(null);
   const paddingSubstituteDialogRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (paddingSubstituteChoice) paddingSubstituteDialogRef.current?.focus();
   }, [paddingSubstituteChoice]);
+
+  // Item 4: only asked when the taxonomy actually has suffix columns configured — meaningless
+  // otherwise. "Concatenate" folds every suffix's value (with its own delimiter) onto the end
+  // of the row's description text and drops the separate suffix column(s) from the export;
+  // "Right Align" is today's existing behaviour — suffixes stay in their own column(s)
+  // (Concatenated mode has no suffix columns at all, so there "Right Align" just means suffixes
+  // are left out of that export, same as before this option existed).
+  const [suffixModeChoice, setSuffixModeChoice] = useState<{
+    mode: 'discrete' | 'concatenated';
+    excludeDelimiters?: boolean;
+  } | null>(null);
+  const suffixModeDialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (suffixModeChoice) suffixModeDialogRef.current?.focus();
+  }, [suffixModeChoice]);
+
+  // Item 3: "Export Block" from the grid's own right-click menu, scoped to a selected row
+  // range rather than the whole table (the toolbar's "Create Block" button).
+  const [exportBlockRangeChoice, setExportBlockRangeChoice] = useState<{ rows: TaxonomyRow[] } | null>(null);
+  const exportBlockRangeDialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (exportBlockRangeChoice) exportBlockRangeDialogRef.current?.focus();
+  }, [exportBlockRangeChoice]);
 
   // Save/Export both check for a code cell left blank within a row's own valid range first —
   // easy to overlook mid-entry, and worth a nudge before the file goes out the door. "Accept"
@@ -333,10 +369,19 @@ export default function App() {
     fileInputRef.current?.click();
   }
 
-  async function performExport(mode: 'discrete' | 'concatenated', paddingOverride?: string, excludeDelimiters?: boolean) {
+  async function performExport(
+    mode: 'discrete' | 'concatenated',
+    paddingOverride?: string,
+    excludeDelimiters?: boolean,
+    suffixMode?: 'concatenate' | 'rightAlign',
+  ) {
     if (!project || !exportChoice) return;
     const { format } = exportChoice;
-    const options = { ...(paddingOverride ? { paddingOverride } : {}), ...(excludeDelimiters ? { excludeDelimiters } : {}) };
+    const options = {
+      ...(paddingOverride ? { paddingOverride } : {}),
+      ...(excludeDelimiters ? { excludeDelimiters } : {}),
+      ...(suffixMode === 'concatenate' ? { suffixMode } : {}),
+    };
     let versioned: TaxonomyProject;
     let usedFolder: boolean;
     let cancelled: boolean;
@@ -354,26 +399,37 @@ export default function App() {
     else setExportFolderName(null);
   }
 
-  // Between choosing Discrete/Concatenated and actually exporting: if the taxonomy's codes are
-  // still padded with "." (the only option Settings/New Taxonomy offer now), ask whether to
-  // substitute "0" in this one export's output — a one-off, per-file choice rather than a
-  // standing setting, since it's meant only for the rare ERP that genuinely can't accept ".".
-  function proceedToExport(mode: 'discrete' | 'concatenated', excludeDelimiters?: boolean) {
+  // Last step before actually exporting: if the taxonomy's codes are still padded with "."
+  // (the only option Settings/New Taxonomy offer now), ask whether to substitute "0" in this
+  // one export's output — a one-off, per-file choice rather than a standing setting, since
+  // it's meant only for the rare ERP that genuinely can't accept ".".
+  function proceedToExport(mode: 'discrete' | 'concatenated', excludeDelimiters?: boolean, suffixMode?: 'concatenate' | 'rightAlign') {
     if (!project) return;
     if (project.settings.paddingChar === '.') {
-      setPaddingSubstituteChoice({ mode, excludeDelimiters });
+      setPaddingSubstituteChoice({ mode, excludeDelimiters, suffixMode });
     } else {
-      performExport(mode, undefined, excludeDelimiters);
+      performExport(mode, undefined, excludeDelimiters, suffixMode);
+    }
+  }
+
+  // Item 4: only asked when suffix columns actually exist — otherwise straight through to the
+  // padding-substitution step above.
+  function proceedPastSuffixChoice(mode: 'discrete' | 'concatenated', excludeDelimiters?: boolean) {
+    if (!project) return;
+    if (project.settings.suffixes.length > 0) {
+      setSuffixModeChoice({ mode, excludeDelimiters });
+    } else {
+      proceedToExport(mode, excludeDelimiters);
     }
   }
 
   function runExport(mode: 'discrete' | 'concatenated', excludeDelimiters?: boolean) {
     if (!project) return;
     if (hasBlankCodeGaps(project.rows)) {
-      setBlankCodeWarning({ action: () => proceedToExport(mode, excludeDelimiters) });
+      setBlankCodeWarning({ action: () => proceedPastSuffixChoice(mode, excludeDelimiters) });
       return;
     }
-    proceedToExport(mode, excludeDelimiters);
+    proceedPastSuffixChoice(mode, excludeDelimiters);
   }
 
   async function performCreateBlock() {
@@ -392,6 +448,30 @@ export default function App() {
       return;
     }
     performCreateBlock();
+  }
+
+  // Item 3: the grid's own right-click "Export Block", scoped to whatever row range was
+  // selected rather than the whole table. "Include Suffix?" is asked every time, since a
+  // block meant for a target with a different suffix setup might deliberately want to leave
+  // suffix values out.
+  function handleExportBlockRange(rowsSubset: TaxonomyRow[]) {
+    if (!project || rowsSubset.length === 0) return;
+    if (hasBlankCodeGaps(rowsSubset)) {
+      setBlankCodeWarning({ action: () => setExportBlockRangeChoice({ rows: rowsSubset }) });
+      return;
+    }
+    setExportBlockRangeChoice({ rows: rowsSubset });
+  }
+
+  async function performExportBlockRange(includeSuffixes: boolean) {
+    if (!project || !exportBlockRangeChoice) return;
+    const { rows: rowsSubset } = exportBlockRangeChoice;
+    setExportBlockRangeChoice(null);
+    const { project: versioned, usedFolder, cancelled } = await exportBlock(project, { rowsOverride: rowsSubset, includeSuffixes });
+    if (cancelled) return; // backed out of the Save As dialog — nothing happened
+    setProject(versioned);
+    if (usedFolder) peekExportFolderName().then(setExportFolderName);
+    else setExportFolderName(null);
   }
 
   // For Grid actions that touch settings and rows together — Import Block's anchor/level-growth
@@ -425,6 +505,57 @@ export default function App() {
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Could not load this file.');
     }
+  }
+
+  function handleImportCsvClick() {
+    csvImportFileInputRef.current?.click();
+  }
+
+  async function handleCsvFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const text = await readFileAsText(file);
+      const parsed = parseDiscreteCsv(text);
+      if ('error' in parsed) {
+        setLoadError(parsed.error);
+        return;
+      }
+      setLoadError(null);
+      const defaultTitle = file.name.replace(/\.csv$/i, '');
+      setPendingCsvImport({ parsed, defaultTitle });
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Could not read this file.');
+    }
+  }
+
+  function handleCsvImportConfirm(fields: CsvImportFields) {
+    if (!pendingCsvImport) return;
+    const { parsed } = pendingCsvImport;
+    const newProject = createProject(
+      fields.title,
+      fields.tableName,
+      fields.purpose,
+      fields.maxDescriptionLength,
+      parsed.delimiterPositions,
+      ' ',
+      parsed.numLevels,
+      parsed.suffixes,
+      '.',
+      parsed.codeDelimiterChar,
+    );
+    newProject.rows = parsed.rows;
+    setProject(newProject);
+    setDirty(true);
+    setAutoFocusFirstRow(false);
+    setLoadError(null);
+    setUndoStack([]);
+    setRedoStack([]);
+    lastEditKeyRef.current = null;
+    setCurrentLibraryEntryId(null);
+    setPendingCsvImport(null);
+    setProjectGeneration((g) => g + 1);
   }
 
   function handleSaveSettings(fields: SettingsFields) {
@@ -462,6 +593,16 @@ export default function App() {
     });
     setDirty(true);
     setShowSettings(false);
+  }
+
+  // Item 1: a dropdown at the top of the work area, separate from the Settings screen, since
+  // this is the kind of thing worth switching often while coding a taxonomy. Not folded into
+  // undo history, matching every other Settings-style field — this narrows future entry, it
+  // doesn't touch any row already there.
+  function handleCodeRestrictionChange(codeRestriction: CodeRestriction) {
+    if (!project) return;
+    setProject({ ...project, settings: { ...project.settings, codeRestriction } });
+    setDirty(true);
   }
 
   function handleNewTaxonomy() {
@@ -544,6 +685,11 @@ export default function App() {
               </button>
             )}
             {project && (
+              <button type="button" onClick={handleImportCsvClick} title="Import a taxonomy from a Discrete Columns CSV">
+                Import CSV
+              </button>
+            )}
+            {project && (
               <button type="button" onClick={() => setShowSettings(true)}>
                 Settings
               </button>
@@ -560,6 +706,13 @@ export default function App() {
               style={{ display: 'none' }}
               onChange={handleFileSelected}
             />
+            <input
+              ref={csvImportFileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              style={{ display: 'none' }}
+              onChange={handleCsvFileSelected}
+            />
           </div>
           <Logo className="app-logo" />
         </div>
@@ -572,6 +725,9 @@ export default function App() {
           <section className="load-from-file-section">
             <button type="button" onClick={handleLoadClick}>
               Load from File
+            </button>
+            <button type="button" onClick={handleImportCsvClick} title="Import a taxonomy from a Discrete Columns CSV">
+              Import CSV
             </button>
             <p>Already have a saved taxonomy? Loading one replaces anything entered below.</p>
           </section>
@@ -589,6 +745,21 @@ export default function App() {
             <h2>{project.title}</h2>
             <p className="table-name">Table: {project.tableName}</p>
             {project.purpose && <p className="purpose">{project.purpose}</p>}
+          </section>
+          <section className="code-restriction-bar">
+            <label>
+              Code Restrictions
+              <select
+                value={project.settings.codeRestriction}
+                onChange={(e) => handleCodeRestrictionChange(e.target.value as CodeRestriction)}
+              >
+                {CODE_RESTRICTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
           </section>
           <section className={`worksheet-guidance ${guidanceExpanded ? 'expanded' : 'collapsed'}`}>
             <div className="worksheet-guidance-text">
@@ -610,6 +781,7 @@ export default function App() {
             onSettingsAndRowsChange={handleSettingsAndRowsChange}
             helpText={helpText}
             autoFocusFirstRow={autoFocusFirstRow}
+            onExportBlock={handleExportBlockRange}
           />
           <footer className="app-footer">
             The ERP Doctor Taxonomy Builder is the Intellectual Property of the ERP Doctor and
@@ -627,7 +799,16 @@ export default function App() {
         />
       )}
 
-      {exportChoice && (
+      {pendingCsvImport && (
+        <CsvImportConfirm
+          parsed={pendingCsvImport.parsed}
+          defaultTitle={pendingCsvImport.defaultTitle}
+          onConfirm={handleCsvImportConfirm}
+          onCancel={() => setPendingCsvImport(null)}
+        />
+      )}
+
+      {exportChoice && !suffixModeChoice && !paddingSubstituteChoice && !blankCodeWarning && (
         <div className="validation-overlay" onClick={() => setExportChoice(null)}>
           <div
             ref={exportDialogRef}
@@ -690,9 +871,9 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
-                  const { mode, excludeDelimiters } = paddingSubstituteChoice;
+                  const { mode, excludeDelimiters, suffixMode } = paddingSubstituteChoice;
                   setPaddingSubstituteChoice(null);
-                  performExport(mode, undefined, excludeDelimiters);
+                  performExport(mode, undefined, excludeDelimiters, suffixMode);
                 }}
               >
                 Keep "."
@@ -700,12 +881,51 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
-                  const { mode, excludeDelimiters } = paddingSubstituteChoice;
+                  const { mode, excludeDelimiters, suffixMode } = paddingSubstituteChoice;
                   setPaddingSubstituteChoice(null);
-                  performExport(mode, '0', excludeDelimiters);
+                  performExport(mode, '0', excludeDelimiters, suffixMode);
                 }}
               >
                 Replace with "0"
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {suffixModeChoice && (
+        <div className="validation-overlay" onClick={() => setSuffixModeChoice(null)}>
+          <div
+            ref={suffixModeDialogRef}
+            className="validation-dialog"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <p>Concatenate suffixes onto the description, or keep them right aligned in their own column(s)?</p>
+            <div className="confirm-dialog-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  const { mode, excludeDelimiters } = suffixModeChoice;
+                  setSuffixModeChoice(null);
+                  proceedToExport(mode, excludeDelimiters, 'concatenate');
+                }}
+              >
+                Concatenate
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const { mode, excludeDelimiters } = suffixModeChoice;
+                  setSuffixModeChoice(null);
+                  proceedToExport(mode, excludeDelimiters, 'rightAlign');
+                }}
+              >
+                Right Align
               </button>
             </div>
           </div>
@@ -738,6 +958,37 @@ export default function App() {
                 }}
               >
                 Accept
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {exportBlockRangeChoice && (
+        <div className="validation-overlay" onClick={() => setExportBlockRangeChoice(null)}>
+          <div
+            ref={exportBlockRangeDialogRef}
+            className="validation-dialog"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <p>
+              Export {exportBlockRangeChoice.rows.length} selected row{exportBlockRangeChoice.rows.length === 1 ? '' : 's'} as a
+              block — Include Suffix?
+            </p>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setExportBlockRangeChoice(null)}>
+                Cancel
+              </button>
+              <button type="button" onClick={() => performExportBlockRange(false)}>
+                No
+              </button>
+              <button type="button" onClick={() => performExportBlockRange(true)}>
+                Yes
               </button>
             </div>
           </div>
