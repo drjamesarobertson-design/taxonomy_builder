@@ -100,3 +100,39 @@ export function loadProjectFromFile(file: File): Promise<TaxonomyProject> {
     reader.readAsText(file);
   });
 }
+
+// Session autosave: a lightweight recovery net, separate from the deliberate Save to File /
+// Add to Library actions. Signing out (or the browser reloading, closing, crashing) doesn't
+// otherwise lose whatever's currently open — App.tsx writes here on every change to `project`
+// and offers "Resume Work in Progress" on the landing menu whenever this holds something. Only
+// one slot, matching the app's own single-taxonomy-at-a-time model (Section 3/9.4) — starting
+// or opening a different taxonomy overwrites it, same as it would overwrite the working grid.
+const AUTOSAVE_KEY = 'taxonomy-builder-autosave';
+
+export function saveAutosave(project: TaxonomyProject): void {
+  try {
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(project));
+  } catch {
+    // Storage full, disabled, or unavailable (private browsing) — Save to File and Add to
+    // Library are unaffected; this recovery net just isn't there for this session.
+  }
+}
+
+export function loadAutosave(): TaxonomyProject | null {
+  try {
+    const raw = localStorage.getItem(AUTOSAVE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    return isTaxonomyProject(data) ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearAutosave(): void {
+  try {
+    localStorage.removeItem(AUTOSAVE_KEY);
+  } catch {
+    // Nothing to clear if storage isn't available in the first place.
+  }
+}

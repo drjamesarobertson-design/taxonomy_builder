@@ -11,12 +11,22 @@ import type { WorkflowLevel } from './types';
 interface WorkflowMenuProps {
   onChooseNew: (level: WorkflowLevel) => void;
   onChooseExisting: () => void;
+  /** The title of whatever's sitting in the session autosave slot, if anything — shown as a
+   * "Resume Work in Progress" option so signing out, reloading, or navigating back here never
+   * strands an open taxonomy with no way back to it. */
+  resumeTitle?: string | null;
+  onResume?: () => void;
 }
 
-export default function WorkflowMenu({ onChooseNew, onChooseExisting }: WorkflowMenuProps) {
+export default function WorkflowMenu({ onChooseNew, onChooseExisting, resumeTitle, onResume }: WorkflowMenuProps) {
   return (
     <section className="workflow-menu">
       <h2>What would you like to do?</h2>
+      {resumeTitle && onResume && (
+        <button type="button" className="workflow-resume-btn" onClick={onResume}>
+          ▶ Resume Work in Progress — "{resumeTitle}"
+        </button>
+      )}
       <div className="workflow-menu-columns">
         <div className="workflow-menu-column">
           <h3>Create a New Taxonomy</h3>

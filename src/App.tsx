@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { TaxonomyProject, TaxonomyRow, TaxonomySettings, SuffixField, CodeRestriction, WorkflowLevel } from './types';
 import { createEmptyRow, createProject, growRowsToLevels, CODE_RESTRICTIONS } from './types';
-import { saveProjectToFile, loadProjectFromFile } from './storage';
+import { saveProjectToFile, loadProjectFromFile, saveAutosave, loadAutosave } from './storage';
 import {
   exportDiscreteCsv,
   exportDiscreteXlsx,
@@ -50,6 +50,13 @@ export default function App() {
   // so it isn't persisted into the project itself (that's the next piece of work).
   const [signOnStage, setSignOnStage] = useState<'menu' | 'new' | 'existing'>('menu');
   const [chosenWorkflowLevel, setChosenWorkflowLevel] = useState<WorkflowLevel | null>(null);
+  // Session autosave (storage.ts): whatever's currently open is written there on every change,
+  // independent of signing in/out, so "Resume Work in Progress" on the landing menu can bring
+  // it back after a reload, a browser restart, or a log-out/log-in cycle — none of which
+  // otherwise leave anything to return to, since `project` itself is plain in-memory state.
+  useEffect(() => {
+    if (project) saveAutosave(project);
+  }, [project]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [autoFocusFirstRow, setAutoFocusFirstRow] = useState(false);
@@ -693,8 +700,34 @@ export default function App() {
     setSignOnStage('new');
   }
 
+  // Back to Menu: returns to the landing menu without discarding the open taxonomy — it's
+  // still sitting in the autosave slot (written on every change), so "Resume Work in Progress"
+  // brings it straight back. This is what James asked for after finding no way back to the
+  // workflow picker once a taxonomy was open.
+  function handleBackToMenu() {
+    setProject(null);
+    setLoadError(null);
+    setCurrentLibraryEntryId(null);
+    setSignOnStage('menu');
+    setChosenWorkflowLevel(null);
+  }
+
+  function handleResumeWorkInProgress() {
+    const saved = loadAutosave();
+    if (!saved) return;
+    setProject(saved);
+    setDirty(false);
+    setUndoStack([]);
+    setRedoStack([]);
+    lastEditKeyRef.current = null;
+    setCurrentLibraryEntryId(null);
+    setProjectGeneration((g) => g + 1);
+  }
+
+  // Logging out no longer risks losing anything — the autosave slot (written on every change,
+  // independent of sign-in state) already has the latest state, and "Resume Work in Progress"
+  // brings it back after logging back in.
   function handleLogOut() {
-    if (dirty && !confirm('Log out? Any unsaved changes to the current taxonomy will be lost.')) return;
     clearAuthEmail();
     setAuthedEmail(null);
   }
@@ -811,6 +844,15 @@ export default function App() {
               </button>
             )}
             {project && (
+              <button
+                type="button"
+                onClick={handleBackToMenu}
+                title="Return to the landing menu — this taxonomy stays recoverable via Resume Work in Progress"
+              >
+                Back to Menu
+              </button>
+            )}
+            {project && (
               <button type="button" onClick={handleNewTaxonomy}>
                 New Taxonomy
               </button>
@@ -841,7 +883,12 @@ export default function App() {
 
       {!project && signOnStage === 'menu' && (
         <>
-          <WorkflowMenu onChooseNew={handleChooseWorkflowLevel} onChooseExisting={() => setSignOnStage('existing')} />
+          <WorkflowMenu
+            onChooseNew={handleChooseWorkflowLevel}
+            onChooseExisting={() => setSignOnStage('existing')}
+            resumeTitle={loadAutosave()?.title ?? null}
+            onResume={handleResumeWorkInProgress}
+          />
           <footer className="app-footer">
             The ERP Doctor Taxonomy Builder is the Intellectual Property of the ERP Doctor and
             James A Robertson and Associates Limited, it is copyright © 2026

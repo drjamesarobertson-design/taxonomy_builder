@@ -352,6 +352,27 @@
   margin: 0 0 1rem;
 }
 
+.workflow-resume-btn {
+  display: block;
+  width: 100%;
+  max-width: 900px;
+  margin-bottom: 1.25rem;
+  padding: 0.9rem 1.25rem;
+  cursor: pointer;
+  background: #1d8a4c;
+  color: #fff;
+  border: 1px solid #1d8a4c;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: left;
+}
+
+.workflow-resume-btn:hover {
+  background: #166b3a;
+  border-color: #166b3a;
+}
+
 .workflow-menu-columns {
   display: flex;
   gap: 1.5rem;
