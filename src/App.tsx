@@ -14,6 +14,8 @@ import { hasBlankCodeGaps } from './codeValidation';
 import { loadHelpText } from './helpText';
 import type { HelpTextMap } from './helpText';
 import NewTaxonomyForm from './NewTaxonomyForm';
+import SimpleTaxonomySetup from './SimpleTaxonomySetup';
+import GuidanceBanner from './GuidanceBanner';
 import SettingsModal from './SettingsModal';
 import { parseDiscreteCsv, readFileAsText } from './csvImport';
 import type { ParsedDiscreteCsv } from './csvImport';
@@ -323,6 +325,29 @@ export default function App() {
     lastEditKeyRef.current = null;
     setCurrentLibraryEntryId(null);
     setProjectGeneration((g) => g + 1);
+  }
+
+  // Simple Taxonomy's trimmed setup screen (SimpleTaxonomySetup) only asks for the four fields
+  // Section 5 step 1 actually needs up front — everything structural (delimiters, suffixes,
+  // code restriction) stays at its default until the wizard's coding stage needs it. Starts at
+  // a single description level with no code columns yet; GuidanceBanner drives it from there.
+  function handleCreateSimpleTaxonomy(title: string, tableName: string, purpose: string, maxDescriptionLength: number) {
+    const newProject = createProject(title, tableName, purpose, maxDescriptionLength, [], ' ', 1);
+    newProject.settings.guidance = { level: 'Simple Taxonomy', stage: 'headings' };
+    newProject.rows = [createEmptyRow(1)];
+    setProject(newProject);
+    setDirty(true);
+    setAutoFocusFirstRow(true);
+    setUndoStack([]);
+    setRedoStack([]);
+    lastEditKeyRef.current = null;
+    setCurrentLibraryEntryId(null);
+    setProjectGeneration((g) => g + 1);
+  }
+
+  function handleExitGuidance() {
+    if (!project) return;
+    handleSettingsAndRowsChange({ ...project.settings, guidance: undefined }, project.rows);
   }
 
   function handleRowsChange(rows: TaxonomyRow[], coalesceKey?: string) {
@@ -926,8 +951,14 @@ export default function App() {
           <button type="button" className="sign-on-back-btn" onClick={() => setSignOnStage('menu')}>
             ← Back
           </button>
-          {chosenWorkflowLevel && <p className="chosen-workflow-level">Creating a {chosenWorkflowLevel}</p>}
-          <NewTaxonomyForm onCreate={handleCreate} helpText={helpText} />
+          {chosenWorkflowLevel && chosenWorkflowLevel !== 'Simple Taxonomy' && (
+            <p className="chosen-workflow-level">Creating a {chosenWorkflowLevel}</p>
+          )}
+          {chosenWorkflowLevel === 'Simple Taxonomy' ? (
+            <SimpleTaxonomySetup onCreate={handleCreateSimpleTaxonomy} helpText={helpText} />
+          ) : (
+            <NewTaxonomyForm onCreate={handleCreate} helpText={helpText} />
+          )}
           <footer className="app-footer">
             The ERP Doctor Taxonomy Builder is the Intellectual Property of the ERP Doctor and
             James A Robertson and Associates Limited, it is copyright © 2026
@@ -960,18 +991,26 @@ export default function App() {
               </select>
             </label>
           </section>
-          <section className={`worksheet-guidance ${guidanceExpanded ? 'expanded' : 'collapsed'}`}>
-            <div className="worksheet-guidance-text">
-              {helpText.worksheetGuidance?.trim() || 'No worksheet guidance has been added yet.'}
-            </div>
-            <button
-              type="button"
-              className="worksheet-guidance-toggle"
-              onClick={() => setGuidanceExpanded((e) => !e)}
-            >
-              {guidanceExpanded ? 'Show less ▴' : 'Show more ▾'}
-            </button>
-          </section>
+          {project.settings.guidance ? (
+            <GuidanceBanner
+              project={project}
+              onSettingsAndRowsChange={handleSettingsAndRowsChange}
+              onExitGuidance={handleExitGuidance}
+            />
+          ) : (
+            <section className={`worksheet-guidance ${guidanceExpanded ? 'expanded' : 'collapsed'}`}>
+              <div className="worksheet-guidance-text">
+                {helpText.worksheetGuidance?.trim() || 'No worksheet guidance has been added yet.'}
+              </div>
+              <button
+                type="button"
+                className="worksheet-guidance-toggle"
+                onClick={() => setGuidanceExpanded((e) => !e)}
+              >
+                {guidanceExpanded ? 'Show less ▴' : 'Show more ▾'}
+              </button>
+            </section>
+          )}
           <Grid
             key={projectGeneration}
             settings={project.settings}
