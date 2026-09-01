@@ -1,15 +1,12 @@
 // Item 2: importing an existing taxonomy already built in the "correct format" — per James,
 // each code column in its own adjacent column left to right, immediately followed by each
-// description column in its own adjacent column. That plain shape (no gap, no delimiters) is
-// the baseline this parses; it also happens to accept the richer shape this app's own "Export
-// to CSV — Discrete Columns" produces (gridExport.ts's buildDiscreteGrid) — optional
-// single-character delimiter columns interspersed within the code block, an optional blank
-// spacer column between the code and description blocks, and optional suffix columns (each
-// preceded by its own delimiter) after — since that's a superset of the same basic layout.
-// Structure (level count, delimiter positions if any, suffix count and widths if any) is
-// inferred entirely from the header row's own numbering and the data — nothing about it needs
-// to be typed in by hand. Metadata the CSV has no way to carry (title, table name, purpose) is
-// collected separately once parsing succeeds (see App.tsx).
+// description column in its own adjacent column. Real files James has supplied have no header
+// row at all — they start straight into data — so structure (level count, delimiter positions,
+// suffix columns) has to be inferred from the data itself, not read off column labels. This
+// also happens to accept the richer, headered shape this app's own "Export to CSV — Discrete
+// Columns" produces (gridExport.ts's buildDiscreteGrid) when a header row IS present, since
+// that's a superset of the same basic layout. Metadata a CSV has no way to carry (title, table
+// name, purpose) is collected separately once parsing succeeds (see App.tsx).
 
 import type { SuffixField, TaxonomyRow } from './types';
 import { MAX_LEVELS } from './types';
@@ -21,6 +18,8 @@ export interface ParsedDiscreteCsv {
   suffixes: SuffixField[];
   rows: TaxonomyRow[];
 }
+
+const CODE_CHARSET = new Set(['.', ..."0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ".split('')]);
 
 // A minimal RFC4180-style CSV parser: quoted fields (with embedded commas/newlines/escaped
 // "" for a literal quote) and bare fields, CRLF or bare LF line endings.
@@ -68,15 +67,46 @@ function parseCsvTable(text: string): string[][] {
   return table.filter((r) => !(r.length <= 1 && (r[0] ?? '') === ''));
 }
 
-export function parseDiscreteCsv(text: string): ParsedDiscreteCsv | { error: string } {
-  const table = parseCsvTable(text);
-  if (table.length === 0) return { error: 'This file is empty.' };
+// Builds the final rows/suffixes once every column's role (code / description / suffix value)
+// is known, regardless of which detection path (headered or headerless) worked it out.
+function buildResult(
+  dataRows: string[][],
+  codeCols: number[],
+  descCols: number[],
+  delimiterPositions: number[],
+  codeDelimiterChar: string,
+  suffixValueCols: number[],
+  suffixDelimiterChars: string[],
+): ParsedDiscreteCsv {
+  const suffixes: SuffixField[] = suffixValueCols.map((c, i) => {
+    const maxLen = dataRows.reduce((m, r) => Math.max(m, (r[c] ?? '').length), 1);
+    return {
+      width: Math.max(1, Math.min(8, maxLen)),
+      delimiter: suffixDelimiterChars[i] || '-',
+      mode: 'editable',
+      constantValue: '',
+    };
+  });
+  const rows: TaxonomyRow[] = dataRows
+    .filter((r) => r.some((cell) => (cell ?? '').trim() !== ''))
+    .map((r) => ({
+      id: crypto.randomUUID(),
+      codes: codeCols.map((c) => r[c] ?? ''),
+      descriptions: descCols.map((c) => r[c] ?? ''),
+      suffixValues: suffixValueCols.map((c) => r[c] ?? ''),
+    }));
+  return { numLevels: codeCols.length, delimiterPositions, codeDelimiterChar, suffixes, rows };
+}
+
+// Tries reading table[0] as a genuine header row — numbered code/description columns ("1",
+// "2", "3", ...), an optional blank spacer between the two blocks, and optional "Suffix N"
+// columns — the shape this app's own CSV export produces. Returns null (not an error) on any
+// mismatch, since a plain file with no header at all is just as valid; parseDiscreteCsv falls
+// back to the data-driven detection below when this comes back empty-handed.
+function tryParseHeaderedCsv(table: string[][]): ParsedDiscreteCsv | null {
   const header = table[0];
   const dataRows = table.slice(1);
 
-  // The code block: columns numbered 1, 2, 3, ... — a blank header column in between is a
-  // code-delimiter column, kept only when the numbering keeps going afterward (otherwise
-  // that blank is the spacer between the code and description blocks, and the block is done).
   const codeCols: number[] = [];
   const codeDelimiterCols: number[] = [];
   let col = 0;
@@ -101,21 +131,10 @@ export function parseDiscreteCsv(text: string): ParsedDiscreteCsv | { error: str
     break;
   }
   const numLevels = codeCols.length;
-  if (numLevels === 0) {
-    return { error: 'Could not find numbered code columns (1, 2, 3, ...) in the header row — this doesn\'t look like a Discrete Columns export.' };
-  }
-  if (numLevels > MAX_LEVELS) {
-    return { error: `Detected ${numLevels} code columns, more than this tool supports (${MAX_LEVELS}).` };
-  }
+  if (numLevels === 0 || numLevels > MAX_LEVELS) return null;
 
-  // An optional blank spacer column between the code and description blocks (this app's own
-  // export includes one; a plainer file — code columns immediately followed by description
-  // columns, nothing in between — is just as valid, so only skip it when it's actually there).
-  if ((header[col] ?? '').trim() === '') {
-    col++;
-  }
+  if ((header[col] ?? '').trim() === '') col++; // optional spacer column
 
-  // The description block: the same 1..numLevels numbering, immediately following.
   const descCols: number[] = [];
   let expectDesc = 1;
   while (col < header.length && expectDesc <= numLevels) {
@@ -127,27 +146,15 @@ export function parseDiscreteCsv(text: string): ParsedDiscreteCsv | { error: str
       break;
     }
   }
-  if (descCols.length !== numLevels) {
-    return {
-      error: `Expected ${numLevels} description columns (matching the ${numLevels} code columns) but found ${descCols.length}.`,
-    };
-  }
+  if (descCols.length !== numLevels) return null;
 
-  // Optional suffix columns: each is a (blank-header delimiter, "Suffix N") pair.
   const suffixValueCols: number[] = [];
   const suffixDelimiterChars: string[] = [];
   let suffixIndex = 1;
   while (col < header.length) {
-    if ((header[col] ?? '').trim() !== '') {
-      return { error: `Unexpected column header "${header[col]}" after the description columns.` };
-    }
+    if ((header[col] ?? '').trim() !== '') return null;
     const suffixCol = col + 1;
-    const suffixHeader = (header[suffixCol] ?? '').trim();
-    if (suffixHeader !== `Suffix ${suffixIndex}`) {
-      return {
-        error: `Expected a "Suffix ${suffixIndex}" column after the description columns but found "${suffixHeader || '(blank)'}".`,
-      };
-    }
+    if ((header[suffixCol] ?? '').trim() !== `Suffix ${suffixIndex}`) return null;
     suffixDelimiterChars.push(dataRows[0]?.[col] || '-');
     suffixValueCols.push(suffixCol);
     suffixIndex++;
@@ -156,26 +163,112 @@ export function parseDiscreteCsv(text: string): ParsedDiscreteCsv | { error: str
 
   const delimiterPositions = codeDelimiterCols.map((dCol) => codeCols.filter((c) => c < dCol).length);
   const codeDelimiterChar = codeDelimiterCols.length > 0 ? dataRows[0]?.[codeDelimiterCols[0]] || '-' : '-';
-  const suffixes: SuffixField[] = suffixValueCols.map((c, i) => {
-    const maxLen = dataRows.reduce((m, r) => Math.max(m, (r[c] ?? '').length), 1);
+  return buildResult(dataRows, codeCols, descCols, delimiterPositions, codeDelimiterChar, suffixValueCols, suffixDelimiterChars);
+}
+
+// The single most frequent value in a list — used to decide "what character does this
+// delimiter column actually use" even when a handful of rows don't have it.
+function mostCommonValue(values: string[]): string {
+  const counts = new Map<string, number>();
+  for (const v of values) counts.set(v, (counts.get(v) ?? 0) + 1);
+  let best = values[0] ?? '';
+  let bestCount = 0;
+  for (const [v, c] of counts) {
+    if (c > bestCount) {
+      best = v;
+      bestCount = c;
+    }
+  }
+  return best;
+}
+
+// True when at least `threshold` of the rows' values in this column satisfy `predicate` — not
+// unanimous agreement, since a real spreadsheet built by hand over years can easily have a
+// handful of rows with a missing trailing padding character or similar slip (the actual file
+// James supplied has exactly this: 9 rows out of 1840 short one padding column). Those rows
+// still import — just with whatever's actually in that cell for them — rather than a few
+// stray rows throwing off the detected shape of the other 99%.
+function mostlyMatches(values: string[], predicate: (v: string) => boolean, threshold = 0.9): boolean {
+  if (values.length === 0) return false;
+  const matches = values.filter(predicate).length;
+  return matches / values.length >= threshold;
+}
+
+// No header at all — every row, including what would otherwise look like "row 1", is data.
+// Structure is inferred purely from the columns' own content: a run of columns that are
+// (almost always) a single character from the code charset is the code block, optionally
+// interrupted by columns that are (almost always) the same single non-code character — a
+// delimiter. The first column that's blank in every row ends the code block; the description
+// block is exactly the next `numLevels` columns after skipping any number of such blank
+// columns (this app's own export has one; James's files have two). Anything left over that
+// isn't blank in every row is treated as suffix data.
+function parseHeaderlessCsv(table: string[][]): ParsedDiscreteCsv | { error: string } {
+  const numCols = Math.max(...table.map((r) => r.length));
+  const rows = table.map((r) => Array.from({ length: numCols }, (_, i) => r[i] ?? ''));
+  const columnValues = (c: number) => rows.map((r) => r[c]);
+
+  const codeCols: number[] = [];
+  const delimiterCols: number[] = [];
+  const delimiterChars: string[] = [];
+  let col = 0;
+  while (col < numCols) {
+    const values = columnValues(col);
+    if (mostlyMatches(values, (v) => v.length === 1 && CODE_CHARSET.has(v))) {
+      codeCols.push(col);
+      col++;
+      continue;
+    }
+    const common = mostCommonValue(values.filter((v) => v !== ''));
+    if (common.length === 1 && !CODE_CHARSET.has(common) && mostlyMatches(values, (v) => v === common)) {
+      delimiterCols.push(col);
+      delimiterChars.push(common);
+      col++;
+      continue;
+    }
+    break;
+  }
+  const numLevels = codeCols.length;
+  if (numLevels === 0) {
     return {
-      width: Math.max(1, Math.min(8, maxLen)),
-      delimiter: suffixDelimiterChars[i] || '-',
-      mode: 'editable',
-      constantValue: '',
+      error:
+        'Could not find any code columns (a run of columns each holding a single "." or code character) — this doesn\'t look like a taxonomy in code-columns/description-columns format.',
     };
-  });
+  }
+  if (numLevels > MAX_LEVELS) {
+    return { error: `Detected ${numLevels} code columns, more than this tool supports (${MAX_LEVELS}).` };
+  }
 
-  const rows: TaxonomyRow[] = dataRows
-    .filter((r) => r.some((cell) => (cell ?? '').trim() !== ''))
-    .map((r) => ({
-      id: crypto.randomUUID(),
-      codes: codeCols.map((c) => r[c] ?? ''),
-      descriptions: descCols.map((c) => r[c] ?? ''),
-      suffixValues: suffixValueCols.map((c) => r[c] ?? ''),
-    }));
+  // Skip however many consecutive columns are blank in every row — the spacer between the
+  // code and description blocks. Different files use a different number of these (or none).
+  while (col < numCols && rows.every((r) => r[col] === '')) col++;
 
-  return { numLevels, delimiterPositions, codeDelimiterChar, suffixes, rows };
+  if (col + numLevels > numCols) {
+    return {
+      error: `Expected ${numLevels} description columns (matching the ${numLevels} code columns) after the code block, but only ${numCols - col} column(s) remain.`,
+    };
+  }
+  const descCols = Array.from({ length: numLevels }, (_, i) => col + i);
+  col += numLevels;
+
+  // More blank filler, then anything with real content left becomes a suffix column — no
+  // header to name its delimiter, so it defaults to "-".
+  while (col < numCols && rows.every((r) => r[col] === '')) col++;
+  const suffixValueCols: number[] = [];
+  while (col < numCols) {
+    if (rows.some((r) => r[col] !== '')) suffixValueCols.push(col);
+    col++;
+  }
+  const suffixDelimiterChars = suffixValueCols.map(() => '-');
+
+  const delimiterPositions = delimiterCols.map((dCol) => codeCols.filter((c) => c < dCol).length);
+  const codeDelimiterChar = delimiterChars[0] || '-';
+  return buildResult(rows, codeCols, descCols, delimiterPositions, codeDelimiterChar, suffixValueCols, suffixDelimiterChars);
+}
+
+export function parseDiscreteCsv(text: string): ParsedDiscreteCsv | { error: string } {
+  const table = parseCsvTable(text);
+  if (table.length === 0) return { error: 'This file is empty.' };
+  return tryParseHeaderedCsv(table) ?? parseHeaderlessCsv(table);
 }
 
 export function readFileAsText(file: File): Promise<string> {
