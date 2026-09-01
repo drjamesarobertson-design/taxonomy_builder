@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #56, 2026-09-01)
+## Current status (as of PR #58, 2026-09-01)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -83,10 +83,18 @@ further rounds of testing feedback. The tool currently supports, in full:
   version.
 
 ### Known open questions / flagged interpretations
-- None outstanding right now. The collapse/filter caret's two different
-  behaviours (description columns collapse by level; code columns filter
-  literally on the padding character) were flagged and confirmed correct by
-  James in PR #49.
+- The collapse/filter caret's two different behaviours (description
+  columns collapse by level; code columns filter literally on the padding
+  character) were flagged and confirmed correct by James in PR #49.
+- **Open bug, unresolved:** CSV import rejects a file James says looks
+  correct, with "Expected 1 description columns (matching the 1 code
+  columns) but found 0" — meaning the parser is only recognising a single
+  code column when the real file has several. Two rounds of fixes to
+  csvImport.ts's structural assumptions (PR #54, #56) haven't resolved it,
+  most likely because the actual file's delimiter/encoding doesn't match
+  what's been guessed from a pasted table in chat (e.g. it may be
+  tab-separated, not comma-separated). Waiting on James to share the
+  actual file for direct diagnosis rather than guessing further.
 
 ---
 
@@ -249,6 +257,25 @@ IndexedDB, separate from the file-based save/export the spec describes.
   dialogs (its state was still needed for the eventual export call),
   risking a mis-click once a later dialog's button label happened to
   substring-match one of its own.
+
+### Library drop fix, cross-kind highlight fix, CSV overwrite warning, error colour (PR #58)
+- Library drag-and-drop worked in automated testing but not in a real
+  browser: `dragstart` never called `dataTransfer.setData`, which some
+  browsers (Firefox in particular) require before firing a `drop` event on
+  any target — James could drag but nothing ever dropped. Fixed.
+- Export Block's cross-kind selection (PR #56) extended the row range
+  correctly but never highlighted it properly — only the anchor's own
+  column lit up, and right-clicking a different, unhighlighted-but-
+  actually-selected column collapsed the range back to one cell. A
+  cross-kind selection now highlights every code and description column
+  for the affected rows, and stays that way regardless of which column is
+  right-clicked next.
+- Import CSV now warns "This will clear the existing table content —
+  proceed?" before opening the file picker, whenever the current taxonomy
+  has any real content (it always fully replaces the working project).
+- The CSV-import/Load-from-File error banner was dark red text directly on
+  the app's dark blue background — barely legible. Now a solid bright
+  yellow box with dark text.
 
 ---
 
