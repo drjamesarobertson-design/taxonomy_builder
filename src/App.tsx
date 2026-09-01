@@ -18,6 +18,17 @@ import SettingsModal from './SettingsModal';
 import type { SettingsFields } from './SettingsModal';
 import Grid from './Grid';
 import Logo from './Logo';
+import LibrarySidebar from './LibrarySidebar';
+import {
+  LIBRARY_CATEGORIES,
+  listLibraryEntries,
+  addLibraryEntry,
+  updateLibraryEntryProject,
+  renameLibraryEntry,
+  setLibraryCategoryOrder,
+  deleteLibraryEntry,
+} from './library';
+import type { LibraryCategory, LibraryEntry } from './library';
 import './App.css';
 
 export default function App() {
@@ -102,6 +113,92 @@ export default function App() {
   // hold a fair amount of text, with a click to expand to the full thing.
   const [guidanceExpanded, setGuidanceExpanded] = useState(false);
 
+  // The Library (left-hand sidebar): a place to keep multiple built taxonomies for quick
+  // reference/further work, per taxonomy heading. Entries persist in this browser's own
+  // IndexedDB (see library.ts) — a separate, additional place to park a copy, not a
+  // replacement for Save to File. currentLibraryEntryId tracks whether the taxonomy
+  // currently open in the work area is tied to one particular Library entry — set whenever
+  // a taxonomy is brought in via "Move to Work Area" or freshly added, cleared whenever a
+  // genuinely different project replaces it (New Taxonomy, Load from File) — so "Add to
+  // Library" knows whether to update that same entry in place or prompt for a new one.
+  const [libraryEntries, setLibraryEntries] = useState<LibraryEntry[]>([]);
+  const [currentLibraryEntryId, setCurrentLibraryEntryId] = useState<string | null>(null);
+  const [libraryCategoryPrompt, setLibraryCategoryPrompt] = useState<LibraryCategory>(LIBRARY_CATEGORIES[0]);
+  const [showLibraryCategoryPrompt, setShowLibraryCategoryPrompt] = useState(false);
+  const [libraryRemoveTarget, setLibraryRemoveTarget] = useState<LibraryEntry | null>(null);
+  const [justAddedToLibrary, setJustAddedToLibrary] = useState(false);
+  const libraryAddedFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function refreshLibrary() {
+    listLibraryEntries().then(setLibraryEntries);
+  }
+
+  useEffect(() => {
+    refreshLibrary();
+  }, []);
+
+  function flashAddedToLibrary() {
+    if (libraryAddedFlashTimer.current) clearTimeout(libraryAddedFlashTimer.current);
+    setJustAddedToLibrary(true);
+    libraryAddedFlashTimer.current = setTimeout(() => setJustAddedToLibrary(false), 1600);
+  }
+
+  function handleAddToLibraryClick() {
+    if (!project) return;
+    if (currentLibraryEntryId) {
+      updateLibraryEntryProject(currentLibraryEntryId, project).then(() => {
+        refreshLibrary();
+        flashAddedToLibrary();
+      });
+    } else {
+      setLibraryCategoryPrompt(LIBRARY_CATEGORIES[0]);
+      setShowLibraryCategoryPrompt(true);
+    }
+  }
+
+  function confirmAddToLibrary() {
+    if (!project) return;
+    addLibraryEntry(project, libraryCategoryPrompt).then((entry) => {
+      setCurrentLibraryEntryId(entry.id);
+      setShowLibraryCategoryPrompt(false);
+      refreshLibrary();
+      flashAddedToLibrary();
+    });
+  }
+
+  function handleMoveToWorkArea(entry: LibraryEntry) {
+    if (dirty && !confirm('Discard unsaved changes to the current taxonomy and open this one from the Library?')) {
+      return;
+    }
+    setProject(entry.project);
+    setCurrentLibraryEntryId(entry.id);
+    setDirty(false);
+    setAutoFocusFirstRow(false);
+    setLoadError(null);
+    setUndoStack([]);
+    setRedoStack([]);
+    lastEditKeyRef.current = null;
+    setProjectGeneration((g) => g + 1);
+  }
+
+  function handleRenameLibraryEntry(id: string, title: string) {
+    renameLibraryEntry(id, title).then(refreshLibrary);
+  }
+
+  function handleReorderLibrary(category: LibraryCategory, orderedIds: string[]) {
+    setLibraryCategoryOrder(category, orderedIds).then(refreshLibrary);
+  }
+
+  function handleRemoveLibraryEntry() {
+    if (!libraryRemoveTarget) return;
+    const { id } = libraryRemoveTarget;
+    deleteLibraryEntry(id).then(() => {
+      if (id === currentLibraryEntryId) setCurrentLibraryEntryId(null);
+      setLibraryRemoveTarget(null);
+      refreshLibrary();
+    });
+  }
+
   async function handleChooseFolder() {
     const folder = await chooseExportFolder();
     if (folder) setExportFolderName(folder.name);
@@ -168,6 +265,7 @@ export default function App() {
     setUndoStack([]);
     setRedoStack([]);
     lastEditKeyRef.current = null;
+    setCurrentLibraryEntryId(null);
     setProjectGeneration((g) => g + 1);
   }
 
@@ -322,6 +420,7 @@ export default function App() {
       setUndoStack([]);
       setRedoStack([]);
       lastEditKeyRef.current = null;
+      setCurrentLibraryEntryId(null);
       setProjectGeneration((g) => g + 1);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Could not load this file.');
@@ -369,10 +468,19 @@ export default function App() {
     if (project && dirty && !confirm('Discard the current taxonomy and start a new one?')) return;
     setProject(null);
     setLoadError(null);
+    setCurrentLibraryEntryId(null);
   }
 
   return (
-    <div className="app">
+    <div className="app-shell">
+      <LibrarySidebar
+        entries={libraryEntries}
+        onRename={handleRenameLibraryEntry}
+        onReorder={handleReorderLibrary}
+        onMoveToWorkArea={handleMoveToWorkArea}
+        onRemove={setLibraryRemoveTarget}
+      />
+      <div className="app">
       <header className="app-header">
         <h1 className="app-heading">The ERP Doctor Taxonomy Builder</h1>
         <div className="header-right">
@@ -414,6 +522,20 @@ export default function App() {
                 title="Export the whole table as a block another taxonomy can import"
               >
                 Create Block
+              </button>
+            )}
+            {project && (
+              <button
+                type="button"
+                className={justAddedToLibrary ? 'save-flash' : undefined}
+                onClick={handleAddToLibraryClick}
+                title={
+                  currentLibraryEntryId
+                    ? "Update this taxonomy's existing Library entry"
+                    : 'Save a copy of this taxonomy to the Library'
+                }
+              >
+                {justAddedToLibrary ? 'Added ✓' : 'Add to Library'}
               </button>
             )}
             {project && (
@@ -621,6 +743,50 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {showLibraryCategoryPrompt && (
+        <div className="validation-overlay" onClick={() => setShowLibraryCategoryPrompt(false)}>
+          <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <p>Save this taxonomy to the Library under which heading?</p>
+            <select
+              className="library-category-select"
+              value={libraryCategoryPrompt}
+              onChange={(e) => setLibraryCategoryPrompt(e.target.value as LibraryCategory)}
+            >
+              {LIBRARY_CATEGORIES.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setShowLibraryCategoryPrompt(false)}>
+                Cancel
+              </button>
+              <button type="button" onClick={confirmAddToLibrary}>
+                Add to Library
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {libraryRemoveTarget && (
+        <div className="validation-overlay" onClick={() => setLibraryRemoveTarget(null)}>
+          <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <p>Remove "{libraryRemoveTarget.project.title || '(untitled)'}" from the Library? This does not affect the work area.</p>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setLibraryRemoveTarget(null)}>
+                Cancel
+              </button>
+              <button type="button" onClick={handleRemoveLibraryEntry}>
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      </div>
     </div>
   );
 }
