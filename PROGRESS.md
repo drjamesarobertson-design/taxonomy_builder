@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #62, 2026-09-01)
+## Current status (as of PR #64, 2026-09-01)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -72,6 +72,22 @@ further rounds of testing feedback. The tool currently supports, in full:
   suffix values onto the description, dropping their separate columns) or
   Right Align (today's default, suffixes stay in their own column(s)) —
   only asked when the taxonomy actually has suffix columns.
+- **Lock Taxonomy**: once a taxonomy has gone live in an ERP with real
+  transactions against its codes, "Lock Taxonomy" marks every row then in
+  the table `protected` and saves the file; "Unlock Taxonomy" lifts
+  enforcement (with a strong warning) without ever clearing which rows were
+  protected, so a later re-lock still knows what's historical. Protected
+  rows are greyed out in the grid (persists across an unlock) and show a
+  padlock icon in the Library sidebar. While locked: editing or deleting a
+  protected row's own code/description is blocked with an explicit
+  warning (also covers Delete Codes, Clear Codes and Start Again, Paste
+  Codes, and Promote/Demote — anything else that can overwrite or blank a
+  protected row's code); new rows can only be inserted where a real code
+  gap exists between two neighbours (hard block, no override); "Mark as
+  Delete" (right-click a description) prefixes it with "XXX " as the
+  sanctioned way to retire a protected entry instead of deleting it; and
+  CSV Import (which replaces the whole table outside any per-cell guard)
+  is blocked outright.
 
 ### Not yet built
 - Section 6.9 comments/notes on entries (no on-row indicator or add/edit UI
@@ -119,6 +135,25 @@ further rounds of testing feedback. The tool currently supports, in full:
   present in the source file itself for the (majority of) rows that don't
   go that deep, exactly per Section 4.4's padding convention. Confirmed
   with James; no code change needed.
+- **Lock Taxonomy scope decisions**, confirmed with James before building
+  (PR #64): protection is per-row, snapshotted at each Lock (not
+  whole-file-forever) — a row added after unlocking is only protected once
+  a *later* Lock sweeps it in; Delete Row is fully blocked on a protected
+  row rather than degraded to some partial behaviour (Mark as Delete is
+  the only way to retire one); the gap-only insert rule applies only while
+  locked, not to unlocked taxonomies generally; Mark as Delete prefixes
+  ("XXX " + description) rather than replacing or suffixing.
+- **Lock Taxonomy — known gaps not covered by this round**, flagged rather
+  than guessed at: Toggle Case, Alpha Sort, and manual drag reorder are
+  NOT blocked on a protected row (case/order aren't the code or
+  description text itself, so left editable — a judgement call, not
+  explicitly specified); Replicate Codes Above/Below aren't guarded
+  either, but can't actually overwrite a protected row's real code anyway
+  (they only ever fill genuinely blank cells); Import Block's own
+  insertion point doesn't yet go through the same gap-only check Insert
+  Row got. Suffix column values also stay editable on a protected row —
+  only code/description were named as protected. Worth a follow-up round
+  if any of these turn out to matter in practice.
 
 ---
 
@@ -316,6 +351,30 @@ requiring unanimous agreement — the real file has 9 rows out of 1840
 missing a trailing padding character. Verified end-to-end against the
 real file: all 1840 rows import with the correct 7 levels and delimiter
 position.
+
+### Lock Taxonomy (PR #64)
+New feature, not a bug fix: once a taxonomy goes live in an ERP with real
+transactions posted against its codes, further free-form editing risks
+corrupting that history. "Lock Taxonomy" (toolbar button) marks every row
+then in the table `protected` and saves the file; "Unlock Taxonomy" lifts
+enforcement, with the exact warning text James specified, but never clears
+which rows were protected — a later re-lock still knows what's historical.
+Protected rows grey out in the grid and show a padlock icon in the Library
+sidebar. While locked: editing/deleting a protected row's own code or
+description is blocked (exact warning text specified, reused across Delete
+Codes / Clear Codes and Start Again / Paste Codes / Promote-Demote, since
+all of them can overwrite or blank a protected row's code just as directly
+as typing into it); new rows can only be inserted where a real code gap
+exists between two neighbours while locked (a hard block, unlike the
+existing soft "no gap" warning used when unlocked); "Mark as Delete"
+(right-click a description) prefixes it with "XXX " as the sanctioned way
+to retire a protected entry; CSV Import is blocked outright while locked
+(it replaces the whole table and doesn't go through any per-cell guard).
+`locked`/`protected` round-trip through the saved JSON file. See "Known
+open questions" for the scope decisions confirmed with James up front and
+the handful of related operations (Toggle Case, Alpha Sort, drag reorder,
+Import Block's insertion point, suffix values) intentionally left
+unguarded this round.
 
 ---
 
