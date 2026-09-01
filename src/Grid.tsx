@@ -735,15 +735,23 @@ export default function Grid({
     );
   }
 
-  // Lock Taxonomy: several bulk code operations (Delete Codes, Clear Codes and Start Again,
-  // Paste Codes, Promote/Demote) can overwrite or blank a row's own code just as directly as
-  // typing into it can — this is the same guard as updateCode's, reused wherever one of those
-  // operations is about to touch a set of rows, rather than only the single-cell path.
-  function blockIfAnyProtected(ids: Iterable<string>): boolean {
+  // Lock Taxonomy: several bulk operations can alter a protected row just as directly as
+  // typing into it can — overwriting/blanking its code (Delete Codes, Clear Codes and Start
+  // Again, Paste Codes, Promote/Demote), rewriting its description's case (Toggle Case), or
+  // moving it out of its recorded position relative to its siblings (Alpha Sort, Move) — which
+  // can silently break the ascending-code-order invariant even though the code value itself
+  // never changes. One shared guard, with the message tailored to what's actually at risk.
+  const CORRUPT_CODES_MESSAGE =
+    'Change of existing codes will corrupt the long term integrity of the existing data and is therefore not allowed';
+  const CORRUPT_DESCRIPTIONS_MESSAGE =
+    'Change of existing descriptions will corrupt the long term integrity of the existing data and is therefore not allowed';
+  const CORRUPT_ORDER_MESSAGE =
+    'Reordering an existing entry protected by Lock Taxonomy could break its recorded position relative to its siblings and is therefore not allowed';
+  function blockIfAnyProtected(ids: Iterable<string>, message: string = CORRUPT_CODES_MESSAGE): boolean {
     if (!locked) return false;
     const idSet = ids instanceof Set ? ids : new Set(ids);
     if (!rows.some((r) => idSet.has(r.id) && r.protected)) return false;
-    showValidationError('Change of existing codes will corrupt the long term integrity of the existing data and is therefore not allowed');
+    showValidationError(message);
     return true;
   }
 
@@ -1205,6 +1213,8 @@ export default function Grid({
   function handleToggleCase() {
     if (!contextMenu || contextMenu.kind !== 'desc' || !selection) return;
     const { level } = contextMenu;
+    setContextMenu(null);
+    if (blockIfAnyProtected(selection.rowIds, CORRUPT_DESCRIPTIONS_MESSAGE)) return;
     onChange(
       rows.map((row) =>
         selection.rowIds.has(row.id)
@@ -1471,6 +1481,25 @@ export default function Grid({
       showValidationError('This block has no entries to import.');
       return;
     }
+
+    // Lock Taxonomy: Import Block inserts its rows right at the anchor, pushing the anchor
+    // row (and everything below it) down — the same "wedge in between two existing
+    // neighbours" as Insert Row, and the same hard gap-only rule applies while locked: the
+    // anchor's own code and its previous sibling's code at this level must actually have room
+    // for something between them, or this would force recoding an existing (likely protected)
+    // neighbour.
+    const anchorIndex = rows.findIndex((r) => r.id === anchorRowId);
+    if (locked && anchorIndex > 0) {
+      const aboveCode = rows[anchorIndex - 1].codes[anchorLevel] ?? '';
+      const belowCode = rows[anchorIndex].codes[anchorLevel] ?? '';
+      if (aboveCode !== '' && belowCode !== '' && !hasCodeGap(aboveCode, belowCode, codeRestriction, paddingChar)) {
+        showValidationError(
+          `There is no available code between "${aboveCode}" and "${belowCode}" at this level — importing a block here would require renumbering an existing entry while the taxonomy is locked, which is not allowed. Unlock the taxonomy first if this is genuinely necessary.`,
+        );
+        return;
+      }
+    }
+
     // Each entry's `codes` is the row's FULL ancestor path from the SOURCE taxonomy's own root
     // (buildBlock: `row.codes.slice(0, level + 1)`) — not a path relative to the block's own
     // shallowest entry. A block cut from deep inside a table (e.g. a level-2 heading and its
@@ -1853,6 +1882,8 @@ export default function Grid({
     }
     const topIndex = selectedIndices[0];
     const bottomIndex = selectedIndices[selectedIndices.length - 1];
+    setContextMenu(null);
+    if (blockIfAnyProtected(rows.slice(topIndex, bottomIndex + 1).map((r) => r.id), CORRUPT_ORDER_MESSAGE)) return;
     // Split the selected range into chunks — each selected sibling plus every descendant row
     // that immediately follows it — then sort the chunks as units by the sibling's own text,
     // never disturbing a chunk's internal (parent-then-children) order.
@@ -1879,6 +1910,7 @@ export default function Grid({
   // them stranded at the old position). The next plain click on any row picks the target.
   function handleMoveStart() {
     if (!contextMenu || contextMenu.kind !== 'desc' || !selection) return;
+    setContextMenu(null);
     const selectedIndices = rows
       .map((r, i) => (selection.rowIds.has(r.id) ? i : -1))
       .filter((i) => i !== -1 && levelOf(rows[i]) !== -1)
@@ -1890,7 +1922,9 @@ export default function Grid({
       const end = getDescendantEndIndex(idx);
       for (let i = idx; i < end; i++) affected.add(i);
     }
-    setMoveMode({ rowIds: new Set(Array.from(affected).map((i) => rows[i].id)) });
+    const movingIds = Array.from(affected).map((i) => rows[i].id);
+    if (blockIfAnyProtected(movingIds, CORRUPT_ORDER_MESSAGE)) return;
+    setMoveMode({ rowIds: new Set(movingIds) });
     setSelection(null);
     setContextMenu(null);
   }
