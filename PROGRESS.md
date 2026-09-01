@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #52, 2026-09-01)
+## Current status (as of PR #54, 2026-09-01)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -53,6 +53,23 @@ further rounds of testing feedback. The tool currently supports, in full:
   right-click Move to Work Area / Edit Title / Remove from Library, and
   drag-and-drop reordering within or across headings. Persisted in this
   browser's own IndexedDB — per-browser, not a file, and not synced anywhere.
+- A "Code Restrictions" dropdown at the top of the work area, narrowing
+  real codes to Numeric Only / Alpha Numeric with All Alpha / Alpha Numeric
+  with Upper Case Alpha Only / Alpha Upper Case Only / Alpha Both Cases
+  Only, on top of the fixed global charset; the padding character is
+  always exempt.
+- "Import CSV": brings in a taxonomy already in the same shape this app's
+  own Discrete Columns CSV export produces — level count, delimiter
+  positions, and suffix columns inferred from the file's own structure,
+  with a short confirm step for title/table name/purpose/max description
+  length (the only things a CSV can't carry).
+- Grid's own right-click "Export Block" on a selected row range (alongside
+  the toolbar's whole-table Create Block), with an "Include Suffix? Y/N"
+  choice.
+- A suffix export-mode choice on CSV/Excel export — Concatenate (folds
+  suffix values onto the description, dropping their separate columns) or
+  Right Align (today's default, suffixes stay in their own column(s)) —
+  only asked when the taxonomy actually has suffix columns.
 
 ### Not yet built
 - Section 6.9 comments/notes on entries (no on-row indicator or add/edit UI
@@ -187,6 +204,32 @@ within or across headings. This is genuinely outside CLAUDE.md's original
 v1 scope (Section 9 lists multi-taxonomy library management as a later
 phase) — built now at James's explicit request. Stored client-side in
 IndexedDB, separate from the file-based save/export the spec describes.
+
+### Code Restrictions, CSV import, scoped Export Block, suffix export mode (PR #54)
+- A "Code Restrictions" dropdown at the top of the work area narrows real
+  codes beyond the fixed global charset, enforced the same way as that
+  charset rule (a hard block with a clear message, no override); the
+  padding character is always exempt.
+- "Import CSV" reads a taxonomy already in this app's own Discrete Columns
+  CSV shape — level count, delimiter positions, and suffix columns are
+  inferred from the file's header/structure — then asks only for what a
+  CSV can't carry (title/table name/purpose/max description length).
+  Note: this expects the exact column layout this app's own CSV export
+  produces (numbered code/description headers, one blank spacer column,
+  "Suffix N" headers) — a spreadsheet built independently with a similar
+  but not identical layout won't parse correctly. Padding character always
+  defaults to "." on import (not inferred), and suffix mode always defaults
+  to "editable" since that can't be reliably inferred from static data.
+- Grid's own right-click "Export Block" exports just a selected row range
+  as a block, alongside the toolbar's existing whole-table "Create Block".
+- CSV/Excel export now asks whether to concatenate suffix values onto the
+  description or keep them right-aligned in their own column(s), only when
+  the taxonomy has suffix columns configured.
+- Fixed a dialog-stacking bug found while building the suffix-mode choice:
+  the CSV/Excel format-choice dialog stayed mounted underneath later-step
+  dialogs (its state was still needed for the eventual export call),
+  risking a mis-click once a later dialog's button label happened to
+  substring-match one of its own.
 
 ---
 
