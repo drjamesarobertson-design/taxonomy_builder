@@ -1,12 +1,15 @@
-// Item 2: importing an existing taxonomy already built in the "correct format" — codes in
-// separate columns, descriptions in separate columns — the same shape this app's own
-// "Export to CSV — Discrete Columns" produces (gridExport.ts's buildDiscreteGrid): a code
-// column per level, optional single-character delimiter columns interspersed among them, one
-// blank spacer column, a description column per level, then any suffix columns each preceded
-// by their own delimiter column. Structure (level count, delimiter positions, suffix count and
-// widths) is inferred entirely from the header row's own numbering and the data — nothing
-// about it needs to be typed in by hand. Metadata the CSV has no way to carry (title, table
-// name, purpose) is collected separately once parsing succeeds (see App.tsx).
+// Item 2: importing an existing taxonomy already built in the "correct format" — per James,
+// each code column in its own adjacent column left to right, immediately followed by each
+// description column in its own adjacent column. That plain shape (no gap, no delimiters) is
+// the baseline this parses; it also happens to accept the richer shape this app's own "Export
+// to CSV — Discrete Columns" produces (gridExport.ts's buildDiscreteGrid) — optional
+// single-character delimiter columns interspersed within the code block, an optional blank
+// spacer column between the code and description blocks, and optional suffix columns (each
+// preceded by its own delimiter) after — since that's a superset of the same basic layout.
+// Structure (level count, delimiter positions if any, suffix count and widths if any) is
+// inferred entirely from the header row's own numbering and the data — nothing about it needs
+// to be typed in by hand. Metadata the CSV has no way to carry (title, table name, purpose) is
+// collected separately once parsing succeeds (see App.tsx).
 
 import type { SuffixField, TaxonomyRow } from './types';
 import { MAX_LEVELS } from './types';
@@ -105,11 +108,12 @@ export function parseDiscreteCsv(text: string): ParsedDiscreteCsv | { error: str
     return { error: `Detected ${numLevels} code columns, more than this tool supports (${MAX_LEVELS}).` };
   }
 
-  // The single blank spacer column between the code and description blocks.
-  if ((header[col] ?? '').trim() !== '') {
-    return { error: 'Expected a blank spacer column between the code and description columns.' };
+  // An optional blank spacer column between the code and description blocks (this app's own
+  // export includes one; a plainer file — code columns immediately followed by description
+  // columns, nothing in between — is just as valid, so only skip it when it's actually there).
+  if ((header[col] ?? '').trim() === '') {
+    col++;
   }
-  col++;
 
   // The description block: the same 1..numLevels numbering, immediately following.
   const descCols: number[] = [];

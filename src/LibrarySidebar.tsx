@@ -17,10 +17,10 @@ interface ContextMenuState {
 }
 
 // The Library (left-hand sidebar, per James's request): every taxonomy added to it is kept
-// under one of eight fixed headings, listed by title, with drag-and-drop reordering (within
-// or across headings), inline title editing, and a right-click "Move to Work Area" to bring
-// it back into the grid. Entries are grouped/sorted here purely for display — the underlying
-// store (library.ts) only knows category + order per entry, nothing hierarchical.
+// under one of eight fixed headings, listed by title. Two independent ways to reorganise it —
+// drag-and-drop (within or across headings), and a right-click "Move to Category" / "Move
+// Up" / "Move Down" for when dragging isn't convenient — plus inline title editing and a
+// right-click "Move to Work Area" to bring an entry back into the grid.
 export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToWorkArea, onRemove }: LibrarySidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -29,6 +29,8 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
   const [renameValue, setRenameValue] = useState('');
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
+  const [moveCategoryTarget, setMoveCategoryTarget] = useState<LibraryEntry | null>(null);
+  const [moveCategoryChoice, setMoveCategoryChoice] = useState<LibraryCategory>(LIBRARY_CATEGORIES[0]);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -79,6 +81,36 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
     onReorder(category, newOrder);
     setDraggedId(null);
     setDragOverKey(null);
+  }
+
+  // Right-click "Move Up" / "Move Down" — swaps an entry with its neighbour within the same
+  // heading, a non-drag alternative to reordering by hand.
+  function moveWithinCategory(entry: LibraryEntry, direction: 'up' | 'down') {
+    const list = entriesFor(entry.category);
+    const idx = list.findIndex((e) => e.id === entry.id);
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (idx === -1 || swapIdx < 0 || swapIdx >= list.length) return;
+    const ids = list.map((e) => e.id);
+    [ids[idx], ids[swapIdx]] = [ids[swapIdx], ids[idx]];
+    onReorder(entry.category, ids);
+    setContextMenu(null);
+  }
+
+  function startMoveToCategory(entry: LibraryEntry) {
+    setMoveCategoryTarget(entry);
+    setMoveCategoryChoice(entry.category);
+    setContextMenu(null);
+  }
+
+  // Right-click "Move to Category" — a non-drag alternative to dragging an entry across
+  // headings; lands at the end of the chosen heading's list.
+  function confirmMoveToCategory() {
+    if (!moveCategoryTarget) return;
+    const targetIds = entriesFor(moveCategoryChoice)
+      .filter((e) => e.id !== moveCategoryTarget.id)
+      .map((e) => e.id);
+    onReorder(moveCategoryChoice, [...targetIds, moveCategoryTarget.id]);
+    setMoveCategoryTarget(null);
   }
 
   if (collapsed) {
@@ -176,6 +208,10 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
         (() => {
           const entry = entries.find((e) => e.id === contextMenu.id);
           if (!entry) return null;
+          const list = entriesFor(entry.category);
+          const idx = list.findIndex((e) => e.id === entry.id);
+          const isFirst = idx <= 0;
+          const isLast = idx === -1 || idx >= list.length - 1;
           return (
             <ul className="context-menu" style={{ top: contextMenu.y, left: contextMenu.x }} onClick={(e) => e.stopPropagation()}>
               <li
@@ -187,12 +223,52 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
                 Move to Work Area
               </li>
               <li onClick={() => startRename(entry)}>Edit Title</li>
+              <li
+                className={isFirst ? 'context-menu-disabled' : undefined}
+                onClick={() => !isFirst && moveWithinCategory(entry, 'up')}
+              >
+                Move Up
+              </li>
+              <li
+                className={isLast ? 'context-menu-disabled' : undefined}
+                onClick={() => !isLast && moveWithinCategory(entry, 'down')}
+              >
+                Move Down
+              </li>
+              <li onClick={() => startMoveToCategory(entry)}>Move to Category…</li>
               <li className="context-menu-separator" onClick={() => onRemove(entry)}>
                 Remove from Library
               </li>
             </ul>
           );
         })()}
+
+      {moveCategoryTarget && (
+        <div className="validation-overlay" onClick={() => setMoveCategoryTarget(null)}>
+          <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <p>Move "{moveCategoryTarget.project.title || '(untitled)'}" to which heading?</p>
+            <select
+              className="library-category-select"
+              value={moveCategoryChoice}
+              onChange={(e) => setMoveCategoryChoice(e.target.value as LibraryCategory)}
+            >
+              {LIBRARY_CATEGORIES.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setMoveCategoryTarget(null)}>
+                Cancel
+              </button>
+              <button type="button" onClick={confirmMoveToCategory}>
+                Move
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
