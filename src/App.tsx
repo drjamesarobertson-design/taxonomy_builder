@@ -337,15 +337,20 @@ export default function App() {
     setDirty(true);
   }
 
-  async function performSave() {
-    if (!project) return;
+  // `projectOverride` (Lock Taxonomy): saves a freshly-built project object directly rather
+  // than whatever's currently in `project` state — needed because setProject() followed
+  // immediately by performSave() would still see the OLD project through this render's
+  // closure, saving the taxonomy un-locked.
+  async function performSave(projectOverride?: TaxonomyProject) {
+    const toSave = projectOverride ?? project;
+    if (!toSave) return;
     // saveProjectToFile bumps and returns the project's own "save" version counter (used to
     // build its " v1.NN" filename) — persisted back into state, bypassing undo/redo, since
     // it's bookkeeping metadata, not a user edit. It also reports whether the file actually
     // landed in the remembered folder or fell back to a plain download (e.g. permission
     // lapsed) — if it fell back, the "Folder: X" button is no longer telling the truth, so
     // clear it back to "Choose Export Folder" rather than leave a stale, inoperative label.
-    const { project: versioned, usedFolder, cancelled } = await saveProjectToFile(project);
+    const { project: versioned, usedFolder, cancelled } = await saveProjectToFile(toSave);
     if (cancelled) return; // backed out of the Save As dialog — nothing happened
     setProject(versioned);
     setDirty(false);
@@ -363,6 +368,45 @@ export default function App() {
       return;
     }
     performSave();
+  }
+
+  // Lock Taxonomy: once a taxonomy has gone live and carries real transactions against its
+  // codes, every row currently in the table gets marked `protected` (Grid.tsx then refuses to
+  // edit or delete them, and only allows inserting new rows where a real code gap exists) and
+  // the file is saved immediately, so the locked state is captured on disk, not just in memory.
+  function handleLockTaxonomy() {
+    if (!project) return;
+    if (
+      !confirm(
+        'Lock this taxonomy? Every row currently in the table becomes protected — its code and description can no longer be edited or deleted (Mark as Delete can still retire an entry), and new rows can only be inserted where a code gap already exists. The file will be saved. Continue?',
+      )
+    ) {
+      return;
+    }
+    const lockedProject: TaxonomyProject = {
+      ...project,
+      settings: { ...project.settings, locked: true },
+      rows: project.rows.map((row) => ({ ...row, protected: true })),
+    };
+    setProject(lockedProject);
+    setDirty(false);
+    performSave(lockedProject);
+  }
+
+  // Unlock: lifts the enforcement only — every row's `protected` flag from the last Lock is
+  // left exactly as it is (Grid.tsx keeps greying those rows out), so a later re-lock still
+  // knows what was already historical, and nothing here is silently forgotten.
+  function handleUnlockTaxonomy() {
+    if (!project) return;
+    if (
+      !confirm(
+        'Unlocking this taxonomy and changing existing codes or descriptions will potentially corrupt the existing historical data and lead to inexplicable errors and is strongly advised against.  If you unlock please be very careful with what you do.',
+      )
+    ) {
+      return;
+    }
+    setProject({ ...project, settings: { ...project.settings, locked: false } });
+    setDirty(true);
   }
 
   function handleLoadClick() {
@@ -515,6 +559,13 @@ export default function App() {
   }
 
   function handleImportCsvClick() {
+    // Lock Taxonomy: CSV Import replaces the whole table wholesale — it doesn't go through
+    // Grid.tsx's per-cell protected-row guards at all, so it's the one path that could
+    // silently wipe out a locked taxonomy's protected rows if it weren't blocked here.
+    if (project?.settings.locked) {
+      alert('This taxonomy is locked and cannot be replaced by a CSV import. Unlock it first if this is genuinely necessary.');
+      return;
+    }
     if (project && hasAnyContent(project.rows) && !confirm('This will clear the existing table content — proceed?')) {
       return;
     }
@@ -656,6 +707,26 @@ export default function App() {
                 {justSaved ? 'Saved ✓' : 'Save to File'}
               </button>
             )}
+            {project && !project.settings.locked && (
+              <button
+                type="button"
+                className="lock-btn"
+                onClick={handleLockTaxonomy}
+                title="Protect every existing row's code and description once this taxonomy has gone live with real transactions"
+              >
+                🔒 Lock Taxonomy
+              </button>
+            )}
+            {project && project.settings.locked && (
+              <button
+                type="button"
+                className="unlock-btn"
+                onClick={handleUnlockTaxonomy}
+                title="Lift protection so existing rows can be edited again — use with care"
+              >
+                🔓 Unlock Taxonomy
+              </button>
+            )}
             {project && (
               <button type="button" onClick={() => setExportChoice({ format: 'csv' })}>
                 Export to CSV
@@ -752,7 +823,10 @@ export default function App() {
       {project && (
         <>
           <section className="taxonomy-meta">
-            <h2>{project.title}</h2>
+            <h2>
+              {project.title}
+              {project.settings.locked && <span className="locked-badge">🔒 Locked</span>}
+            </h2>
             <p className="table-name">Table: {project.tableName}</p>
             {project.purpose && <p className="purpose">{project.purpose}</p>}
           </section>

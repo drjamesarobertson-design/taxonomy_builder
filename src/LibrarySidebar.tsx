@@ -194,6 +194,12 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
                   onDoubleClick={() => startRename(entry)}
                   title={entry.project.title}
                 >
+                  <span
+                    className="library-lock-icon"
+                    title={entry.project.settings.locked ? 'Locked — protected rows can no longer be edited' : 'Unlocked'}
+                  >
+                    {entry.project.settings.locked ? '🔒' : '🔓'}
+                  </span>
                   {renamingId === entry.id ? (
                     <input
                       ref={renameInputRef}

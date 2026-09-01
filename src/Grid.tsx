@@ -3,7 +3,7 @@ import type { TaxonomyRow, TaxonomySettings } from './types';
 import { createEmptyRow, growRowsToLevels } from './types';
 import { getLevelColor } from './colors';
 import { toggleCase } from './caseUtils';
-import { isValidCodeChar, isAllowedByCodeRestriction } from './codeValidation';
+import { isValidCodeChar, isAllowedByCodeRestriction, hasCodeGap } from './codeValidation';
 import type { TaxonomyBlock } from './blockTransfer';
 import { parseBlockFile } from './blockTransfer';
 import type { HelpTextMap } from './helpText';
@@ -71,8 +71,16 @@ export default function Grid({
   autoFocusFirstRow,
   onExportBlock,
 }: GridProps) {
-  const { numLevels, delimiterPositions, maxDescriptionLength, suffixes, paddingChar, codeDelimiterChar, codeRestriction } =
-    settings;
+  const {
+    numLevels,
+    delimiterPositions,
+    maxDescriptionLength,
+    suffixes,
+    paddingChar,
+    codeDelimiterChar,
+    codeRestriction,
+    locked,
+  } = settings;
   const levels = Array.from({ length: numLevels }, (_, i) => i);
   // The wide overflow column gets whatever's left of the configured max description length
   // after reserving one character per description level (Section 6.7's indent padding) and
@@ -486,6 +494,14 @@ export default function Grid({
     const editIndex = rows.findIndex((r) => r.id === rowId);
     if (editIndex === -1) return;
 
+    // Lock Taxonomy: a protected row's own code is off-limits — it may already be posted
+    // against in the live ERP, and recoding it here has no way to reach or correct whatever
+    // already used the old value there.
+    if (locked && rows[editIndex].protected) {
+      showValidationError('Change of existing codes will corrupt the long term integrity of the existing data and is therefore not allowed');
+      return;
+    }
+
     const oldValue = rows[editIndex].codes[level] ?? '';
     // Retyping the same character is a deliberate re-entry (e.g. re-cascading padding), not a
     // no-op — it still runs the full cascade/clear-right logic below.
@@ -649,6 +665,14 @@ export default function Grid({
     const editIndex = rows.findIndex((r) => r.id === rowId);
     if (editIndex === -1) return;
 
+    // Lock Taxonomy: a protected row's own description is off-limits for the same reason as
+    // its code — it may already be shown against live transactions. Mark as Delete (not a
+    // direct edit) is the sanctioned way to retire one.
+    if (locked && rows[editIndex].protected) {
+      showValidationError('Change of existing descriptions will corrupt the long term integrity of the existing data and is therefore not allowed');
+      return;
+    }
+
     // Column 1 entries are the top level of the hierarchy — virtually always structural
     // (Section 4.3) — so force ALL CAPS as the user types, matching the case toggle's own
     // convention rather than requiring a separate manual toggle for the common case.
@@ -709,6 +733,18 @@ export default function Grid({
       }),
       `desc:${level}:${rowId}`,
     );
+  }
+
+  // Lock Taxonomy: several bulk code operations (Delete Codes, Clear Codes and Start Again,
+  // Paste Codes, Promote/Demote) can overwrite or blank a row's own code just as directly as
+  // typing into it can — this is the same guard as updateCode's, reused wherever one of those
+  // operations is about to touch a set of rows, rather than only the single-cell path.
+  function blockIfAnyProtected(ids: Iterable<string>): boolean {
+    if (!locked) return false;
+    const idSet = ids instanceof Set ? ids : new Set(ids);
+    if (!rows.some((r) => idSet.has(r.id) && r.protected)) return false;
+    showValidationError('Change of existing codes will corrupt the long term integrity of the existing data and is therefore not allowed');
+    return true;
   }
 
   // Edits an "editable" suffix column's per-row value (Section 3-adjacent: user-defined
@@ -809,6 +845,16 @@ export default function Grid({
     const level = levelOf(rows[idx]);
     const end = level === -1 ? idx + 1 : getDescendantEndIndex(idx);
     const hasChildren = end > idx + 1;
+
+    // Lock Taxonomy: deleting a protected row (or a protected descendant caught up in the
+    // same delete) would remove its code from history — the same integrity risk as editing
+    // it. Mark as Delete is the sanctioned way to retire one instead.
+    if (locked && rows.slice(idx, end).some((r) => r.protected)) {
+      showValidationError(
+        'This entry (or one of its children) is protected by Lock Taxonomy and cannot be deleted — use "Mark as Delete" on its description instead.',
+      );
+      return;
+    }
     const doDelete = () => onChange(rows.filter((_, i) => i < idx || i >= end));
     if (hasChildren) {
       setConfirmDialog({
@@ -859,9 +905,23 @@ export default function Grid({
     const below = insertAt < rows.length ? rows[insertAt] : undefined;
     const aboveCode = above?.codes[refLevel] ?? '';
     const belowCode = below?.codes[refLevel] ?? '';
-    const noGap = aboveCode !== '' && belowCode !== '' && belowCode.charCodeAt(0) - aboveCode.charCodeAt(0) === 1;
+    const hasNeighboursBothWays = aboveCode !== '' && belowCode !== '';
 
     const doInsert = () => performInsertRow(insertAt, count, refLevel);
+
+    // Lock Taxonomy: once locked, a new row can only go where a real code actually fits
+    // between its two neighbours (e.g. "1"/"3" has room for "2"; "1"/"2" doesn't) — otherwise
+    // it would force recoding an existing, possibly-protected neighbour, which locking exists
+    // to prevent. Unlike the soft warning below, this is a hard block with no override.
+    if (locked && hasNeighboursBothWays && !hasCodeGap(aboveCode, belowCode, codeRestriction, paddingChar)) {
+      setContextMenu(null);
+      showValidationError(
+        `There is no available code between "${aboveCode}" and "${belowCode}" at this level — inserting a new entry here would require renumbering an existing entry while the taxonomy is locked, which is not allowed. Unlock the taxonomy first if this is genuinely necessary.`,
+      );
+      return;
+    }
+
+    const noGap = hasNeighboursBothWays && belowCode.charCodeAt(0) - aboveCode.charCodeAt(0) === 1;
     if (noGap) {
       setContextMenu(null);
       setConfirmDialog({
@@ -1158,11 +1218,37 @@ export default function Grid({
     setContextMenu(null);
   }
 
+  // Lock Taxonomy: the sanctioned way to retire a protected row, since it can no longer be
+  // edited or deleted directly (Section-equivalent: preserves the historical code/description
+  // instead of erasing it). Prefixes the description with "XXX " rather than replacing it, so
+  // the original wording — and the row's place in the sequence — stays visible. Works even on
+  // an unprotected row (harmless, just not required there); a description already marked is
+  // left alone rather than getting a second "XXX ".
+  function handleMarkAsDelete() {
+    if (!contextMenu || contextMenu.kind !== 'desc' || !selection) return;
+    const { level } = contextMenu;
+    const prefix = 'XXX ';
+    onChange(
+      rows.map((row) =>
+        selection.rowIds.has(row.id)
+          ? {
+              ...row,
+              descriptions: row.descriptions.map((d, i) =>
+                i === level && d && !d.startsWith(prefix) ? `${prefix}${d}` : d,
+              ),
+            }
+          : row,
+      ),
+    );
+    setContextMenu(null);
+  }
+
   // Clears every selected code cell in this column, and blanks each affected row's deeper
   // codes too, per the same rule as any other code change (Section 4.4/6.3).
   function handleDeleteCodes() {
     if (!contextMenu || contextMenu.kind !== 'code' || !selection) return;
     const { level } = contextMenu;
+    if (blockIfAnyProtected(selection.rowIds)) return;
     onChange(
       rows.map((row) =>
         selection.rowIds.has(row.id)
@@ -1182,6 +1268,7 @@ export default function Grid({
   function handleClearAllCodes() {
     if (!contextMenu || contextMenu.kind !== 'code') return;
     setContextMenu(null);
+    if (blockIfAnyProtected(rows.map((r) => r.id))) return;
     setConfirmDialog({
       message: 'This will clear every code in the entire taxonomy. Continue?',
       confirmLabel: 'Confirm',
@@ -1335,6 +1422,8 @@ export default function Grid({
     const startIdx = rows.findIndex((r) => r.id === contextMenu.rowId);
     if (startIdx === -1) return;
     const startLevel = contextMenu.level;
+    const pastedRowIds = rows.slice(startIdx, startIdx + codeClipboard.numRows).map((r) => r.id);
+    if (blockIfAnyProtected(pastedRowIds)) return;
     const updated = rows.map((row) => ({ ...row, codes: [...row.codes] }));
     for (let c = 0; c < codeClipboard.numCols; c++) {
       const level = startLevel + c;
@@ -1717,6 +1806,11 @@ export default function Grid({
       }
     }
 
+    // Lock Taxonomy: promote/demote blanks every affected row's own code (Section 6.3) — the
+    // same integrity risk as editing it directly, so a protected row (or a protected
+    // descendant swept along with it) blocks the whole move.
+    if (blockIfAnyProtected([...affected].map((i) => rows[i].id))) return;
+
     onChange(
       rows.map((row, i) => {
         if (!affected.has(i)) return row;
@@ -1986,6 +2080,7 @@ export default function Grid({
             const rowClasses = [
               moveMode?.rowIds.has(row.id) ? 'row-moving' : copyMode?.rowIds.has(row.id) ? 'row-copying' : null,
               isFilteredOut ? 'row-collapsed' : null,
+              row.protected ? 'row-protected' : null,
             ]
               .filter(Boolean)
               .join(' ');
@@ -2176,6 +2271,7 @@ export default function Grid({
           {contextMenu.kind === 'desc' && (
             <>
               <li onClick={handleToggleCase}>Toggle Case</li>
+              <li onClick={handleMarkAsDelete}>Mark as Delete</li>
               <li onClick={handleAlphaSort}>Alpha Sort</li>
               <li onClick={() => requestPromoteDemote('promote')}>Promote</li>
               <li onClick={() => requestPromoteDemote('demote')}>Demote</li>

@@ -67,6 +67,9 @@ export function loadProjectFromFile(file: File): Promise<TaxonomyProject> {
         if (!CODE_RESTRICTIONS.includes(settings.codeRestriction as never)) {
           settings.codeRestriction = 'Alpha Numeric with All Alpha';
         }
+        // Older files predate Lock Taxonomy — default to unlocked, and no row was ever
+        // marked protected, matching every taxonomy's behaviour before this existed.
+        if (typeof settings.locked !== 'boolean') settings.locked = false;
         const project = data as unknown as Record<string, unknown>;
         if (typeof project.fileVersions !== 'object' || project.fileVersions === null) {
           project.fileVersions = {};
