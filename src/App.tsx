@@ -507,7 +507,17 @@ export default function App() {
     }
   }
 
+  // Importing a CSV always replaces the whole working project — worth a clear warning first
+  // if there's any real content already in place (an empty just-created taxonomy needs no
+  // warning; a taxonomy someone's actually been building does).
+  function hasAnyContent(rows: TaxonomyRow[]): boolean {
+    return rows.some((row) => row.codes.some((c) => c.trim()) || row.descriptions.some((d) => d.trim()));
+  }
+
   function handleImportCsvClick() {
+    if (project && hasAnyContent(project.rows) && !confirm('This will clear the existing table content — proceed?')) {
+      return;
+    }
     csvImportFileInputRef.current?.click();
   }
 
