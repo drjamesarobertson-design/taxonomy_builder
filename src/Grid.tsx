@@ -1038,13 +1038,20 @@ export default function Grid({
       setCopyTarget({ rowId });
       return;
     }
-    if (e.shiftKey && selection && selection.kind === kind && anchorRowId && anchorLevel !== null) {
+    if (e.shiftKey && selection && anchorRowId && anchorLevel !== null) {
       const ids = rows.map((r) => r.id);
       const anchorIdx = ids.indexOf(anchorRowId);
       const clickIdx = ids.indexOf(rowId);
       const [start, end] = anchorIdx < clickIdx ? [anchorIdx, clickIdx] : [clickIdx, anchorIdx];
       const rowIds = new Set(ids.slice(start, end + 1));
-      if (kind === 'code') {
+      // Shift-clicking into a *different* cell kind than the selection started in (e.g. from
+      // a code cell across to a description cell, per item 3's "top-left code cell to
+      // bottom-right description cell") still extends the row range — there's no equivalent
+      // column/level concept to carry across kinds, so the selection just keeps whichever
+      // kind/level it already had.
+      if (kind !== selection.kind) {
+        setSelection({ ...selection, rowIds });
+      } else if (kind === 'code') {
         const [colStart, colEnd] = anchorLevel <= level ? [anchorLevel, level] : [level, anchorLevel];
         setSelection({ kind, level: colStart, levelEnd: colEnd, rowIds });
       } else {
@@ -1074,16 +1081,22 @@ export default function Grid({
   // Extends the selection to include (rowId, level) while a click-and-drag is in progress
   // (Section 6.5's "drag cursor down column to highlight range"), matching shift-click's
   // range-from-anchor behaviour — including, for code cells, dragging sideways into a
-  // rectangular multi-column block.
+  // rectangular multi-column block. Dragging into a *different* cell kind than the drag
+  // started in (e.g. from a code cell across to a description cell — item 3's "top-left code
+  // cell to bottom-right description cell") still extends the row range; there's no
+  // equivalent column/level concept across kinds, so the selection keeps whichever kind/level
+  // it already had, same as the shift-click equivalent above.
   function extendDragSelection(kind: CellKind, rowId: string, level: number) {
-    if (!selection || selection.kind !== kind || anchorRowId === null || anchorLevel === null) return;
+    if (!selection || anchorRowId === null || anchorLevel === null) return;
     const ids = rows.map((r) => r.id);
     const anchorIdx = ids.indexOf(anchorRowId);
     const hoverIdx = ids.indexOf(rowId);
     if (anchorIdx === -1 || hoverIdx === -1) return;
     const [start, end] = anchorIdx < hoverIdx ? [anchorIdx, hoverIdx] : [hoverIdx, anchorIdx];
     const rowIds = new Set(ids.slice(start, end + 1));
-    if (kind === 'code') {
+    if (kind !== selection.kind) {
+      setSelection({ ...selection, rowIds });
+    } else if (kind === 'code') {
       const [colStart, colEnd] = anchorLevel <= level ? [anchorLevel, level] : [level, anchorLevel];
       setSelection({ kind, level: colStart, levelEnd: colEnd, rowIds });
     } else {
@@ -1103,12 +1116,17 @@ export default function Grid({
 
   function handleCellContextMenu(kind: CellKind, rowId: string, level: number, e: React.MouseEvent) {
     e.preventDefault();
+    // Right-clicking a cell of the *same* kind as the current selection still needs to fall
+    // within its highlighted column(s) to count as "in range" (so right-clicking outside a
+    // deliberately narrow code-column block doesn't silently widen it). Right-clicking a
+    // *different* kind — e.g. a description cell after dragging a row range from a code cell,
+    // item 3's cross-kind row selection — has no equivalent column bound to check against, so
+    // row membership alone is enough to keep the row range (every action still targets
+    // whichever column was actually clicked, via contextMenu.level, not the selection's own).
     const inRange =
       selection &&
-      selection.kind === kind &&
       selection.rowIds.has(rowId) &&
-      level >= selection.level &&
-      level <= (selection.levelEnd ?? selection.level);
+      (selection.kind !== kind || (level >= selection.level && level <= (selection.levelEnd ?? selection.level)));
     if (!inRange) {
       setSelection({ kind, level, rowIds: new Set([rowId]) });
       setAnchorRowId(rowId);
