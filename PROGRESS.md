@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #66, 2026-09-01)
+## Current status (as of PR #68, 2026-09-01)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -91,8 +91,50 @@ further rounds of testing feedback. The tool currently supports, in full:
   it with "XXX " as the sanctioned way to retire a protected entry instead
   of deleting it; and CSV Import (which replaces the whole table outside
   any per-cell guard) is blocked outright.
+- A post-sign-on landing menu (`WorkflowMenu.tsx`): "Create a New Taxonomy"
+  with six starting points (Simple / Intermediate / Advanced Complexity
+  Taxonomy, Chart of Accounts, Item Master, Highly Experienced User — No
+  Guidance) and "Work on an Existing Taxonomy" (Load from File / Import
+  CSV / Library). All six levels currently open today's same taxonomy
+  setup screen with a "Creating a `<level>`" label — the guided,
+  step-by-step workflow tailored to each level (hiding/revealing columns,
+  staged prompts) is separate, not-yet-built follow-up work (see "Not yet
+  built"). Also: a larger header logo and a "Taxonomy Builder by the ERP
+  Doctor James A Robertson and Associates Limited" tagline on the sign-on
+  screens.
 
 ### Not yet built
+- **Guided, step-by-step taxonomy-building workflows**, one per complexity
+  level chosen on the landing menu (Simple / Intermediate / Advanced /
+  Chart of Accounts / Item Master — "Highly Experienced User" is
+  intentionally just today's ungated grid). James's own worked example for
+  Simple: hide all code columns, show one description column, guide the
+  user to no more than 9 major headings with an alpha-sort option; once
+  done, reveal a second description column and prompt for no more than 9
+  items per heading (alpha sort + case toggle); once done, reveal as many
+  code columns as description levels actually got used, and prompt
+  numeric vs. alpha (and, if alpha, whether to base it on the first letter
+  of each description — a mnemonic code). Discussed as a design concept in
+  PR #68's round, not yet built — James will give more detailed guidance
+  per level before implementation starts. See the design commentary below
+  under "Known open questions" for the suggested approach.
+- **A real login screen.** James wants a simple email/password gate
+  (password file keyed by email, "email me to reset" for a forgotten
+  password) — flagged back to him that since this is a fully static,
+  client-side app with no backend, this can only ever be a speed bump
+  against casual access, never real security (anything shipped to the
+  browser, including a hashed-password file, is downloadable and
+  inspectable by anyone). Waiting on the actual email/password to seed
+  before building this, since that's not something to invent on his
+  behalf.
+- **A larger, crisper logo with a genuinely transparent background.**
+  James pasted a bigger version of the logo inline in chat, but it didn't
+  come through as an attachable file — there's no real pixel data to
+  process yet. (The existing small logo asset already has a transparent
+  background — it was just scaled up in PR #68 as a stopgap. Note for
+  next time: an earlier round of this project already tried recreating
+  this logo as hand-drawn SVG shapes and James replaced it with his real
+  logo file afterward, so don't repeat that — wait for the real file.)
 - Section 6.9 comments/notes on entries (no on-row indicator or add/edit UI
   yet).
 - Section 9's explicitly-deferred items (concatenated/padded ERP-ready export
@@ -162,6 +204,34 @@ further rounds of testing feedback. The tool currently supports, in full:
   values on a protected row (only code/description were named as
   protected) — worth a follow-up if either turns out to matter in
   practice.
+- **Guided-workflow design commentary (requested by James, PR #68 round,
+  not yet built)**: his Simple Taxonomy example — hide code columns, one
+  description column, ≤9 major headings, then reveal a second description
+  column for ≤9 items per heading, then reveal matching code column(s) and
+  ask numeric/alpha/mnemonic — reads as one configurable wizard engine
+  serving all five guided levels, not five separate bespoke code paths.
+  Suggested shape: (1) an explicit stored stage per project (e.g.
+  `settings.guidance = { level, stage }`) rather than inferring "where are
+  we" from the data each time — inference gets ambiguous the moment
+  someone free-types outside the intended sequence; (2) column
+  visibility driven by the stage, decoupled from `numLevels` itself,
+  rather than mutating `numLevels` on every stage transition — a display
+  concern, not a structural resize; (3) advancing a stage as an explicit
+  "Next Step" action in a guidance banner (extending the existing
+  collapsible "Worksheet Guidance" panel), which can run today's existing
+  soft per-level item-count warning before revealing the next column; (4)
+  each level (Simple/Intermediate/Advanced/CoA/Item Master) as a small
+  data-only "stage definition" list (prompt text, min/max items, which
+  column(s) it reveals) fed into one shared wizard component, rather than
+  new code per level — CoA and Item Master would mostly differ in their
+  stage *prompts* (e.g. CoA's first stage plausibly being an account-type
+  choice) rather than needing new mechanics; (5) almost none of the
+  underlying grid mechanics need to change — alpha sort, case toggle, code
+  restrictions, and gap-coding hints already exist; the guided workflow is
+  a choreographed layer sequencing when they become visible and offering
+  big obvious buttons for them, not a rebuild. "Highly Experienced User"
+  needs no new work at all — it's already today's ungated flow. James will
+  give more detailed per-level guidance before this gets built.
 
 ---
 
@@ -399,6 +469,35 @@ Along the way, found and fixed a UX bug the new guards introduced: blocking
 Toggle Case/Alpha Sort/Move left the right-click context menu open behind
 the warning dialog; all three now close it immediately, matching every
 other menu action in the app.
+
+### Post-sign-on workflow menu, larger logo, tagline (PR #68)
+First slice of a larger request (login screen, bigger transparent-background
+logo, aesthetic pass, post-login menu with guided-workflow starting points).
+Shipped: a new landing menu (`WorkflowMenu.tsx`) between signing on and the
+taxonomy setup screen — "Create a New Taxonomy" with six starting points
+(Simple/Intermediate/Advanced Complexity Taxonomy, Chart of Accounts, Item
+Master, Highly Experienced User — No Guidance) and "Work on an Existing
+Taxonomy" (Load from File/Import CSV/Library); all six new-taxonomy options
+currently open today's same setup screen with a "Creating a `<level>`"
+label, since the guided per-level workflow itself is separate follow-up
+work James wants to design further first. "New Taxonomy" from the toolbar
+now returns to this menu rather than straight to the form. Also a larger
+header logo (existing asset — already transparent, just scaled up) and a
+"Taxonomy Builder by the ERP Doctor James A Robertson and Associates
+Limited" tagline on the sign-on screens.
+
+Held back, pending information only James can supply: the actual login
+screen (needs a real email/password to seed — flagged that this can only
+ever be a client-side speed bump, not real security, since the app has no
+backend) and a crisper, genuinely-transparent large logo (the version he
+pasted came through inline in chat, not as an attachable file, so there
+was no real image data to process — and an earlier round of this project
+already tried substituting a hand-drawn SVG recreation for this same logo,
+which he specifically undid in favour of his real logo file, so that
+approach wasn't repeated).
+
+Also gave requested design commentary (not implementation) on the guided
+per-level workflow concept — see "Known open questions" above.
 
 ---
 
