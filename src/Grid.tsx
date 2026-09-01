@@ -80,7 +80,13 @@ export default function Grid({
     codeDelimiterChar,
     codeRestriction,
     locked,
+    guidance,
   } = settings;
+  // Simple Taxonomy wizard: no code column is shown at all until the coding stage — the
+  // 'headings' and 'subItems' stages are description-only by design. `numLevels` itself grows
+  // as those stages advance, so this is purely a display concern layered on top, not a change
+  // to how many levels actually exist.
+  const hideAllCodes = guidance?.stage === 'headings' || guidance?.stage === 'subItems';
   const levels = Array.from({ length: numLevels }, (_, i) => i);
   // The wide overflow column gets whatever's left of the configured max description length
   // after reserving one character per description level (Section 6.7's indent padding) and
@@ -727,7 +733,16 @@ export default function Grid({
         }
         if (idx === newParentIdx) {
           const codes = row.codes.map((c, i) => (i > prevDepth! && c === paddingChar ? '' : c));
-          return codes.some((c, i) => c !== row.codes[i]) ? { ...row, codes } : row;
+          const codesChanged = codes.some((c, i) => c !== row.codes[i]);
+          // Simple Taxonomy wizard convenience (guidance-only, not a general app behaviour —
+          // Section 6.2 keeps case toggling manual everywhere else): a heading that just
+          // gained its first child is structural now, so switch it to ALL CAPS automatically
+          // rather than leaving that as a Toggle Case the user has to remember.
+          if (guidance) {
+            const descriptions = row.descriptions.map((d, i) => (i === prevDepth ? d.toUpperCase() : d));
+            return { ...row, codes, descriptions };
+          }
+          return codesChanged ? { ...row, codes } : row;
         }
         return row;
       }),
@@ -2021,45 +2036,53 @@ export default function Grid({
             <th className="row-number-col" rowSpan={2}>
               &nbsp;
             </th>
-            <th colSpan={numLevels + delimiterPositions.length} className="section-heading">
-              Code
-            </th>
-            <th className="gap-col">&nbsp;</th>
+            {!hideAllCodes && (
+              <>
+                <th colSpan={numLevels + delimiterPositions.length} className="section-heading">
+                  Code
+                </th>
+                <th className="gap-col">&nbsp;</th>
+              </>
+            )}
             <th colSpan={numLevels + 1} className="section-heading">
               Description
             </th>
             <th className="row-actions-col">&nbsp;</th>
           </tr>
           <tr>
-            {levels.map((level) => (
-              <Fragment key={`code-h-${level}`}>
-                <th className="code-col" style={{ backgroundColor: getLevelColor(level) }}>
-                  <div className="level-header">
-                    <span>{level + 1}</span>
-                    <button
-                      type="button"
-                      className={`collapse-caret${collapseFilter?.kind === 'codeDot' && collapseFilter.level === level ? ' collapse-caret-active' : ''}`}
-                      onClick={() =>
-                        setCollapseFilter(
-                          collapseFilter?.kind === 'codeDot' && collapseFilter.level === level
-                            ? null
-                            : { kind: 'codeDot', level },
-                        )
-                      }
-                      title={
-                        collapseFilter?.kind === 'codeDot' && collapseFilter.level === level
-                          ? 'Show all rows again'
-                          : `Filter — show only rows padded with "${paddingChar}" in this column`
-                      }
-                    >
-                      ▾
-                    </button>
-                  </div>
-                </th>
-                {delimiterPositions.includes(level + 1) && <th className="delim-col">&nbsp;</th>}
-              </Fragment>
-            ))}
-            <th className="gap-col">&nbsp;</th>
+            {!hideAllCodes && (
+              <>
+                {levels.map((level) => (
+                  <Fragment key={`code-h-${level}`}>
+                    <th className="code-col" style={{ backgroundColor: getLevelColor(level) }}>
+                      <div className="level-header">
+                        <span>{level + 1}</span>
+                        <button
+                          type="button"
+                          className={`collapse-caret${collapseFilter?.kind === 'codeDot' && collapseFilter.level === level ? ' collapse-caret-active' : ''}`}
+                          onClick={() =>
+                            setCollapseFilter(
+                              collapseFilter?.kind === 'codeDot' && collapseFilter.level === level
+                                ? null
+                                : { kind: 'codeDot', level },
+                            )
+                          }
+                          title={
+                            collapseFilter?.kind === 'codeDot' && collapseFilter.level === level
+                              ? 'Show all rows again'
+                              : `Filter — show only rows padded with "${paddingChar}" in this column`
+                          }
+                        >
+                          ▾
+                        </button>
+                      </div>
+                    </th>
+                    {delimiterPositions.includes(level + 1) && <th className="delim-col">&nbsp;</th>}
+                  </Fragment>
+                ))}
+                <th className="gap-col">&nbsp;</th>
+              </>
+            )}
             {levels.map((level) => (
               <th
                 key={`desc-h-${level}`}
@@ -2124,46 +2147,50 @@ export default function Grid({
               className={rowClasses || undefined}
             >
               <td className="row-number-col">{rowIndex + 1}</td>
-              {levels.map((level) => {
-                const isCodeSelected =
-                  !!selection &&
-                  selection.rowIds.has(row.id) &&
-                  (selection.allColumns ||
-                    (selection.kind === 'code' &&
-                      level >= selection.level &&
-                      level <= (selection.levelEnd ?? selection.level)));
-                return (
-                  <Fragment key={`code-${row.id}-${level}`}>
-                    <td
-                      className={`code-col${isCodeSelected ? ' code-col-selected' : ''}`}
-                      style={{ backgroundColor: getLevelColor(level) }}
-                      data-cell-kind="code"
-                      data-row-id={row.id}
-                      data-level={level}
-                      onMouseDown={(e) => handleCellMouseDown('code', row.id, level, e)}
-                      onMouseEnter={() => handleCellMouseEnter('code', row.id, level)}
-                      onContextMenu={(e) => handleCellContextMenu('code', row.id, level, e)}
-                    >
-                      <input
-                        id={codeInputId(level, row.id)}
-                        className="code-cell"
-                        type="text"
-                        maxLength={1}
-                        value={row.codes[level] ?? ''}
-                        onChange={(e) => updateCode(row.id, level, e.target.value)}
-                        onKeyDown={(e) => handleCellKeyDown(e, 'code', level, rowIndex)}
-                        onFocus={(e) => e.currentTarget.select()}
-                      />
-                    </td>
-                    {delimiterPositions.includes(level + 1) && (
-                      <td className="delim-col" onContextMenu={handleDelimiterContextMenu}>
-                        {codeDelimiterChar}
-                      </td>
-                    )}
-                  </Fragment>
-                );
-              })}
-              <td className="gap-col">&nbsp;</td>
+              {!hideAllCodes && (
+                <>
+                  {levels.map((level) => {
+                    const isCodeSelected =
+                      !!selection &&
+                      selection.rowIds.has(row.id) &&
+                      (selection.allColumns ||
+                        (selection.kind === 'code' &&
+                          level >= selection.level &&
+                          level <= (selection.levelEnd ?? selection.level)));
+                    return (
+                      <Fragment key={`code-${row.id}-${level}`}>
+                        <td
+                          className={`code-col${isCodeSelected ? ' code-col-selected' : ''}`}
+                          style={{ backgroundColor: getLevelColor(level) }}
+                          data-cell-kind="code"
+                          data-row-id={row.id}
+                          data-level={level}
+                          onMouseDown={(e) => handleCellMouseDown('code', row.id, level, e)}
+                          onMouseEnter={() => handleCellMouseEnter('code', row.id, level)}
+                          onContextMenu={(e) => handleCellContextMenu('code', row.id, level, e)}
+                        >
+                          <input
+                            id={codeInputId(level, row.id)}
+                            className="code-cell"
+                            type="text"
+                            maxLength={1}
+                            value={row.codes[level] ?? ''}
+                            onChange={(e) => updateCode(row.id, level, e.target.value)}
+                            onKeyDown={(e) => handleCellKeyDown(e, 'code', level, rowIndex)}
+                            onFocus={(e) => e.currentTarget.select()}
+                          />
+                        </td>
+                        {delimiterPositions.includes(level + 1) && (
+                          <td className="delim-col" onContextMenu={handleDelimiterContextMenu}>
+                            {codeDelimiterChar}
+                          </td>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                  <td className="gap-col">&nbsp;</td>
+                </>
+              )}
               {levels.map((level) => {
                 const isSelected =
                   !!selection &&

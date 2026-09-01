@@ -31,6 +31,20 @@ export const WORKFLOW_LEVELS = [
 
 export type WorkflowLevel = (typeof WORKFLOW_LEVELS)[number];
 
+// The Simple Taxonomy guided wizard's stages, in order. 'headings' shows only description
+// column 1 with every code column hidden; 'subItems' reveals column 2 (still no codes) for
+// whichever headings need breaking down (not all of them have to); 'coding' reveals exactly as
+// many code columns as description levels actually got used. `guidance` is cleared (undefined)
+// once the wizard is exited or completed — from then on the taxonomy behaves exactly like any
+// other, same as a taxonomy built via "Highly Experienced User" from the start.
+export const GUIDANCE_STAGES = ['headings', 'subItems', 'coding'] as const;
+export type GuidanceStage = (typeof GUIDANCE_STAGES)[number];
+
+export interface GuidanceState {
+  level: WorkflowLevel;
+  stage: GuidanceStage;
+}
+
 export interface SuffixField {
   /** Max characters this suffix column can hold (1 to 8). */
   width: number;
@@ -87,6 +101,11 @@ export interface TaxonomySettings {
    * enforcement, so the taxonomy can be worked on again (with an explicit warning).
    */
   locked: boolean;
+  /** Set only while the Simple Taxonomy guided wizard is active; absent for every other
+   * taxonomy (including ones created via the other five workflow-menu starting points, which
+   * still just open today's ordinary setup screen — their own guided wizards aren't built
+   * yet). Cleared once the wizard completes or is exited early. */
+  guidance?: GuidanceState;
 }
 
 export interface TaxonomyRow {
