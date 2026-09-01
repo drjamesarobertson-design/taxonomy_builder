@@ -41,6 +41,13 @@ interface Selection {
    * single-column selection. Description selections are always single-column. */
   levelEnd?: number;
   rowIds: Set<string>;
+  /** Item 3: set once a drag or shift-click has crossed from one cell kind to another (e.g.
+   * a code cell to a description cell — "top-left code cell to bottom-right description
+   * cell"). There's no single column/level range left to represent across two different
+   * kinds, so every code AND description column highlights for these rows instead, and it
+   * stays set for the rest of that selection's life (kind/level are left as whatever they
+   * were at the point of crossing — nothing reads them while this flag is set). */
+  allColumns?: boolean;
 }
 
 interface ContextMenuState {
@@ -1046,11 +1053,11 @@ export default function Grid({
       const rowIds = new Set(ids.slice(start, end + 1));
       // Shift-clicking into a *different* cell kind than the selection started in (e.g. from
       // a code cell across to a description cell, per item 3's "top-left code cell to
-      // bottom-right description cell") still extends the row range — there's no equivalent
-      // column/level concept to carry across kinds, so the selection just keeps whichever
-      // kind/level it already had.
-      if (kind !== selection.kind) {
-        setSelection({ ...selection, rowIds });
+      // bottom-right description cell") switches into "every column highlights" mode for
+      // these rows — sticky for the rest of this selection, even if a later shift-click in
+      // the same gesture lands back on the original kind.
+      if (selection.allColumns || kind !== selection.kind) {
+        setSelection({ ...selection, rowIds, allColumns: true });
       } else if (kind === 'code') {
         const [colStart, colEnd] = anchorLevel <= level ? [anchorLevel, level] : [level, anchorLevel];
         setSelection({ kind, level: colStart, levelEnd: colEnd, rowIds });
@@ -1083,9 +1090,8 @@ export default function Grid({
   // range-from-anchor behaviour — including, for code cells, dragging sideways into a
   // rectangular multi-column block. Dragging into a *different* cell kind than the drag
   // started in (e.g. from a code cell across to a description cell — item 3's "top-left code
-  // cell to bottom-right description cell") still extends the row range; there's no
-  // equivalent column/level concept across kinds, so the selection keeps whichever kind/level
-  // it already had, same as the shift-click equivalent above.
+  // cell to bottom-right description cell") switches into "every column highlights" mode for
+  // these rows, same as the shift-click equivalent above — sticky for the rest of the drag.
   function extendDragSelection(kind: CellKind, rowId: string, level: number) {
     if (!selection || anchorRowId === null || anchorLevel === null) return;
     const ids = rows.map((r) => r.id);
@@ -1094,8 +1100,8 @@ export default function Grid({
     if (anchorIdx === -1 || hoverIdx === -1) return;
     const [start, end] = anchorIdx < hoverIdx ? [anchorIdx, hoverIdx] : [hoverIdx, anchorIdx];
     const rowIds = new Set(ids.slice(start, end + 1));
-    if (kind !== selection.kind) {
-      setSelection({ ...selection, rowIds });
+    if (selection.allColumns || kind !== selection.kind) {
+      setSelection({ ...selection, rowIds, allColumns: true });
     } else if (kind === 'code') {
       const [colStart, colEnd] = anchorLevel <= level ? [anchorLevel, level] : [level, anchorLevel];
       setSelection({ kind, level: colStart, levelEnd: colEnd, rowIds });
@@ -1118,15 +1124,15 @@ export default function Grid({
     e.preventDefault();
     // Right-clicking a cell of the *same* kind as the current selection still needs to fall
     // within its highlighted column(s) to count as "in range" (so right-clicking outside a
-    // deliberately narrow code-column block doesn't silently widen it). Right-clicking a
-    // *different* kind — e.g. a description cell after dragging a row range from a code cell,
-    // item 3's cross-kind row selection — has no equivalent column bound to check against, so
-    // row membership alone is enough to keep the row range (every action still targets
-    // whichever column was actually clicked, via contextMenu.level, not the selection's own).
+    // deliberately narrow code-column block doesn't silently widen it). An "every column
+    // highlights" selection (item 3's cross-kind row range) has no column bound to check
+    // against, so row membership alone keeps it — every action still targets whichever column
+    // was actually clicked, via contextMenu.level, not the selection's own.
     const inRange =
       selection &&
       selection.rowIds.has(rowId) &&
-      (selection.kind !== kind || (level >= selection.level && level <= (selection.levelEnd ?? selection.level)));
+      (selection.allColumns ||
+        (selection.kind === kind && level >= selection.level && level <= (selection.levelEnd ?? selection.level)));
     if (!inRange) {
       setSelection({ kind, level, rowIds: new Set([rowId]) });
       setAnchorRowId(rowId);
@@ -1980,10 +1986,12 @@ export default function Grid({
               <td className="row-number-col">{rowIndex + 1}</td>
               {levels.map((level) => {
                 const isCodeSelected =
-                  selection?.kind === 'code' &&
-                  level >= selection.level &&
-                  level <= (selection.levelEnd ?? selection.level) &&
-                  selection.rowIds.has(row.id);
+                  !!selection &&
+                  selection.rowIds.has(row.id) &&
+                  (selection.allColumns ||
+                    (selection.kind === 'code' &&
+                      level >= selection.level &&
+                      level <= (selection.levelEnd ?? selection.level)));
                 return (
                   <Fragment key={`code-${row.id}-${level}`}>
                     <td
@@ -2018,9 +2026,9 @@ export default function Grid({
               <td className="gap-col">&nbsp;</td>
               {levels.map((level) => {
                 const isSelected =
-                  selection?.kind === 'desc' &&
-                  selection.level === level &&
-                  selection.rowIds.has(row.id);
+                  !!selection &&
+                  selection.rowIds.has(row.id) &&
+                  (selection.allColumns || (selection.kind === 'desc' && selection.level === level));
                 return (
                   <td
                     key={`desc-${row.id}-${level}`}

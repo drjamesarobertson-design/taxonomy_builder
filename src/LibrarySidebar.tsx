@@ -140,6 +140,7 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
               className={`library-category-heading${dragOverKey === `${category}:end` ? ' library-dragover' : ''}`}
               onDragOver={(e) => {
                 e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
                 setDragOverKey(`${category}:end`);
               }}
               onDragLeave={() => setDragOverKey(null)}
@@ -168,9 +169,21 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
                     setSelectedId(entry.id);
                     setContextMenu({ id: entry.id, x: e.clientX, y: e.clientY });
                   }}
-                  onDragStart={() => setDraggedId(entry.id)}
+                  onDragStart={(e) => {
+                    setDraggedId(entry.id);
+                    // Some browsers (Firefox in particular) refuse to complete a drag — no
+                    // drop event fires anywhere — unless dataTransfer actually carries data;
+                    // relying on React state (draggedId) alone isn't enough on its own.
+                    e.dataTransfer.setData('text/plain', entry.id);
+                    e.dataTransfer.effectAllowed = 'move';
+                  }}
+                  onDragEnd={() => {
+                    setDraggedId(null);
+                    setDragOverKey(null);
+                  }}
                   onDragOver={(e) => {
                     e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
                     setDragOverKey(`${category}:${index}`);
                   }}
                   onDragLeave={() => setDragOverKey(null)}

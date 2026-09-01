@@ -202,7 +202,15 @@
 }
 
 .load-error {
-  color: #b00020;
+  /* Dark red text read poorly against this app's dark blue page background — a solid bright
+     yellow box with dark text stays legible regardless of what's behind it. */
+  display: inline-block;
+  background: #fff3b0;
+  color: #1a1a1a;
+  border: 1px solid #e0c34a;
+  border-radius: 4px;
+  padding: 0.5rem 0.9rem;
+  margin: 0.5rem 0;
   font-weight: 600;
 }
 
