@@ -14,7 +14,7 @@ a PR against `main`, squash-merged, and verified live before moving on.
 
 ---
 
-## Current status (as of PR #49, 2026-08-31)
+## Current status (as of PR #51, 2026-09-01)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -42,6 +42,12 @@ further rounds of testing feedback. The tool currently supports, in full:
 - Field-level help icons (New Taxonomy + Settings) and right-click menu help,
   both driven by `public/help-text.csv` (editable without a rebuild), plus a
   collapsible "Worksheet Guidance" panel.
+- A Library sidebar (left-hand, collapsible) for saving multiple taxonomies
+  under eight fixed headings, independent of file-based Save/Load: "Add to
+  Library" (prompts for a heading, or updates the linked entry in place),
+  right-click Move to Work Area / Edit Title / Remove from Library, and
+  drag-and-drop reordering within or across headings. Persisted in this
+  browser's own IndexedDB — per-browser, not a file, and not synced anywhere.
 
 ### Not yet built
 - Section 6.9 comments/notes on entries (no on-row indicator or add/edit UI
@@ -164,6 +170,18 @@ replacing the old taxonomy-wide setting; an Insert-Row no-gap warning.
   literally on rows padded with "." in that exact column (confirmed as the
   correct behaviour after an initial round where both used the level-based
   rule).
+
+### Library sidebar (PR #51)
+A left-hand Library for saving and retrieving taxonomies, kept under eight
+fixed headings (General Ledger / Item and Product / Customer / Personnel /
+Asset / Projects / Plant / General-Other Related). "Add to Library" prompts
+for a heading the first time, then updates that same entry in place on
+later clicks; entries are listed by title with right-click Move to Work
+Area, Edit Title, and Remove from Library, plus drag-and-drop reordering
+within or across headings. This is genuinely outside CLAUDE.md's original
+v1 scope (Section 9 lists multi-taxonomy library management as a later
+phase) — built now at James's explicit request. Stored client-side in
+IndexedDB, separate from the file-based save/export the spec describes.
 
 ---
 
