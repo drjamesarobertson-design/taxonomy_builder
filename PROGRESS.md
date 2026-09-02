@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #88, 2026-09-02)
+## Current status (as of PR #90, 2026-09-02)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -537,6 +537,12 @@ hard block is gone, the code is successfully entered (via the legitimate
 Override prompt underneath), unrelated segments' own "D"s are untouched,
 and a genuine same-segment duplicate is still hard-blocked. Full existing
 regression suite (14 prior smoke scripts) re-run clean.
+
+### Tagline wraps onto two lines (PR #90)
+Small cosmetic ask: on both the login screen and the post-sign-on home
+screen, "James A Robertson and Associates Limited" now sits on its own
+line beneath "Taxonomy Builder by the ERP Doctor", rather than running on
+in one long line. No text changed, just a `<br />`.
 
 ---
 
