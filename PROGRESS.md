@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #90, 2026-09-02)
+## Current status (as of PR #92, 2026-09-02)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -226,7 +226,14 @@ further rounds of testing feedback. The tool currently supports, in full:
   (there's no backend to send email or manage tokens). Explicitly a speed
   bump against casual access, not real security — see "Known open
   questions" for why that's an inherent limit of a backend-less static
-  app, not a shortcut taken here.
+  app, not a shortcut taken here. The login field accepts any plain-text
+  identifier, not just a real email address (PR #92) — `AUTH_USERS` now
+  also seeds nine simple `Friend_1`.."Friend_9" logins (username =
+  password) alongside James's own, so he can hand the app URL to friends
+  without sharing his own credential; each still just gates entry, it
+  doesn't partition Library/autosave storage per login (see that PR's own
+  note, and the "sharing the URL" answer in the History below, for what
+  that does and doesn't mean for data isolation).
 - Session autosave (`storage.ts`): the open taxonomy is written to a
   single `localStorage` slot on every change, independent of sign-in
   state. A "Back to Menu" toolbar button returns to the landing menu
@@ -543,6 +550,40 @@ Small cosmetic ask: on both the login screen and the post-sign-on home
 screen, "James A Robertson and Associates Limited" now sits on its own
 line beneath "Taxonomy Builder by the ERP Doctor", rather than running on
 in one long line. No text changed, just a `<br />`.
+
+### Sharing the app, and nine friend logins (PR #92)
+James asked what happens if he shares the app's URL with others — would
+they see his Library/data, or get to try it independently? Answered
+directly: this is a fully static site with no backend, so everything it
+stores (Library entries, autosaved work, remembered sign-in) lives only
+in the visitor's own browser, never uploaded anywhere — sharing the URL
+alone exposes nothing of his, and a visitor lands on a genuinely blank
+workspace. The one caveat: there's a single shared login, and since the
+whole app (including `auth.ts`'s user list) ships as public JavaScript,
+that credential is technically visible to anyone who opens dev tools —
+a real, if unlikely-to-be-exploited-in-practice, gap for something
+meant to be handed out.
+
+James's follow-up: give up to nine friends their own login instead of
+sharing his. Added `Friend_1`/`Friend_1` through `Friend_9`/`Friend_9`
+(username = password, as he asked) to `AUTH_USERS`. Since these aren't
+real email addresses, the login field's native `type="email"` would have
+rejected them outright via browser validation (requires an "@") —
+switched it to a plain text field, relabelled "Email or Username";
+`verifyLogin` already only ever compared it as a case-insensitive string,
+so James's own real email keeps working unchanged. Restated plainly (in
+code and back to James) that a login is still only a gate, not a data
+partition: Library/autosave storage isn't scoped per account, so this
+only matters if two different logins are ever used on the very same
+physical browser — the ordinary case of each friend on their own device
+already gets a fully separate, empty workspace regardless. New
+`smoke_friend_logins.mjs` logs in as all nine (separate browser contexts,
+standing in for separate devices), confirms each sees its own identity
+and a genuinely empty Library, and that James's own login and a rejected
+wrong password both still work correctly. Every scratch test script's
+login-field selector was updated from `input[type="email"]` to a new
+stable `.login-email-input` class to match the field's new type — full
+existing regression suite (15 prior smoke scripts) re-run clean.
 
 ---
 
