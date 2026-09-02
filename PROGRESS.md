@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #92, 2026-09-02)
+## Current status (as of PR #94, 2026-09-02)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -59,7 +59,12 @@ further rounds of testing feedback. The tool currently supports, in full:
   entirely (PR #84) since both cells force/convert case regardless of the
   physical key anyway, so the suggestion was never functionally necessary.
 - Undo/redo across all structural and content operations.
-- Notes are **not yet implemented** (Section 6.9 — see "Not yet built" below).
+- Section 6.9 notes: an optional free-text note per entry, added/edited via
+  right-click "Add Note"/"Edit Note" on the description cell (PR #94) — a
+  small on-row indicator appears only once a row actually has one, showing
+  the note's content on hover and opening the editor on click. Not part of
+  CSV/XLSX export (Section 7's "raw-grid export" scope), just the
+  working-grid feature and Save/Load round-trip.
 - Export: CSV and Excel, in both Discrete Columns and Concatenated modes,
   plus a CSV-only "No Delimiter" variant; export-time "." → "0" padding
   substitution; column collapse/filter carets (level-based on description
@@ -101,7 +106,11 @@ further rounds of testing feedback. The tool currently supports, in full:
   own Discrete Columns CSV export produces — level count, delimiter
   positions, and suffix columns inferred from the file's own structure,
   with a short confirm step for title/table name/purpose/max description
-  length (the only things a CSV can't carry).
+  length (the only things a CSV can't carry). Also recognises a codeless
+  file with no code columns at all — a header reading "Level 1", "Level
+  2", ... optionally followed by "Notes" (PR #94) — bringing in every
+  Level column as a real description level with codes left genuinely
+  blank, and each row's Notes text landing in that row's note.
 - Grid's own right-click "Export Block" on a selected row range (alongside
   the toolbar's whole-table Create Block), with an "Include Suffix? Y/N"
   choice.
@@ -280,8 +289,6 @@ further rounds of testing feedback. The tool currently supports, in full:
   next time: an earlier round of this project already tried recreating
   this logo as hand-drawn SVG shapes and James replaced it with his real
   logo file afterward, so don't repeat that — wait for the real file.)
-- Section 6.9 comments/notes on entries (no on-row indicator or add/edit UI
-  yet).
 - Section 9's explicitly-deferred items (concatenated/padded ERP-ready export
   with indent substitution applied, GL account type tagging, multi-taxonomy
   library management, multi-user collaboration, intelligent code suggestion,
@@ -584,6 +591,54 @@ wrong password both still work correctly. Every scratch test script's
 login-field selector was updated from `input[type="email"]` to a new
 stable `.login-email-input` class to match the field's new type — full
 existing regression suite (15 prior smoke scripts) re-run clean.
+
+### Section 6.9 Notes, and a codeless "Level N" + Notes CSV import (PR #94)
+James is building a GL Analyzer Concept Chart of Accounts template with
+Claude Chat and wanted to bring it into Taxonomy Builder: a plain CSV with
+`Level 1, Level 2, Level 3, Level 4, Notes` columns and no codes at all
+(Levels 1-3 populated for a general template; Level 4 deliberately blank,
+reserved for when a real client's accounts get mapped in beneath it later).
+Asked directly whether this would work as-is or needed a special "Import
+without Codes" button — traced it and found it needed real work on two
+separate fronts, not a workaround:
+
+1. **Import CSV always required at least one code column.** Every existing
+   detection path (`tryParseHeaderedCsv`, `parseHeaderlessCsv`) anchors on
+   finding a run of single-character code cells first, and hard-errors —
+   "Could not find any code columns... this doesn't look like a taxonomy
+   in code-columns/description-columns format" — when there are none.
+2. **Section 6.9 (notes) had never actually been built** — no data field,
+   no UI — so column E's content had nowhere to go even once the CSV
+   itself could be read.
+
+Built both. `TaxonomyRow` gains an optional `note` field; `Grid.tsx` gets
+a right-click "Add Note"/"Edit Note" on the description cell (opens a
+small dialog — textarea, Save/Delete Note/Cancel), and a small on-row
+indicator that only appears once a row actually has a note, revealing its
+content on hover and opening the editor on click — deliberately not
+gated behind Lock Taxonomy's protected-row checks, matching the existing
+precedent for suffix values (only code/description were ever named as
+protected). `csvImport.ts` gained a third, independent detection path
+(`tryParseDescriptionOnlyCsv`, tried after the two existing code-column
+paths so it can't regress anything already working): a header reading
+"Level 1", "Level 2", ... in sequence, optionally followed by "Notes".
+Brings in every Level column found — including one that's blank for
+every row right now, per James's explicit "bring in all columns" — with
+every code cell genuinely blank (ready for manual coding later, same as
+any other not-yet-coded taxonomy) and each row's Notes-column text
+landing directly in its new note field.
+
+James originally supplied the source as an .xlsx; asked whether to also
+build direct .xlsx reading (`exceljs` is already a dependency, used for
+export) or build against a CSV he exports himself — he confirmed CSV,
+supplying `GL_Analyzer_Concept_Chart_of_Accounts_v_2_10_02.csv` directly,
+so direct .xlsx import remains unbuilt for now. Verified end-to-end
+against that real 144-row file (`unit_csv_description_only.mjs` against
+the parser directly, `smoke_description_only_import.mjs` through the full
+UI) and with a dedicated Save-to-file/reload round trip for notes
+(`smoke_notes_persist.mjs`); `smoke_csv_import_regression.mjs` confirms
+the existing coded-CSV import path is unaffected. Full existing regression
+suite (16 prior smoke scripts) re-run clean.
 
 ---
 
