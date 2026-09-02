@@ -80,10 +80,16 @@ export function suggestMnemonicCodes(rows: TaxonomyRow[], maxLevel: number, rest
   return rows.map((row) => {
     const level = levelOf(row);
     if (level === -1) return row;
-    // A shallower (or equal) level than the last row means a new sibling group has started at
-    // this level and every deeper one — those used-sets no longer apply to what comes next.
-    if (level <= prevLevel) {
-      for (let l = level; l <= maxLevel; l++) usedAtLevel[l].clear();
+    // A strictly shallower level than the last row means every level DEEPER than this one has
+    // just exited its parent's subtree — those used-sets no longer apply to whatever comes
+    // next (a different parent's children are free to reuse the same letters). This row's own
+    // level, though, is never cleared here: two siblings at the very same level (a run of
+    // children under one heading, or two headings in a row) must keep sharing one used-set for
+    // the whole time they're being visited, or duplicate suggestions slip straight through —
+    // which is exactly the bug this fixes (clearing on "<=" instead of "<", and starting the
+    // clear AT this level instead of one past it, wiped that tracking on every single sibling).
+    if (level < prevLevel) {
+      for (let l = level + 1; l <= maxLevel; l++) usedAtLevel[l].clear();
     }
     prevLevel = level;
 
@@ -134,4 +140,115 @@ export function padCodes(rows: TaxonomyRow[], paddingChar: string): TaxonomyRow[
     const codes = row.codes.map((c, i) => (i > level && !c ? paddingChar : c));
     return { ...row, codes };
   });
+}
+
+// James's round-2 feedback, items 2 and 6: after Suggest Codes, check every level's sibling
+// groups (rows sharing the same immediate parent code, one column to the left) for a code
+// that's either a flat-out duplicate of an earlier sibling, or not in strictly ascending order
+// against it — both a defensive safety net (the mnemonic suggestion above should no longer
+// produce either on its own, now that its own duplicate-avoidance bug is fixed) and the real
+// backstop for codes a user typed in manually before Suggest Codes ever ran.
+
+/** The first row (in top-to-bottom scan order) whose own code repeats an earlier sibling's,
+ * for "drop the cursor there" — or null if every level's sibling groups are duplicate-free. */
+export function findDuplicateCode(rows: TaxonomyRow[], maxLevel: number): { rowId: string; level: number } | null {
+  for (let level = 0; level <= maxLevel; level++) {
+    const seenByParent = new Map<string, Set<string>>();
+    for (const row of rows) {
+      if (levelOf(row) !== level) continue;
+      const parentValue = level > 0 ? (row.codes[level - 1] ?? '') : '';
+      const code = row.codes[level] ?? '';
+      if (!code) continue;
+      let seen = seenByParent.get(parentValue);
+      if (!seen) {
+        seen = new Set();
+        seenByParent.set(parentValue, seen);
+      }
+      if (seen.has(code)) return { rowId: row.id, level };
+      seen.add(code);
+    }
+  }
+  return null;
+}
+
+/** Whether any level's sibling groups have a code that isn't strictly greater than the sibling
+ * immediately before it (duplicates count as "not ascending" too, but findDuplicateCode is the
+ * more specific, actionable check for those — this is the broader ascending-order sweep). */
+export function hasOutOfOrderCodes(rows: TaxonomyRow[], maxLevel: number): boolean {
+  for (let level = 0; level <= maxLevel; level++) {
+    let prevParent: string | null = null;
+    let prevCode = '';
+    let sawAny = false;
+    for (const row of rows) {
+      if (levelOf(row) !== level) continue;
+      const parentValue = level > 0 ? (row.codes[level - 1] ?? '') : '';
+      const code = row.codes[level] ?? '';
+      if (!code) continue;
+      if (!sawAny || parentValue !== prevParent) {
+        prevParent = parentValue;
+        prevCode = code;
+        sawAny = true;
+        continue;
+      }
+      if (code <= prevCode) return true;
+      prevCode = code;
+    }
+  }
+  return false;
+}
+
+// How far a contiguous block starting at `startIndex` (a row at exactly `level`, plus every
+// descendant beneath it) reaches — mirrors Grid.tsx's own getDescendantEndIndex, reimplemented
+// here since guidance.ts has no access to Grid's internals.
+function blockEnd(rows: TaxonomyRow[], startIndex: number, level: number): number {
+  let end = startIndex + 1;
+  while (end < rows.length) {
+    const l = levelOf(rows[end]);
+    if (l === -1 || l <= level) break;
+    end++;
+  }
+  return end;
+}
+
+/** Sorts every sibling group at `level` (rows sharing the same immediate parent) by their own
+ * code, ascending — each sibling's full descendant subtree moves with it, exactly like the
+ * existing Alpha Sort's "carry children along" rule, just keyed by code instead of description
+ * text. Sibling groups under different parents are never reordered relative to each other. */
+function sortByCodeAtLevel(rows: TaxonomyRow[], level: number): TaxonomyRow[] {
+  const result: TaxonomyRow[] = [];
+  let i = 0;
+  while (i < rows.length) {
+    if (levelOf(rows[i]) !== level) {
+      result.push(rows[i]);
+      i++;
+      continue;
+    }
+    const parentValue = level > 0 ? (rows[i].codes[level - 1] ?? '') : '';
+    const blocks: TaxonomyRow[][] = [];
+    while (i < rows.length && levelOf(rows[i]) === level) {
+      const rowParent = level > 0 ? (rows[i].codes[level - 1] ?? '') : '';
+      if (rowParent !== parentValue) break;
+      const end = blockEnd(rows, i, level);
+      blocks.push(rows.slice(i, end));
+      i = end;
+    }
+    const sorted = [...blocks].sort((a, b) => {
+      const ca = a[0].codes[level] ?? '';
+      const cb = b[0].codes[level] ?? '';
+      return ca < cb ? -1 : ca > cb ? 1 : 0;
+    });
+    for (const block of sorted) result.push(...block);
+  }
+  return result;
+}
+
+/** The "Sort" side of item 2's "not in increasing order — sort or accept" prompt: brings every
+ * level's sibling groups into ascending order by code, shallowest level first (so a heading
+ * reorder carries its whole subtree along before that subtree's own children get sorted). */
+export function sortAllCodesAscending(rows: TaxonomyRow[], maxLevel: number): TaxonomyRow[] {
+  let result = rows;
+  for (let level = 0; level <= maxLevel; level++) {
+    result = sortByCodeAtLevel(result, level);
+  }
+  return result;
 }
