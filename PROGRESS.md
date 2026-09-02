@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #80, 2026-09-02)
+## Current status (as of PR #82, 2026-09-02)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -132,10 +132,22 @@ further rounds of testing feedback. The tool currently supports, in full:
   James explicitly asked for ("please ignore previous constraints, we are
   now pushing the boundaries to create an increasingly intelligent
   application"), confined to this wizard's coding stage — an optional
-  mnemonic-code suggestion (first usable letter of each description, per
-  sibling group) is pre-filled directly into the grid; suggested codes are
-  ordinary, fully-editable cells from that point on, normal overtype and
-  validation, nothing special once written. The coding stage then stays
+  mnemonic-code suggestion is pre-filled directly into the grid, per
+  sibling group; suggested codes are ordinary, fully-editable cells from
+  that point on, normal overtype and validation, nothing special once
+  written. The suggestion itself follows James's own stated manual
+  practice (PR #82, replacing an earlier "scan every character of the
+  description" version): first letter of the description's own first
+  word; failing that, the first letter of the next significant word
+  (second word, or third if the second is an insignificant one like
+  "by"/"and"); failing that, that word's first and second consonant, then
+  the first and second consonant of the word after that; and if none of
+  that yields a usable, not-already-taken letter, the row is left blank
+  and flagged — "Some entries couldn't get an automatic code — please
+  enter them manually", with the cursor dropped on the first one — rather
+  than falling back to an arbitrary charset letter with no connection to
+  the description. Applies at every level, not just the rightmost column.
+  The coding stage then stays
   open (round-2 fix, PR #78) for two further deliberate steps: **Fill
   Codes** carries each heading's own code down through its child rows'
   otherwise-blank ancestor columns (mirroring the existing "Replicate
@@ -786,6 +798,49 @@ auto-correction, and the rightmost column's no-cascade/full-range-
 duplicate/auto-advance behavior) and `smoke_wizard_sort_and_duplicate.mjs`
 (the Sort action end to end), plus a full re-run of the existing
 regression suite — no regressions.
+
+### Word/consonant mnemonic-suggestion rule (PR #82)
+James's round-3 message walked back his own earlier "phonetic" framing
+from PR #80's open question — what he actually does manually, working
+through his real ASCO Credit Note Reasons example (attached in chat:
+6 headings, e.g. "ORDER CANCELLED" with children "Order Cancelled Credit
+Control" / "...by Consumer" / "...by Customer"), is pick a consonant from
+a later, distinguishing word in the description, not a phonetic
+judgement — no special library needed, just a clear priority order,
+which he then stated directly. Replaced `suggestUnusedCode`'s old
+"scan every character of the whole description in order" fallback with
+exactly that order: first letter of the first word; then the first
+letter of the next significant word (second word, or third if the second
+is insignificant — a short stoplist: by/and/or/of/the/a/an/to/in/on/for/
+with/from/as/at); then that word's first and second consonant; then the
+first and second consonant of the word after that; and, if nothing there
+is both usable and not already taken by an earlier sibling, leave the
+row blank rather than grabbing an arbitrary next-available charset
+letter with no connection to the description at all (his explicit "step
+5" — prompt the user instead). New `findRowsNeedingManualCode` flags
+exactly those left-blank rows; `GuidanceBanner.tsx` shows "Some entries
+couldn't get an automatic code — please enter them manually" (checked
+after the duplicate and out-of-order checks, in that priority) and drops
+the cursor on the first one, same "drop the cursor there" treatment as
+the duplicate notice. Applies at every level per his explicit ask to
+generalize it, not just the rightmost column — no change needed to the
+calling code, since `suggestMnemonicCodes` already looped over every
+level. Removed `codeValidation.ts`'s `restrictionCharset`, which only
+existed to serve the fallback this replaces. Verified against James's
+own real dataset (both a single-heading case and the full 25-row Credit
+Note Reasons structure, loaded as a project file to skip re-typing it
+through the wizard) while investigating a separate Fill Codes bug report
+from the same message that could **not** be reproduced despite
+significant effort — tried the small case, the full real dataset, an
+overtype-before-Fill-Codes sequence, an overtype-after-Fill-Codes-already-
+ran sequence, and a fresh row added after an earlier Fill Codes pass;
+Fill Codes worked correctly in every one. Left unfixed pending exact
+repro steps from James (or the actual project file) rather than guessing
+at a change that might not touch the real cause. New/updated tests:
+extended `unit_guidance.mjs` for the word rule's priority steps
+(including the stopword-skip case) and `findRowsNeedingManualCode`, new
+`smoke_wizard_word_rule.mjs` for the manual-entry notice end to end; full
+existing regression suite re-run clean.
 
 ---
 
