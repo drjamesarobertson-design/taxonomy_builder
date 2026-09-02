@@ -23,7 +23,7 @@ export default function Login({ onSuccess }: LoginProps) {
     const ok = await verifyLogin(email, password);
     setChecking(false);
     if (!ok) {
-      setError('Incorrect email or password.');
+      setError('Incorrect username or password.');
       return;
     }
     const normalized = email.trim();
@@ -42,9 +42,10 @@ export default function Login({ onSuccess }: LoginProps) {
       </p>
       <form className="login-form" onSubmit={handleSubmit}>
         <label>
-          Email
+          Email or Username
           <input
-            type="email"
+            className="login-email-input"
+            type="text"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
