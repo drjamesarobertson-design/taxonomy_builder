@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #76, 2026-09-01)
+## Current status (as of PR #78, 2026-09-02)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -121,10 +121,19 @@ further rounds of testing feedback. The tool currently supports, in full:
   mnemonic-code suggestion (first usable letter of each description, per
   sibling group) is pre-filled directly into the grid; suggested codes are
   ordinary, fully-editable cells from that point on, normal overtype and
-  validation, nothing special once written. "Exit Guidance" drops out to
-  full unrestricted editing at any stage. The other four guided levels
-  (Intermediate/Advanced/Chart of Accounts/Item Master) still open today's
-  ungated setup screen — not yet built.
+  validation, nothing special once written. The coding stage then stays
+  open (round-2 fix, PR #78) for two further deliberate steps: **Fill
+  Codes** carries each heading's own code down through its child rows'
+  otherwise-blank ancestor columns (mirroring the existing "Replicate
+  Codes Below", but automatic across the whole column and keyed off each
+  row's own level rather than a manual selection), and **Pad Codes** fills
+  every column deeper than a row's own level with the padding character —
+  both leave a row's own code column and any already-filled cell alone,
+  and both stay correct at any depth, not just Simple Taxonomy's two
+  levels. **Finish** ends the wizard once these look right. "Exit
+  Guidance" drops out to full unrestricted editing at any stage. The other
+  four guided levels (Intermediate/Advanced/Chart of Accounts/Item Master)
+  still open today's ungated setup screen — not yet built.
 - A simple email/password sign-on gate (`Login.tsx`/`auth.ts`), shown
   before anything else: checks a salted SHA-256 hash (via the browser's
   built-in `crypto.subtle`), remembers a successful login in this
@@ -635,6 +644,42 @@ setup screen; existing Lock Taxonomy, sign-on, and resume-work regression
 scripts all still pass unchanged. The remaining four guided levels
 (Intermediate/Advanced/Chart of Accounts/Item Master) are still not yet
 built — see "Not yet built".
+
+### Fill Codes / Pad Codes for the Simple Taxonomy wizard (PR #78)
+James's round-2 testing of the wizard against his own reference example:
+the mnemonic suggestion was "spot on" on every code, but only ever set a
+row's own column — a heading's code never carried down through its
+children's shallower columns (the ancestor-path convention the rest of
+the app already relies on and Section 4.1's own worked example shows),
+and columns deeper than a row's own level were left blank instead of
+padded with "." (also, once padded, that "." itself needs to keep
+replicating down like any other code — not stop after one row). He
+proposed two separate steps rather than one automatic pass — "work out
+the codes from the description hierarchy and then afterwards as a
+separate step fill in the blanks once the direct corresponding codes
+have been approved" — and pointed at the existing right-click "Replicate
+Codes Below" as already getting this right, just needing to be automated
+down each column instead of run manually. Added exactly that shape:
+`guidance.ts` gained `fillCodesDown` (carries each row's own code into
+every blank ancestor column beneath it, one pass top to bottom, keyed off
+each row's own level so it works at any depth rather than blindly
+cascading by scan order) and `padCodes` (fills every column deeper than
+a row's own level with the padding character); `GuidanceBanner.tsx`'s
+coding stage no longer ends itself the instant the Numeric/Alpha +
+mnemonic choice is made — it now stays open with "Fill Codes", "Pad
+Codes", and a new "Finish" button, so James can review the base codes
+first and run each step deliberately once they look right (both are safe
+to re-run, since they only ever touch genuinely blank cells). Caught and
+fixed a self-inflicted test bug while verifying this: overtyping a code
+mid-scenario in the Playwright test triggered the app's own *existing*,
+separate interactive cascade-on-type behavior (Grid.tsx's `updateCode`
+already sweeps a freshly typed code down through blank/lesser cells
+below it in the same column, and auto-pads a completed leaf's remaining
+columns) — moved the overtype-still-works check to the very last row
+(nothing beneath it to sweep into) so it can't interfere with the
+Fill/Pad assertions above it. Verified with an extended
+`smoke_simple_wizard.mjs` plus a re-run of `smoke_workflow_menu.mjs`,
+`smoke_lock_taxonomy.mjs`, and `smoke_resume_work.mjs` — no regressions.
 
 ---
 
