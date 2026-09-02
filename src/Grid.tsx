@@ -139,6 +139,12 @@ export default function Grid({
   // every incidental blur.
   const [otherNotLastWarningRowId, setOtherNotLastWarningRowId] = useState<string | null>(null);
   const otherNotLastWarnedRef = useRef<Set<string>>(new Set());
+  // Section 6.9: an optional free-text note per entry, added/edited via right-click "Add
+  // Note"/"Edit Note" on the description cell. `noteEditRowId` is the row currently being
+  // edited (null when the dialog is closed); `noteEditDraft` is the textarea's own live value,
+  // committed to `row.note` only on Save.
+  const [noteEditRowId, setNoteEditRowId] = useState<string | null>(null);
+  const [noteEditDraft, setNoteEditDraft] = useState('');
   // Right-click toggle: when on, Down Arrow in a description cell always inserts a new row
   // immediately beneath the current one and focuses it (like Insert Row Below), rather than
   // only doing that at the very last row — James found the "necessary" right-click detour
@@ -1363,6 +1369,33 @@ export default function Grid({
     setContextMenu(null);
   }
 
+  // Section 6.9: opens the note editor for the right-clicked row specifically — unlike Toggle
+  // Case, a note is a single-row concept (one text value can't sensibly apply to a whole
+  // selection), so this always targets contextMenu.rowId, not the broader `selection`. Not
+  // gated behind Lock Taxonomy's protected-row checks, matching the existing, deliberate
+  // precedent for suffix values (PROGRESS.md's Lock Taxonomy notes): only code/description were
+  // ever named as protected.
+  function handleOpenNoteEditor() {
+    if (!contextMenu || contextMenu.kind !== 'desc') return;
+    const rowId = contextMenu.rowId;
+    setNoteEditDraft(rows.find((r) => r.id === rowId)?.note ?? '');
+    setNoteEditRowId(rowId);
+    setContextMenu(null);
+  }
+
+  function handleSaveNote() {
+    if (!noteEditRowId) return;
+    const trimmed = noteEditDraft.trim();
+    onChange(rows.map((row) => (row.id === noteEditRowId ? { ...row, note: trimmed } : row)));
+    setNoteEditRowId(null);
+  }
+
+  function handleDeleteNote() {
+    if (!noteEditRowId) return;
+    onChange(rows.map((row) => (row.id === noteEditRowId ? { ...row, note: '' } : row)));
+    setNoteEditRowId(null);
+  }
+
   // Lock Taxonomy: the sanctioned way to retire a protected row, since it can no longer be
   // edited or deleted directly (Section-equivalent: preserves the historical code/description
   // instead of erasing it). Prefixes the description with "XXX " rather than replacing it, so
@@ -2428,6 +2461,19 @@ export default function Grid({
                 );
               })}
               <td className="row-actions-col">
+                {row.note && (
+                  <button
+                    type="button"
+                    className="note-indicator"
+                    title={row.note}
+                    onClick={() => {
+                      setNoteEditDraft(row.note ?? '');
+                      setNoteEditRowId(row.id);
+                    }}
+                  >
+                    📝
+                  </button>
+                )}
                 <button
                   type="button"
                   className="remove-row-btn"
@@ -2480,6 +2526,9 @@ export default function Grid({
           {contextMenu.kind === 'desc' && (
             <>
               <li onClick={handleToggleCase}>Toggle Case</li>
+              <li onClick={handleOpenNoteEditor}>
+                {rows.find((r) => r.id === contextMenu.rowId)?.note ? 'Edit Note' : 'Add Note'}
+              </li>
               <li onClick={handleMarkAsDelete}>Mark as Delete</li>
               <li onClick={handleAlphaSort}>Alpha Sort</li>
               <li onClick={() => requestPromoteDemote('promote')}>Promote</li>
@@ -2790,6 +2839,34 @@ export default function Grid({
             <button type="button" onClick={() => setOtherNotLastWarningRowId(null)}>
               OK
             </button>
+          </div>
+        </div>
+      )}
+
+      {noteEditRowId && (
+        <div className="validation-overlay" onClick={() => setNoteEditRowId(null)}>
+          <div className="validation-dialog note-dialog" onClick={(e) => e.stopPropagation()}>
+            <p>Note</p>
+            <textarea
+              className="note-textarea"
+              value={noteEditDraft}
+              onChange={(e) => setNoteEditDraft(e.target.value)}
+              autoFocus
+              rows={5}
+            />
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setNoteEditRowId(null)}>
+                Cancel
+              </button>
+              {rows.find((r) => r.id === noteEditRowId)?.note && (
+                <button type="button" onClick={handleDeleteNote}>
+                  Delete Note
+                </button>
+              )}
+              <button type="button" onClick={handleSaveNote}>
+                Save
+              </button>
+            </div>
           </div>
         </div>
       )}

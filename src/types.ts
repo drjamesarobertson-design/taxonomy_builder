@@ -124,6 +124,9 @@ export interface TaxonomyRow {
    * subsequent Lock sweeps in any rows added or left unprotected since.
    */
   protected?: boolean;
+  /** Section 6.9: an optional free-text note on this entry, added/edited via right-click.
+   * Absent or '' means no note — an on-row indicator only shows when this is non-empty. */
+  note?: string;
 }
 
 export interface TaxonomyProject {
