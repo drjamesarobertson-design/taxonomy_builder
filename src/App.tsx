@@ -779,7 +779,11 @@ export default function App() {
         <div className="app-heading-block">
           <h1 className="app-heading">The ERP Doctor Taxonomy Builder</h1>
           {!project && (
-            <p className="app-tagline">Taxonomy Builder by the ERP Doctor James A Robertson and Associates Limited</p>
+            <p className="app-tagline">
+              Taxonomy Builder by the ERP Doctor
+              <br />
+              James A Robertson and Associates Limited
+            </p>
           )}
         </div>
         <div className="header-right">
