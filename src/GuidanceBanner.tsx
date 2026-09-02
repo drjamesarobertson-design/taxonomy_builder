@@ -6,6 +6,7 @@ import {
   countHeadings,
   fillCodesDown,
   findDuplicateCode,
+  findRowsNeedingManualCode,
   hasOutOfOrderCodes,
   maxLevelUsed,
   padCodes,
@@ -43,6 +44,10 @@ export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExi
   const [duplicateWarning, setDuplicateWarning] = useState<{ rowId: string; level: number } | null>(null);
   // Item 2: any level's sibling codes not in strictly ascending order after Suggest Codes.
   const [showOrderWarning, setShowOrderWarning] = useState(false);
+  // Round-3 feedback, step 5 of the word/consonant rule: rows the suggestion algorithm
+  // couldn't find a usable letter for at all — flagged for manual entry rather than left
+  // silently blank.
+  const [manualCodeWarning, setManualCodeWarning] = useState<{ rowId: string; level: number }[] | null>(null);
 
   const guidance = project.settings.guidance;
   if (!guidance) return null;
@@ -133,23 +138,37 @@ export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExi
     const duplicate = findDuplicateCode(newRows, level);
     if (duplicate) {
       setDuplicateWarning(duplicate);
-    } else if (hasOutOfOrderCodes(newRows, level)) {
-      setShowOrderWarning(true);
+      return;
     }
+    if (hasOutOfOrderCodes(newRows, level)) {
+      setShowOrderWarning(true);
+      return;
+    }
+    const needManual = findRowsNeedingManualCode(newRows);
+    if (needManual.length > 0) setManualCodeWarning(needManual);
   }
 
   // Item 6: dismissing the duplicate notice drops the cursor straight onto the offending cell
   // so it's ready to edit, rather than leaving the user to go hunting for it.
   function dismissDuplicateWarning() {
-    if (duplicateWarning) {
-      const id = codeInputId(duplicateWarning.level, duplicateWarning.rowId);
-      requestAnimationFrame(() => {
-        const input = document.getElementById(id) as HTMLInputElement | null;
-        input?.focus();
-        input?.select();
-      });
-    }
+    if (duplicateWarning) focusCode(duplicateWarning);
     setDuplicateWarning(null);
+  }
+
+  // Round-3 feedback: same "drop the cursor there" treatment for a row the suggestion
+  // algorithm couldn't find any usable letter for at all.
+  function dismissManualCodeWarning() {
+    if (manualCodeWarning && manualCodeWarning[0]) focusCode(manualCodeWarning[0]);
+    setManualCodeWarning(null);
+  }
+
+  function focusCode(target: { rowId: string; level: number }) {
+    const id = codeInputId(target.level, target.rowId);
+    requestAnimationFrame(() => {
+      const input = document.getElementById(id) as HTMLInputElement | null;
+      input?.focus();
+      input?.select();
+    });
   }
 
   // Item 2: "Sort" reorders every level's sibling groups by code, ascending, each entry
@@ -282,6 +301,21 @@ export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExi
           <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
             <p>Duplicate First Letters. Please edit manually.</p>
             <button type="button" onClick={dismissDuplicateWarning}>
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      {manualCodeWarning && (
+        <div className="validation-overlay" onClick={dismissManualCodeWarning}>
+          <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
+            <p>
+              {manualCodeWarning.length === 1
+                ? "One entry couldn't get an automatic code — please enter it manually."
+                : `${manualCodeWarning.length} entries couldn't get an automatic code — please enter them manually.`}
+            </p>
+            <button type="button" onClick={dismissManualCodeWarning}>
               OK
             </button>
           </div>

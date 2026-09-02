@@ -9,7 +9,7 @@
 // validation, nothing special about them once written.
 
 import type { CodeRestriction, TaxonomyRow } from './types';
-import { isAllowedByCodeRestriction, restrictionCharset } from './codeValidation';
+import { isAllowedByCodeRestriction } from './codeValidation';
 
 function levelOf(row: TaxonomyRow): number {
   for (let i = row.descriptions.length - 1; i >= 0; i--) {
@@ -48,22 +48,87 @@ export function maxLevelUsed(rows: TaxonomyRow[]): number {
   return rows.reduce((max, row) => Math.max(max, levelOf(row)), 0);
 }
 
-// Picks the first not-yet-used, restriction-allowed letter out of a description's own
-// characters — the actual "mnemonic" part (Land -> L, Buildings -> B). Falls back to the next
-// unused character in the whole restricted charset (still deterministic and visible to the
-// user, just no longer literally drawn from the word) when nothing in the description itself
-// is usable — e.g. it starts with a symbol, or every one of its letters already went to an
-// earlier sibling.
+// Small, deliberately short list — words common enough in a business description to carry no
+// distinguishing meaning of their own. Not exhaustive by design (James's own phrase was "NOT
+// by, and, etcetera") — extend it if a real taxonomy needs more.
+const INSIGNIFICANT_WORDS = new Set([
+  'by', 'and', 'or', 'of', 'the', 'a', 'an', 'to', 'in', 'on', 'for', 'with', 'from', 'as', 'at',
+]);
+
+function isConsonant(upperChar: string): boolean {
+  return /^[A-Z]$/.test(upperChar) && !'AEIOU'.includes(upperChar);
+}
+
+// James's round-3 feedback: not truly "phonetic" (his word) — a consonant picked from a
+// distinguishing word later in the description, chosen so the resulting code stays unique and
+// keeps ascending order within its sibling group, tried in this priority order (his own rule,
+// stated directly rather than reverse-engineered from an example):
+//   1. First letter of the description's own first word (today's simple default).
+//   2. First letter of the next SIGNIFICANT word — the second word if it's not an
+//      insignificant one like "by"/"and", otherwise the third word.
+//   3. The first, then second, consonant of that same word.
+//   4. The first, then second, consonant of the word after that, if there is one.
+//   5. Nothing usable — leave the row blank so it can be flagged for manual entry (see
+//      findRowsNeedingManualCode) rather than falling back to an arbitrary charset letter that
+//      no longer has anything to do with the description.
 function suggestUnusedCode(description: string, used: Set<string>, restriction: CodeRestriction): string | null {
   const upperCase = restriction !== 'Alpha Both Cases Only' && restriction !== 'Alpha Numeric with All Alpha';
-  for (const rawChar of description) {
-    const char = upperCase ? rawChar.toUpperCase() : rawChar;
-    if (!used.has(char) && isAllowedByCodeRestriction(char, restriction)) return char;
+  const tryChar = (raw: string): string | null => {
+    const char = upperCase ? raw.toUpperCase() : raw;
+    return !used.has(char) && isAllowedByCodeRestriction(char, restriction) ? char : null;
+  };
+  const consonantsOf = (word: string): string[] => [...word].filter((c) => isConsonant(c.toUpperCase()));
+
+  const words = description.split(/\s+/).filter((w) => w.length > 0);
+  if (words.length === 0) return null;
+
+  const firstWordAttempt = tryChar(words[0][0]);
+  if (firstWordAttempt) return firstWordAttempt;
+
+  // "Second word, or third if the second isn't significant" — checked at most one word further,
+  // matching James's own two-step description rather than skipping arbitrarily many stopwords.
+  let significantIndex = -1;
+  for (let i = 1; i <= 2 && i < words.length; i++) {
+    if (!INSIGNIFICANT_WORDS.has(words[i].toLowerCase())) {
+      significantIndex = i;
+      break;
+    }
   }
-  for (const char of restrictionCharset(restriction)) {
-    if (!used.has(char)) return char;
+  const significantWord = significantIndex !== -1 ? words[significantIndex] : null;
+
+  if (significantWord) {
+    const wordAttempt = tryChar(significantWord[0]);
+    if (wordAttempt) return wordAttempt;
+    for (const consonant of consonantsOf(significantWord.slice(1)).slice(0, 2)) {
+      const attempt = tryChar(consonant);
+      if (attempt) return attempt;
+    }
   }
+
+  const nextIndex = (significantIndex !== -1 ? significantIndex : 2) + 1;
+  const nextWord = words[nextIndex];
+  if (nextWord) {
+    for (const consonant of consonantsOf(nextWord).slice(0, 2)) {
+      const attempt = tryChar(consonant);
+      if (attempt) return attempt;
+    }
+  }
+
   return null;
+}
+
+/** Rows whose description (at their own level) suggestMnemonicCodes left without a code — step
+ * 5 of James's rule ("prompt the user to enter a code") once every word/consonant option is
+ * exhausted. Callers use this right after suggestMnemonicCodes to flag exactly those rows for
+ * manual entry, rather than silently leaving them blank with nothing said. */
+export function findRowsNeedingManualCode(rows: TaxonomyRow[]): { rowId: string; level: number }[] {
+  return rows
+    .map((row) => {
+      const level = levelOf(row);
+      if (level === -1) return null;
+      return (row.codes[level] ?? '') === '' ? { rowId: row.id, level } : null;
+    })
+    .filter((r): r is { rowId: string; level: number } => r !== null);
 }
 
 // Suggests a code for every row from level 0 through `maxLevel` that doesn't already have one,

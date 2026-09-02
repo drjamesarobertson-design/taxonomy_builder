@@ -66,13 +66,6 @@ export function isAllowedByCodeRestriction(ch: string, restriction: CodeRestrict
   }
 }
 
-// The Simple Taxonomy wizard's coding stage (guidance.ts): the full ordered set of characters
-// a given restriction actually allows, used as a fallback when suggesting a mnemonic code that
-// doesn't collide with an already-suggested sibling.
-export function restrictionCharset(restriction: CodeRestriction): string[] {
-  return CODE_CHARSET.filter((c) => c !== '.' && isAllowedByCodeRestriction(c, restriction));
-}
-
 // Lock Taxonomy: while locked, a new row can only be inserted between two existing siblings
 // if a real, usable code actually fits between their two values — otherwise inserting there
 // would force recoding an existing (protected) neighbour, which is exactly what locking is
