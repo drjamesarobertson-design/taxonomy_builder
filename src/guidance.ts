@@ -56,6 +56,73 @@ function wordsOf(description: string): string[] {
   return description.split(/\s+/).filter((w) => w.length > 0);
 }
 
+// Section 5, step 6's catch-all convention ("Other [category name]"/"Miscellaneous"), matched
+// against just the row's own leading word so "Other Damages" and "Miscellaneous" both count but
+// an unrelated description that merely mentions the word later in the sentence doesn't.
+export function isOtherOrMiscellaneousLabel(description: string): boolean {
+  return /^(other|miscellaneous)\b/i.test(description.trim());
+}
+
+function immediateParentIndex(rows: TaxonomyRow[], idx: number): number {
+  const level = levelOf(rows[idx]);
+  for (let i = idx - 1; i >= 0; i--) {
+    const l = levelOf(rows[i]);
+    if (l !== -1 && l < level) return i;
+  }
+  return -1;
+}
+
+/** Row indices grouped by sibling set — rows sharing the same level and the same immediate
+ * parent ROW (not parent code, see computeSharedPrefixLengths below), in top-to-bottom order
+ * within each group. Shared by the prefix-stripping and "Other should be last" checks so both
+ * agree on exactly what counts as one sibling group. */
+function groupSiblingIndices(rows: TaxonomyRow[]): Map<string, number[]> {
+  const groups = new Map<string, number[]>();
+  rows.forEach((row, idx) => {
+    const level = levelOf(row);
+    if (level === -1) return;
+    const key = `${level}:${immediateParentIndex(rows, idx)}`;
+    const group = groups.get(key);
+    if (group) group.push(idx);
+    else groups.set(key, [idx]);
+  });
+  return groups;
+}
+
+/** True when `rowId` reads as an "Other"/"Miscellaneous" catch-all (Section 5, step 6) but
+ * isn't the last entry among its own siblings — CLAUDE.md expects the catch-all to sit (and be
+ * coded) last, so entering one earlier in a segment is worth a soft nudge before it, or a
+ * sibling typed after it, locks in a code order that can't be fixed by Suggest Codes alone. */
+export function isOtherEntryNotLast(rows: TaxonomyRow[], rowId: string): boolean {
+  const idx = rows.findIndex((r) => r.id === rowId);
+  if (idx === -1) return false;
+  const level = levelOf(rows[idx]);
+  if (level === -1 || !isOtherOrMiscellaneousLabel(rows[idx].descriptions[level] ?? '')) return false;
+  const parent = immediateParentIndex(rows, idx);
+  for (let i = idx + 1; i < rows.length; i++) {
+    const l = levelOf(rows[i]);
+    if (l === -1) continue;
+    if (l < level) return false; // exited this segment entirely — no later sibling exists
+    if (l === level) return immediateParentIndex(rows, i) === parent;
+  }
+  return false;
+}
+
+/** Every row in `rowId`'s own sibling group that's an Other/Miscellaneous entry not sitting
+ * last — not just `rowId` itself. Blurring a cell only tells the caller that ONE row changed,
+ * but a later sibling being typed is exactly what turns an earlier "Other" entry into a
+ * violation without that earlier cell ever being touched again, so callers should re-check the
+ * whole group on every blur within it, not just the row that fired the event. */
+export function findOtherNotLastInGroup(rows: TaxonomyRow[], rowId: string): string[] {
+  const idx = rows.findIndex((r) => r.id === rowId);
+  if (idx === -1) return [];
+  const level = levelOf(rows[idx]);
+  if (level === -1) return [];
+  const parent = immediateParentIndex(rows, idx);
+  const siblingIds = rows.filter((_, i) => levelOf(rows[i]) === level && immediateParentIndex(rows, i) === parent).map((r) => r.id);
+  return siblingIds.filter((id) => isOtherEntryNotLast(rows, id));
+}
+
 // Small, deliberately short list — grammatical connectors that carry no distinguishing meaning
 // of their own (James's round-2 phrase: "NOT by, and, etcetera"). Removed from a row's word
 // list entirely before the word-1/2/3 rule runs, rather than merely skipped-with-fallback —
@@ -85,28 +152,72 @@ const CONNECTOR_WORDS = new Set([
 // If none of those nine produces a letter that's both allowed and not already used by an
 // earlier sibling, the row is left blank (findRowsNeedingManualCode flags it) rather than
 // falling back to an arbitrary charset letter with no connection to the description.
-function suggestUnusedCode(words: string[], used: Set<string>, restriction: CodeRestriction): string | null {
-  const upperCase = restriction !== 'Alpha Both Cases Only' && restriction !== 'Alpha Numeric with All Alpha';
-  const tryChar = (raw: string): string | null => {
-    const char = upperCase ? raw.toUpperCase() : raw;
-    return !used.has(char) && isAllowedByCodeRestriction(char, restriction) ? char : null;
-  };
-  // A word's own first letter is tried separately (steps 1-3) before its consonants (steps
-  // 4+), so the consonant search starts one character in — retrying the same letter twice
-  // would just repeat the same failure.
-  const consonantsAfterFirst = (word: string): string[] => [...word.slice(1)].filter((c) => isConsonant(c.toUpperCase()));
+// A word's own first letter is tried separately (steps 1-3, below) before its consonants (steps
+// 4+), so the consonant search starts one character in — retrying the same letter twice would
+// just repeat the same failure.
+function consonantsAfterFirst(word: string): string[] {
+  return [...word.slice(1)].filter((c) => isConsonant(c.toUpperCase()));
+}
 
+/** The 9-step candidate order itself (steps 1-3 then 4-9 above), as raw, not-yet-cased letters —
+ * exposed separately from suggestUnusedCode so the alphabet-band check below can search the same
+ * ordered list under an extra constraint, without duplicating James's rule a second time. */
+function orderedCandidateLetters(words: string[]): string[] {
+  const candidates: string[] = [];
   for (let i = 0; i < 3; i++) {
-    if (!words[i]) continue;
-    const attempt = tryChar(words[i][0]);
-    if (attempt) return attempt;
+    if (words[i]) candidates.push(words[i][0]);
   }
   for (let i = 0; i < 3; i++) {
     if (!words[i]) continue;
-    for (const consonant of consonantsAfterFirst(words[i]).slice(0, 2)) {
-      const attempt = tryChar(consonant);
-      if (attempt) return attempt;
-    }
+    for (const consonant of consonantsAfterFirst(words[i]).slice(0, 2)) candidates.push(consonant);
+  }
+  return candidates;
+}
+
+// 0-based position within A-Z (case-insensitive), for the alphabet-band check below. Only
+// meaningful for an actual letter — callers must check first.
+function alphaIndex(ch: string): number {
+  return ch.toUpperCase().charCodeAt(0) - 'A'.charCodeAt(0);
+}
+
+// `maxAlphaIndex`, when given, additionally rejects any candidate whose alphabet position falls
+// after it — used only by findAlphabetBandSuggestions below to search the very same ordered
+// candidate list under that extra ceiling; the ordinary call (suggestMnemonicCodes) never passes
+// it, so its own behaviour is unchanged.
+function suggestUnusedCode(
+  words: string[],
+  used: Set<string>,
+  restriction: CodeRestriction,
+  maxAlphaIndex?: number,
+): string | null {
+  const upperCase = restriction !== 'Alpha Both Cases Only' && restriction !== 'Alpha Numeric with All Alpha';
+  const tryChar = (raw: string): string | null => {
+    const char = upperCase ? raw.toUpperCase() : raw;
+    if (used.has(char) || !isAllowedByCodeRestriction(char, restriction)) return null;
+    if (maxAlphaIndex !== undefined && /^[A-Za-z]$/.test(char) && alphaIndex(char) > maxAlphaIndex) return null;
+    return char;
+  };
+  for (const candidate of orderedCandidateLetters(words)) {
+    const attempt = tryChar(candidate);
+    if (attempt) return attempt;
+  }
+  return null;
+}
+
+const ALL_CODE_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'.split('');
+
+// James's ask: an "Other"/"Miscellaneous" catch-all should get the LAST character its Code
+// Restriction allows ("Z", "z", or "9" depending on setting) rather than a mnemonic letter drawn
+// from its own wording — Section 5, step 6's "conventionally coded last". Tried in descending
+// ASCII order so a rare collision (two catch-alls at the same level, or the letter already taken
+// by an ordinary sibling) still finds the next-best "as late as possible" option instead of
+// failing outright.
+function suggestOtherOrMiscellaneousCode(used: Set<string>, restriction: CodeRestriction): string | null {
+  const descending = ALL_CODE_CHARS.filter((c) => isAllowedByCodeRestriction(c, restriction)).sort(
+    (a, b) => b.charCodeAt(0) - a.charCodeAt(0),
+  );
+  for (const c of descending) {
+    if (!used.has(c)) return c;
   }
   return null;
 }
@@ -123,28 +234,12 @@ function suggestUnusedCode(words: string[], used: Set<string>, restriction: Code
 // just the ones where a collision happens to force a fallback. Always leaves at least one word
 // per row, even if that means the "shared" prefix isn't quite as long as it could be for some.
 function computeSharedPrefixLengths(rows: TaxonomyRow[]): Map<string, number> {
-  function immediateParentIndex(idx: number): number {
-    const level = levelOf(rows[idx]);
-    for (let i = idx - 1; i >= 0; i--) {
-      const l = levelOf(rows[i]);
-      if (l !== -1 && l < level) return i;
-    }
-    return -1;
-  }
-
-  const groups = new Map<string, TaxonomyRow[]>();
-  rows.forEach((row, idx) => {
-    const level = levelOf(row);
-    if (level === -1) return;
-    const key = `${level}:${immediateParentIndex(idx)}`;
-    const group = groups.get(key);
-    if (group) group.push(row);
-    else groups.set(key, [row]);
-  });
+  const groups = groupSiblingIndices(rows);
 
   const result = new Map<string, number>();
-  for (const group of groups.values()) {
-    if (group.length < 2) continue;
+  for (const indices of groups.values()) {
+    if (indices.length < 2) continue;
+    const group = indices.map((i) => rows[i]);
     const wordLists = group.map((r) => wordsOf(r.descriptions[levelOf(r)] ?? ''));
     const minLen = Math.min(...wordLists.map((w) => w.length));
     let shared = 0;
@@ -209,14 +304,77 @@ export function suggestMnemonicCodes(rows: TaxonomyRow[], maxLevel: number, rest
       usedAtLevel[level].add(existing);
       return row;
     }
-    const words = wordsOf(row.descriptions[level] ?? '')
-      .slice(sharedPrefixLengths.get(row.id) ?? 0)
-      .filter((w) => !CONNECTOR_WORDS.has(w.toLowerCase()));
-    const suggestion = suggestUnusedCode(words, usedAtLevel[level], restriction);
+    const description = row.descriptions[level] ?? '';
+    // An "Other"/"Miscellaneous" catch-all skips the word/consonant rule entirely — its own
+    // wording has no bearing on where it should sort, and trying to mine a mnemonic letter out
+    // of "Other" or "Miscellaneous" is exactly what was leaving these rows blank (both words
+    // exhaust their two-consonant allowance quickly and collide often, since "Other ..." entries
+    // recur across many segments of the same taxonomy).
+    const suggestion = isOtherOrMiscellaneousLabel(description)
+      ? suggestOtherOrMiscellaneousCode(usedAtLevel[level], restriction)
+      : suggestUnusedCode(
+          wordsOf(description)
+            .slice(sharedPrefixLengths.get(row.id) ?? 0)
+            .filter((w) => !CONNECTOR_WORDS.has(w.toLowerCase())),
+          usedAtLevel[level],
+          restriction,
+        );
     if (!suggestion) return row;
     usedAtLevel[level].add(suggestion);
     return { ...row, codes: row.codes.map((c, i) => (i === level ? suggestion : c)) };
   });
+}
+
+// James's rule of thumb: "the first mnemonic code should be in the first third of the alphabet
+// depending on number of column 1 categories" — generalised to dividing the 26 letters into
+// `total` equal bands, one per top-level heading, and giving heading `position` (0-based) the
+// band running up through its own share: heading 0 of 3 keeps to roughly the first third
+// (A..H/I), heading 1 to the first two-thirds, and so on — so an early heading's default pick
+// never eats into the range later headings will need. With only one heading there's nothing to
+// protect, hence the Math.max(position, ...) floor rather than letting a huge `total` collapse
+// the band to nothing.
+function idealMaxAlphaIndexForHeading(position: number, total: number): number {
+  return Math.max(position, Math.ceil(((position + 1) * 26) / total) - 1);
+}
+
+/** After suggestMnemonicCodes has run, the level-0 (heading) rows whose suggested code reaches
+ * further into the alphabet than James's "first third" guidance allows for their position among
+ * the taxonomy's other headings — his own repro: "ORDER CANCELLED" is the first heading and gets
+ * "O", which "pushes the available codes lower down to the end of the alphabet ... which does
+ * not work." Each entry names the earlier, in-band alternative (drawn from the very same
+ * word/consonant candidate order, just under the extra ceiling) so the caller can offer a Y/N
+ * swap rather than silently overriding what Suggest Codes already produced. Skipped entirely for
+ * an "Other"/"Miscellaneous" heading — that one is SUPPOSED to sit at the far end. */
+export function findAlphabetBandSuggestions(
+  rows: TaxonomyRow[],
+  restriction: CodeRestriction,
+): { rowId: string; defaultCode: string; suggestedCode: string }[] {
+  const headingIndices = rows.map((_, i) => i).filter((i) => levelOf(rows[i]) === 0);
+  const total = headingIndices.length;
+  if (total < 2) return [];
+  const sharedPrefixLengths = computeSharedPrefixLengths(rows);
+  const allHeadingCodes = new Set(headingIndices.map((i) => rows[i].codes[0] ?? '').filter(Boolean));
+
+  const results: { rowId: string; defaultCode: string; suggestedCode: string }[] = [];
+  headingIndices.forEach((rowIdx, position) => {
+    const row = rows[rowIdx];
+    const description = row.descriptions[0] ?? '';
+    const defaultCode = row.codes[0] ?? '';
+    if (!defaultCode || !/^[A-Za-z]$/.test(defaultCode) || isOtherOrMiscellaneousLabel(description)) return;
+    const maxAlphaIndex = idealMaxAlphaIndexForHeading(position, total);
+    if (alphaIndex(defaultCode) <= maxAlphaIndex) return;
+
+    const words = wordsOf(description)
+      .slice(sharedPrefixLengths.get(row.id) ?? 0)
+      .filter((w) => !CONNECTOR_WORDS.has(w.toLowerCase()));
+    const usedExcludingSelf = new Set(allHeadingCodes);
+    usedExcludingSelf.delete(defaultCode);
+    const alternative = suggestUnusedCode(words, usedExcludingSelf, restriction, maxAlphaIndex);
+    if (alternative && alternative !== defaultCode) {
+      results.push({ rowId: row.id, defaultCode, suggestedCode: alternative });
+    }
+  });
+  return results;
 }
 
 // "Fill Codes" (James's round-2 feedback): the mnemonic suggestion above only ever sets a

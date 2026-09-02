@@ -4,6 +4,7 @@ import { createEmptyRow, growRowsToLevels } from './types';
 import { getLevelColor } from './colors';
 import { toggleCase } from './caseUtils';
 import { isValidCodeChar, isAllowedByCodeRestriction, hasCodeGap } from './codeValidation';
+import { findOtherNotLastInGroup, isOtherEntryNotLast } from './guidance';
 import { codeInputId, descInputId } from './domIds';
 import type { TaxonomyBlock } from './blockTransfer';
 import { parseBlockFile } from './blockTransfer';
@@ -131,6 +132,13 @@ export default function Grid({
   // modifier-state quirk that can't be verified from here.
   const [showCodeCaseNotice, setShowCodeCaseNotice] = useState(false);
   const codeCaseNoticeShownRef = useRef(false);
+  // Section 5, step 6: an "Other"/"Miscellaneous" catch-all is supposed to sit last in its
+  // segment. Warned once per row while the condition holds (cleared again if the row stops
+  // qualifying — renamed, or a later sibling that pushed it out of last place gets removed —
+  // so it can re-warn if the same row becomes a problem again later), rather than nagging on
+  // every incidental blur.
+  const [otherNotLastWarningRowId, setOtherNotLastWarningRowId] = useState<string | null>(null);
+  const otherNotLastWarnedRef = useRef<Set<string>>(new Set());
   // Right-click toggle: when on, Down Arrow in a description cell always inserts a new row
   // immediately beneath the current one and focuses it (like Insert Row Below), rather than
   // only doing that at the very last row — James found the "necessary" right-click detour
@@ -2325,23 +2333,31 @@ export default function Grid({
                       value={row.descriptions[level] ?? ''}
                       onChange={(e) => updateDescription(row.id, level, e.target.value)}
                       onKeyDown={(e) => handleCellKeyDown(e, 'desc', level, rowIndex)}
-                      onBlur={
-                        rowIndex === 0 && level === 0
-                          ? () => {
-                              // Shown once leaving the cell, not on the first keystroke — a
-                              // popup grabbing focus mid-word would swallow the rest of what's
-                              // being typed. Deferred a tick past the blur itself: blur fires as
-                              // part of whatever click moved focus away (e.g. "+ Add Row"), and
-                              // showing the overlay within that same synchronous dispatch can
-                              // cover the very element being clicked before its own click
-                              // finishes — swallowing that click instead of acting on it.
-                              if (!capsNoticeShownRef.current && (row.descriptions[0] ?? '').trim()) {
-                                capsNoticeShownRef.current = true;
-                                setTimeout(() => setShowCapsNotice(true), 0);
-                              }
-                            }
-                          : undefined
-                      }
+                      onBlur={() => {
+                        // Shown once leaving the cell, not on the first keystroke — a popup
+                        // grabbing focus mid-word would swallow the rest of what's being typed.
+                        // Deferred a tick past the blur itself: blur fires as part of whatever
+                        // click moved focus away (e.g. "+ Add Row"), and showing the overlay
+                        // within that same synchronous dispatch can cover the very element being
+                        // clicked before its own click finishes — swallowing that click instead
+                        // of acting on it.
+                        if (rowIndex === 0 && level === 0 && !capsNoticeShownRef.current && (row.descriptions[0] ?? '').trim()) {
+                          capsNoticeShownRef.current = true;
+                          setTimeout(() => setShowCapsNotice(true), 0);
+                        }
+                        // A later sibling being typed just now is exactly what can turn an
+                        // EARLIER "Other" row into a violation without that earlier cell ever
+                        // being touched again, so the whole sibling group is re-checked here,
+                        // not just this row.
+                        const groupViolators = findOtherNotLastInGroup(rows, row.id);
+                        const toWarn = groupViolators.find((id) => !otherNotLastWarnedRef.current.has(id));
+                        if (toWarn) {
+                          otherNotLastWarnedRef.current.add(toWarn);
+                          setTimeout(() => setOtherNotLastWarningRowId(toWarn), 0);
+                        } else if (!isOtherEntryNotLast(rows, row.id)) {
+                          otherNotLastWarnedRef.current.delete(row.id);
+                        }
+                      }}
                     />
                   </td>
                 );
@@ -2731,6 +2747,17 @@ export default function Grid({
           <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
             <p>Codes typed in the wrong case are automatically converted to match this taxonomy's Code Restriction.</p>
             <button type="button" onClick={() => setShowCodeCaseNotice(false)}>
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      {otherNotLastWarningRowId && (
+        <div className="validation-overlay" onClick={() => setOtherNotLastWarningRowId(null)}>
+          <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
+            <p>Other or Miscellaneous Should be the Last Entry in a Segment</p>
+            <button type="button" onClick={() => setOtherNotLastWarningRowId(null)}>
               OK
             </button>
           </div>
