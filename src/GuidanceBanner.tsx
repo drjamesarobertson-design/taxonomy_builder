@@ -5,6 +5,7 @@ import {
   countChildrenPerHeading,
   countHeadings,
   fillCodesDown,
+  findAlphabetBandSuggestions,
   findDuplicateCode,
   findRowsNeedingManualCode,
   hasOutOfOrderCodes,
@@ -48,6 +49,14 @@ export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExi
   // couldn't find a usable letter for at all — flagged for manual entry rather than left
   // silently blank.
   const [manualCodeWarning, setManualCodeWarning] = useState<{ rowId: string; level: number }[] | null>(null);
+  // James's "ORDER CANCELLED still codes O" report: a queue of level-0 headings whose default
+  // mnemonic code reaches further into the alphabet than his "first third" guidance allows for
+  // their position among the taxonomy's other headings, each with an earlier, still-unused
+  // alternative on offer — resolved one Y/N prompt at a time, first-to-last, before the usual
+  // duplicate/order/manual-code checks run against whatever the user decided.
+  const [bandSuggestions, setBandSuggestions] = useState<
+    { rowId: string; defaultCode: string; suggestedCode: string }[]
+  >([]);
 
   const guidance = project.settings.guidance;
   if (!guidance) return null;
@@ -135,17 +144,44 @@ export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExi
     setPendingRestriction(null);
 
     if (!useMnemonic) return;
-    const duplicate = findDuplicateCode(newRows, level);
+    const bandSuggestionsFound = findAlphabetBandSuggestions(newRows, restriction);
+    if (bandSuggestionsFound.length > 0) {
+      setBandSuggestions(bandSuggestionsFound);
+      return;
+    }
+    runPostSuggestChecks(newRows, level);
+  }
+
+  function runPostSuggestChecks(currentRows: TaxonomyRow[], level: number) {
+    const duplicate = findDuplicateCode(currentRows, level);
     if (duplicate) {
       setDuplicateWarning(duplicate);
       return;
     }
-    if (hasOutOfOrderCodes(newRows, level)) {
+    if (hasOutOfOrderCodes(currentRows, level)) {
       setShowOrderWarning(true);
       return;
     }
-    const needManual = findRowsNeedingManualCode(newRows);
+    const needManual = findRowsNeedingManualCode(currentRows);
     if (needManual.length > 0) setManualCodeWarning(needManual);
+  }
+
+  // Item 3's Y/N prompt: "Yes" swaps the flagged heading's code for the earlier, still-unused
+  // alternative; "No" leaves the word-rule's own default in place. Either way, the queue moves
+  // on to the next flagged heading (if any), and once it's empty the usual duplicate/order/
+  // manual-code checks run against wherever the user ended up.
+  function resolveBandSuggestion(accept: boolean) {
+    const current = bandSuggestions[0];
+    if (!current) return;
+    const updatedRows = accept
+      ? rows.map((r) =>
+          r.id === current.rowId ? { ...r, codes: r.codes.map((c, i) => (i === 0 ? current.suggestedCode : c)) } : r,
+        )
+      : rows;
+    if (accept) onSettingsAndRowsChange(project.settings, updatedRows);
+    const remaining = bandSuggestions.slice(1);
+    setBandSuggestions(remaining);
+    if (remaining.length === 0) runPostSuggestChecks(updatedRows, maxLevelUsed(updatedRows));
   }
 
   // Item 6: dismissing the duplicate notice drops the cursor straight onto the offending cell
@@ -318,6 +354,26 @@ export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExi
             <button type="button" onClick={dismissManualCodeWarning}>
               OK
             </button>
+          </div>
+        </div>
+      )}
+
+      {bandSuggestions[0] && (
+        <div className="validation-overlay">
+          <div className="validation-dialog">
+            <p>
+              This is early in the taxonomy — the default match is "{bandSuggestions[0].defaultCode}", which is
+              well into the alphabet and limits mnemonic choices for the rest of the taxonomy. "
+              {bandSuggestions[0].suggestedCode}" is suggested instead.
+            </p>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => resolveBandSuggestion(false)}>
+                No — Keep "{bandSuggestions[0].defaultCode}"
+              </button>
+              <button type="button" onClick={() => resolveBandSuggestion(true)}>
+                Yes — Use "{bandSuggestions[0].suggestedCode}"
+              </button>
+            </div>
           </div>
         </div>
       )}

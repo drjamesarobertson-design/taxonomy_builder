@@ -147,7 +147,17 @@ export async function saveExportFile(
   if (supportsSaveFilePicker()) {
     try {
       const startIn = (await peekVerifiedFolder()) ?? undefined;
+      // A fixed `id` is what makes Chromium remember the *last folder actually used*, on its
+      // own, across every Save/Export call — independent of "Choose Export Folder" above. James
+      // reported the picker kept reopening in a stale default rather than wherever the previous
+      // save went; `startIn` alone can't fix that (it only ever points at the one folder chosen
+      // via that menu action, which most saves never touch), but the picker updates its own
+      // per-id memory to the folder the user just saved into on every successful call, with or
+      // without `startIn` — so the very next save reopens there automatically. One shared id
+      // across Save/CSV/XLSX/block-transfer (all funnel through this one function) is deliberate:
+      // they're overwhelmingly the same working folder in practice.
       const handle = await window.showSaveFilePicker!({
+        id: 'taxonomy-builder-save',
         suggestedName: filename,
         types: acceptTypesFor(filename, blob.type),
         ...(startIn ? { startIn } : {}),
