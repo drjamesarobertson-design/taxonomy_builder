@@ -67,16 +67,20 @@ function parseCsvTable(text: string): string[][] {
   return table.filter((r) => !(r.length <= 1 && (r[0] ?? '') === ''));
 }
 
-// Builds the final rows/suffixes once every column's role (code / description / suffix value)
-// is known, regardless of which detection path (headered or headerless) worked it out.
+// Builds the final rows/suffixes once every column's role (code / description / suffix value /
+// note) is known, regardless of which detection path worked it out. `numLevels` is passed
+// explicitly rather than inferred from codeCols.length, since the description-only path below
+// has no code columns at all (numLevels there comes from the description columns instead).
 function buildResult(
   dataRows: string[][],
+  numLevels: number,
   codeCols: number[],
   descCols: number[],
   delimiterPositions: number[],
   codeDelimiterChar: string,
   suffixValueCols: number[],
   suffixDelimiterChars: string[],
+  noteCol: number | null = null,
 ): ParsedDiscreteCsv {
   const suffixes: SuffixField[] = suffixValueCols.map((c, i) => {
     const maxLen = dataRows.reduce((m, r) => Math.max(m, (r[c] ?? '').length), 1);
@@ -91,11 +95,12 @@ function buildResult(
     .filter((r) => r.some((cell) => (cell ?? '').trim() !== ''))
     .map((r) => ({
       id: crypto.randomUUID(),
-      codes: codeCols.map((c) => r[c] ?? ''),
+      codes: codeCols.length > 0 ? codeCols.map((c) => r[c] ?? '') : Array(numLevels).fill(''),
       descriptions: descCols.map((c) => r[c] ?? ''),
       suffixValues: suffixValueCols.map((c) => r[c] ?? ''),
+      ...(noteCol !== null && (r[noteCol] ?? '').trim() !== '' ? { note: (r[noteCol] ?? '').trim() } : {}),
     }));
-  return { numLevels: codeCols.length, delimiterPositions, codeDelimiterChar, suffixes, rows };
+  return { numLevels, delimiterPositions, codeDelimiterChar, suffixes, rows };
 }
 
 // Tries reading table[0] as a genuine header row — numbered code/description columns ("1",
@@ -163,7 +168,7 @@ function tryParseHeaderedCsv(table: string[][]): ParsedDiscreteCsv | null {
 
   const delimiterPositions = codeDelimiterCols.map((dCol) => codeCols.filter((c) => c < dCol).length);
   const codeDelimiterChar = codeDelimiterCols.length > 0 ? dataRows[0]?.[codeDelimiterCols[0]] || '-' : '-';
-  return buildResult(dataRows, codeCols, descCols, delimiterPositions, codeDelimiterChar, suffixValueCols, suffixDelimiterChars);
+  return buildResult(dataRows, numLevels, codeCols, descCols, delimiterPositions, codeDelimiterChar, suffixValueCols, suffixDelimiterChars);
 }
 
 // The single most frequent value in a list — used to decide "what character does this
@@ -262,13 +267,49 @@ function parseHeaderlessCsv(table: string[][]): ParsedDiscreteCsv | { error: str
 
   const delimiterPositions = delimiterCols.map((dCol) => codeCols.filter((c) => c < dCol).length);
   const codeDelimiterChar = delimiterChars[0] || '-';
-  return buildResult(rows, codeCols, descCols, delimiterPositions, codeDelimiterChar, suffixValueCols, suffixDelimiterChars);
+  return buildResult(rows, numLevels, codeCols, descCols, delimiterPositions, codeDelimiterChar, suffixValueCols, suffixDelimiterChars);
+}
+
+// A taxonomy with no codes at all yet — just a "Level 1", "Level 2", ... run of description
+// columns (as many as the file actually has, in order — James's own ask: "bring in all
+// columns"), optionally followed by a "Notes" column. This is deliberately its own detection
+// path rather than folded into the code-column heuristics above: with zero code columns there's
+// nothing for that logic to anchor on, and a codeless file is a completely unambiguous shape in
+// its own right once the header names itself this way. Returns null (not an error) on any
+// header mismatch, so parseDiscreteCsv's other two paths still get a turn.
+function tryParseDescriptionOnlyCsv(table: string[][]): ParsedDiscreteCsv | null {
+  const header = table[0];
+  const dataRows = table.slice(1);
+
+  const descCols: number[] = [];
+  let col = 0;
+  let expectLevel = 1;
+  while (col < header.length) {
+    if ((header[col] ?? '').trim().toLowerCase() === `level ${expectLevel}`) {
+      descCols.push(col);
+      expectLevel++;
+      col++;
+    } else {
+      break;
+    }
+  }
+  if (descCols.length === 0 || descCols.length > MAX_LEVELS) return null;
+
+  let noteCol: number | null = null;
+  if (col < header.length) {
+    if ((header[col] ?? '').trim().toLowerCase() !== 'notes') return null;
+    noteCol = col;
+    col++;
+  }
+  if (col < header.length) return null; // anything else left over means this isn't this shape
+
+  return buildResult(dataRows, descCols.length, [], descCols, [], '-', [], [], noteCol);
 }
 
 export function parseDiscreteCsv(text: string): ParsedDiscreteCsv | { error: string } {
   const table = parseCsvTable(text);
   if (table.length === 0) return { error: 'This file is empty.' };
-  return tryParseHeaderedCsv(table) ?? parseHeaderlessCsv(table);
+  return tryParseHeaderedCsv(table) ?? tryParseDescriptionOnlyCsv(table) ?? parseHeaderlessCsv(table);
 }
 
 export function readFileAsText(file: File): Promise<string> {

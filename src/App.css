@@ -1038,7 +1038,31 @@ body.app-dark-theme .taxonomy-meta .purpose {
 }
 
 .row-actions-col {
-  width: 2rem;
+  width: 3.5rem;
+  white-space: nowrap;
+}
+
+.note-indicator {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+  margin-right: 4px;
+  padding: 0;
+}
+
+.note-dialog {
+  min-width: 20rem;
+}
+
+.note-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  padding: 0.4rem;
+  margin: 0.5rem 0;
+  resize: vertical;
 }
 
 .context-menu {
