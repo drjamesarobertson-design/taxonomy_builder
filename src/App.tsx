@@ -795,7 +795,11 @@ export default function App() {
               </button>
             )}
             {project && supportsFileSystemAccess() && (
-              <button type="button" onClick={handleChooseFolder} title="Where Save to File and Export write their files">
+              <button
+                type="button"
+                onClick={handleChooseFolder}
+                title="Sets where your next Save/Export starts — after that, it reopens wherever you last saved"
+              >
                 {exportFolderName ? `Folder: ${exportFolderName}` : 'Choose Export Folder'}
               </button>
             )}
