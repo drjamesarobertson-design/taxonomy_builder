@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #84, 2026-09-02)
+## Current status (as of PR #86, 2026-09-02)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -57,8 +57,12 @@ further rounds of testing feedback. The tool currently supports, in full:
   substitution; column collapse/filter carets (level-based on description
   columns, literal "." filter on code columns).
 - Save/load as a local JSON project file, with the File System Access API's
-  native Save As dialog (remembered export folder) on Chromium, and a plain
-  download fallback elsewhere.
+  native Save As dialog on Chromium, and a plain download fallback
+  elsewhere. The dialog now remembers the last folder actually used across
+  every Save/Export call, via a fixed picker `id` (PR #86) — the existing
+  "Choose Export Folder" `startIn` hint only ever covered the one folder
+  explicitly chosen through that menu action, not the common case of
+  picking a folder ad hoc in the dialog itself.
 - Settings screen to revisit title/purpose/description-length/padding/
   delimiter/code-column-count after creation; right-click Add/Delete Column.
 - Create Block / Import Block for moving content between separate taxonomy
@@ -158,8 +162,24 @@ further rounds of testing feedback. The tool currently supports, in full:
   entries couldn't get an automatic code — please enter them manually",
   with the cursor dropped on the first one — rather than falling back to
   an arbitrary charset letter with no connection to the description.
-  Applies at every level, not just the rightmost column. The coding stage
-  then stays
+  Applies at every level, not just the rightmost column. An "Other"/
+  "Miscellaneous" entry (Section 5, step 6) skips this word/consonant rule
+  entirely — it always gets the last character its Code Restriction allows
+  ("Z", "z", or "9") instead, since mining a mnemonic letter out of the
+  word "Other" itself was exactly why these rows (including in the
+  rightmost column) sometimes came out blank (PR #86). Separately, a
+  soft warning ("Other or Miscellaneous Should be the Last Entry in a
+  Segment") fires if a later sibling is typed after one — checked across
+  the whole sibling group on every description blur, so it also catches
+  an *earlier* "Other" row retroactively once a later sibling makes it a
+  violation, not just the row just edited (PR #86). And each level-0
+  heading's default code is checked against how early it sits among the
+  taxonomy's other headings — "the first mnemonic code should be in the
+  first third of the alphabet depending on number of column 1 categories"
+  — offering a Y/N prompt to swap in an earlier, still-unused alternative
+  when the default reaches too far into the alphabet (PR #86; James's own
+  worked example: "ORDER CANCELLED", heading 1 of 3, defaults to "O" and
+  is offered "C" instead). The coding stage then stays
   open (round-2 fix, PR #78) for two further deliberate steps: **Fill
   Codes** carries each heading's own code down through its child rows'
   otherwise-blank ancestor columns (mirroring the existing "Replicate
@@ -362,6 +382,84 @@ further rounds of testing feedback. The tool currently supports, in full:
   piece is specifically the *phonetic* judgement of which letter to pick
   when there's a choice. Left for a follow-up conversation rather than
   guessed at.
+
+### "Other"/"Miscellaneous" handling, early-alphabet heading guidance, save-folder memory (PR #86)
+James's fifth round, still building out his real ASCO Credit Note Reasons
+taxonomy. Four items:
+
+1. **"Other"/"Miscellaneous" should sit last, and be coded last.** Section
+   5, step 6 already says a catch-all is "conventionally coded last (e.g.
+   9 or z)" — a new soft warning ("Other or Miscellaneous Should be the
+   Last Entry in a Segment") now fires when a later sibling is typed after
+   one. Checked across the whole sibling group on every description blur
+   (`findOtherNotLastInGroup`), not just the row just edited — a later
+   sibling being typed is exactly what turns an *earlier*, already-typed
+   "Other" row into a violation without that earlier cell ever being
+   touched again. Warned once per row while the condition holds, cleared
+   again if it stops (renamed, or the later sibling removed), so the same
+   row can re-warn if it becomes a problem again.
+2. **"OTHER does not guess mnemonic codes in right most column."** Root
+   cause: the word/consonant rule was still being run against the literal
+   word "Other" or "Miscellaneous", which exhausts its two-consonant
+   fallback quickly and collides often (the same word recurs as a catch-
+   all across many segments of one taxonomy) — exactly the single-word-
+   collision case that leaves a row blank. Fixed by skipping the rule
+   entirely for an Other/Miscellaneous entry (`isOtherOrMiscellaneousLabel`)
+   and always assigning the *last* character its Code Restriction allows
+   ("Z", "z", or "9" — `suggestOtherOrMiscellaneousCode`, descending
+   through the full charset on the rare collision) — matching James's ask
+   directly and fixing the rightmost-column report as a side effect, since
+   the same code path runs at every level.
+3. **Early-alphabet heading guidance.** James's exact report: "ORDER
+   CANCELLED still codes 'O' in column 1 which is too far down the
+   alphabet for a first character" — his rule of thumb, "the first
+   mnemonic code should be in the first third of the alphabet depending on
+   number of column 1 categories", generalises to dividing the alphabet
+   into as many equal bands as there are headings, one per heading
+   position (`idealMaxAlphaIndexForHeading`) — heading 1 of 3 keeps to
+   roughly the first third, heading 2 to two-thirds, and so on, so an
+   early heading's default pick never eats into the range later headings
+   will need. `findAlphabetBandSuggestions` runs this check after Suggest
+   Codes, over the very same word/consonant candidate order just under an
+   extra ceiling, and `GuidanceBanner.tsx` offers a Y/N prompt per flagged
+   heading rather than silently overriding what was already suggested.
+   Reproduces his own worked example precisely: 3 headings, "ORDER
+   CANCELLED" defaults to "O", offered "C" instead — matching the specific
+   wording he asked for. Skipped entirely for an Other/Miscellaneous
+   heading, which is *supposed* to sit at the far end.
+4. **Save/Export folder memory.** "Save to file is still offering the
+   previous session's default disk folder... same with export." The
+   existing `startIn` hint (PR #25's export-folder memory) only ever
+   pointed at the one folder explicitly chosen via "Choose Export Folder"
+   — most saves pick a folder ad hoc in the native dialog itself, which
+   that mechanism never captured. Added a fixed `id: 'taxonomy-builder-
+   save'` to the `showSaveFilePicker` call in `saveExportFile` — the
+   actual spec mechanism Chromium uses to remember the last folder used
+   across picker calls for a given id, automatically, with or without
+   `startIn`. Since Save/CSV export/XLSX export/block transfer all funnel
+   through this one shared function, all of them now pick up the fix at
+   once ("same with export, etcetera").
+
+Also re-investigated (once more, unprompted) the still-unreproduced Fill
+Codes/blank-codes report — James: "I have raised this before, I am sure I
+refreshed the browser twice... the multiple Order Cancelled items are
+still blank." Re-ran the full existing unit and Playwright coverage for
+the "ORDER CANCELLED" example against the current word/consonant algorithm
+with zero regressions (still resolves to distinct, non-blank C/N/S), and
+found no code path that would leave those specific rows blank. Left open
+pending a fresh check now that this round is live (GitHub Pages' CDN can
+briefly serve a stale bundle for a minute or two right after a deploy,
+which a browser hard-refresh alone doesn't bypass) or, failing that, exact
+repro steps or the actual project file.
+
+New/updated tests: `unit_guidance.mjs`/new `unit_guidance2.mjs` cover the
+Other/Miscellaneous label match and code assignment (per restriction),
+`isOtherEntryNotLast`/`findOtherNotLastInGroup`, and
+`findAlphabetBandSuggestions` (including James's exact 3-heading example);
+new `smoke_other_not_last.mjs`, `smoke_other_code.mjs`, and
+`smoke_alphabet_band.mjs` drive each feature end to end through the real
+wizard; full existing regression suite (9 prior smoke scripts plus the
+round-4 word-rule tests) re-run clean.
 
 ---
 
