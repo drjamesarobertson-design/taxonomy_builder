@@ -98,3 +98,40 @@ export function suggestMnemonicCodes(rows: TaxonomyRow[], maxLevel: number, rest
     return { ...row, codes: row.codes.map((c, i) => (i === level ? suggestion : c)) };
   });
 }
+
+// "Fill Codes" (James's round-2 feedback): the mnemonic suggestion above only ever sets a
+// row's OWN column — a heading's code never got carried down through its children's shallower
+// columns the way the rest of the app already expects (Section 4.1's own worked example repeats
+// the ancestor path on every descendant row). This mirrors the existing, already-verified
+// right-click "Replicate Codes Below" — the nearest row above supplies a column's value, which
+// then rolls down through blanks until superseded — except run automatically top to bottom, and
+// keyed off each row's own level (not a scan-order guess) so it only ever touches genuine
+// ancestor columns (index < the row's own level). It never touches a row's own column, and never
+// touches a column deeper than the row's own level — that's Pad Codes' job, not this one's, and
+// blindly cascading into it would leak an unrelated deeper branch's code into a shallower row
+// that never went that far.
+export function fillCodesDown(rows: TaxonomyRow[]): TaxonomyRow[] {
+  const ancestorCodes: string[] = [];
+  return rows.map((row) => {
+    const level = levelOf(row);
+    if (level === -1) return row;
+    const codes = row.codes.map((c, i) => (i < level && !c ? (ancestorCodes[i] ?? c) : c));
+    ancestorCodes[level] = codes[level] ?? '';
+    ancestorCodes.length = level + 1;
+    return { ...row, codes };
+  });
+}
+
+// "Pad Codes" (James's round-2 feedback): every column deeper than a row's own level simply
+// doesn't apply to that row (it doesn't go that deep) and should carry the padding character,
+// same as the padding already used everywhere else in the app (Section 4.4) — not be left blank,
+// and not inherit some other branch's code the way a blind fill-down would. Only fills genuinely
+// blank cells; never overwrites a real code or an existing padding character.
+export function padCodes(rows: TaxonomyRow[], paddingChar: string): TaxonomyRow[] {
+  return rows.map((row) => {
+    const level = levelOf(row);
+    if (level === -1) return row;
+    const codes = row.codes.map((c, i) => (i > level && !c ? paddingChar : c));
+    return { ...row, codes };
+  });
+}

@@ -1,7 +1,14 @@
 import { useState } from 'react';
 import type { CodeRestriction, TaxonomyProject, TaxonomyRow, TaxonomySettings } from './types';
 import { growRowsToLevels } from './types';
-import { countChildrenPerHeading, countHeadings, maxLevelUsed, suggestMnemonicCodes } from './guidance';
+import {
+  countChildrenPerHeading,
+  countHeadings,
+  fillCodesDown,
+  maxLevelUsed,
+  padCodes,
+  suggestMnemonicCodes,
+} from './guidance';
 
 interface GuidanceBannerProps {
   project: TaxonomyProject;
@@ -92,16 +99,37 @@ export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExi
     setCodingPrompt('mnemonic');
   }
 
-  // Applying the coding choice ends the wizard outright (guidance: undefined) — its job was
-  // just to get the codes started, not to keep gating anything past this point. James asked
-  // for real auto-suggested codes here (a deliberate, scoped exception to Section 9.6 — see
-  // guidance.ts), pre-filled directly into ordinary, still fully-editable code cells.
+  // Applying the coding choice sets up the base, per-row codes (James asked for real
+  // auto-suggested codes here — a deliberate, scoped exception to Section 9.6, see guidance.ts
+  // — pre-filled directly into ordinary, still fully-editable code cells) but deliberately
+  // does NOT end the wizard: James's round-2 testing found the ancestor columns still needed
+  // filling in and padding out once the base codes looked right, so the coding stage stays
+  // open with Fill Codes / Pad Codes / Finish rather than closing itself immediately.
   function applyCoding(restriction: CodeRestriction, useMnemonic: boolean) {
     const level = maxLevelUsed(rows);
     const newRows = useMnemonic ? suggestMnemonicCodes(rows, level, restriction) : rows;
-    onSettingsAndRowsChange({ ...project.settings, codeRestriction: restriction, guidance: undefined }, newRows);
+    onSettingsAndRowsChange({ ...project.settings, codeRestriction: restriction }, newRows);
     setCodingPrompt(null);
     setPendingRestriction(null);
+  }
+
+  // Fill Codes / Pad Codes (James's round-2 feedback): the per-row mnemonic suggestion only
+  // ever set a row's own column, leaving every ancestor column blank instead of carrying the
+  // parent's code down (the convention the rest of the app already relies on — Section 4.1's
+  // worked example) and leaving every column deeper than a row's own level blank instead of
+  // padded. Both are deliberate, separately-triggered steps — run once the base codes above
+  // look right, and safe to re-run any time afterwards since both only ever touch genuinely
+  // blank cells.
+  function handleFillCodes() {
+    onSettingsAndRowsChange(project.settings, fillCodesDown(rows));
+  }
+
+  function handlePadCodes() {
+    onSettingsAndRowsChange(project.settings, padCodes(rows, project.settings.paddingChar));
+  }
+
+  function finishCoding() {
+    onSettingsAndRowsChange({ ...project.settings, guidance: undefined }, rows);
   }
 
   const headingCount = countHeadings(rows);
@@ -129,7 +157,9 @@ export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExi
         )}
         {stage === 'coding' && !codingPrompt && (
           <>
-            <strong>Step 3 — Coding.</strong> Enter or adjust the codes for each entry.
+            <strong>Step 3 — Coding.</strong> Enter or adjust the codes for each entry, then use
+            Fill Codes to carry each heading's code down through its own rows, and Pad Codes to
+            mark the rows that don't go any deeper — then Finish when it looks right.
           </>
         )}
       </div>
@@ -143,6 +173,19 @@ export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExi
           <button type="button" onClick={handleSubItemsNext}>
             Next Step →
           </button>
+        )}
+        {stage === 'coding' && !codingPrompt && (
+          <>
+            <button type="button" onClick={handleFillCodes}>
+              Fill Codes
+            </button>
+            <button type="button" onClick={handlePadCodes}>
+              Pad Codes
+            </button>
+            <button type="button" onClick={finishCoding}>
+              Finish
+            </button>
+          </>
         )}
         <button type="button" className="guidance-exit-btn" onClick={onExitGuidance}>
           Exit Guidance
