@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #82, 2026-09-02)
+## Current status (as of PR #84, 2026-09-02)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -43,8 +43,13 @@ further rounds of testing feedback. The tool currently supports, in full:
   the whole sibling range (ahead of the softer, overridable ascending-order
   check, so an exact duplicate there is a hard block); entering a code
   there auto-advances the cursor down. A code typed in the wrong case for
-  the active Code Restriction is auto-corrected instead of rejected, with
-  a one-time Caps Lock notice (PR #80).
+  the active Code Restriction is auto-corrected instead of rejected (PR #80),
+  with a one-time notice explaining the correction — an earlier version of
+  this and the heading-capitalization notice guessed at whether to add
+  "please turn Caps Lock on" via `getModifierState('CapsLock')`, but James
+  found it firing even with Caps Lock genuinely on; removed that guess
+  entirely (PR #84) since both cells force/convert case regardless of the
+  physical key anyway, so the suggestion was never functionally necessary.
 - Undo/redo across all structural and content operations.
 - Notes are **not yet implemented** (Section 6.9 — see "Not yet built" below).
 - Export: CSV and Excel, in both Discrete Columns and Concatenated modes,
@@ -135,19 +140,26 @@ further rounds of testing feedback. The tool currently supports, in full:
   mnemonic-code suggestion is pre-filled directly into the grid, per
   sibling group; suggested codes are ordinary, fully-editable cells from
   that point on, normal overtype and validation, nothing special once
-  written. The suggestion itself follows James's own stated manual
-  practice (PR #82, replacing an earlier "scan every character of the
-  description" version): first letter of the description's own first
-  word; failing that, the first letter of the next significant word
-  (second word, or third if the second is an insignificant one like
-  "by"/"and"); failing that, that word's first and second consonant, then
-  the first and second consonant of the word after that; and if none of
-  that yields a usable, not-already-taken letter, the row is left blank
-  and flagged — "Some entries couldn't get an automatic code — please
-  enter them manually", with the cursor dropped on the first one — rather
-  than falling back to an arbitrary charset letter with no connection to
-  the description. Applies at every level, not just the rightmost column.
-  The coding stage then stays
+  written. Before suggesting anything, any leading words every sibling in
+  a group shares verbatim (typically the heading's own wording, repeated
+  at the start of each child's description) are stripped from all of them
+  first (PR #84) — not just the ones that happen to collide — since using
+  such a word's letter for even the first child wastes it for zero
+  distinguishing benefit and pushes every later sibling toward the end of
+  the alphabet chasing a fallback. What's left follows James's own stated
+  manual practice (PR #84, restating PR #82's version against his precise
+  worked example): first letter of word 1, then word 2, then word 3 (each
+  only if it exists); failing that, word 1's first and second consonant,
+  then word 2's, then word 3's; a short connector-word list (by/and/etc.)
+  is removed from the word list entirely first, not merely skipped, so a
+  connector never supplies a real-but-meaningless, potentially
+  order-breaking letter; and if none of that yields a usable,
+  not-already-taken letter, the row is left blank and flagged — "Some
+  entries couldn't get an automatic code — please enter them manually",
+  with the cursor dropped on the first one — rather than falling back to
+  an arbitrary charset letter with no connection to the description.
+  Applies at every level, not just the rightmost column. The coding stage
+  then stays
   open (round-2 fix, PR #78) for two further deliberate steps: **Fill
   Codes** carries each heading's own code down through its child rows'
   otherwise-blank ancestor columns (mirroring the existing "Replicate
@@ -841,6 +853,68 @@ extended `unit_guidance.mjs` for the word rule's priority steps
 (including the stopword-skip case) and `findRowsNeedingManualCode`, new
 `smoke_wizard_word_rule.mjs` for the manual-entry notice end to end; full
 existing regression suite re-run clean.
+
+### Caps Lock false-positive fix; shared sibling-group prefix stripping (PR #84)
+James's fourth round, continuing to build out his real ASCO Credit Note
+Reasons taxonomy. Two things:
+
+1. Typing into the very first description cell with Caps Lock genuinely
+   on still triggered "please turn Caps Lock on". Both that notice and
+   the PR #80 code-case auto-correction notice relied on
+   `KeyboardEvent.getModifierState('CapsLock')`, tracked passively from
+   whatever typing happens anywhere in the grid, to guess whether to
+   append the suggestion. Rather than chase why that guess misfired (not
+   independently verifiable from here, and the physical key was never
+   actually load-bearing — both cells force or convert case regardless),
+   removed the guess entirely from both notices, keeping the plain
+   explanatory text.
+2. His own worked example: three children under "ORDER CANCELLED" — all
+   starting "Order Cancelled..." — kept getting suggested "O" or "C" for
+   every one of them, even the first, because nothing yet told the
+   algorithm those two words were shared, meaningless boilerplate rather
+   than genuine first-choice content. His exact words: "First Column code
+   picks Order even though O pushes the available codes lower down to the
+   end of the alphabet which does not work I used C for Cancelled — first
+   letter of second word." Added `computeSharedPrefixLengths`: for each
+   sibling group — determined from row structure (nearest shallower row
+   above each row, i.e. its actual parent), not from parent *codes*, which
+   are normally still blank at this point since Fill Codes hasn't run yet
+   — finds how many leading words every member's description starts with
+   in common (case-insensitively) and strips that many for every sibling
+   before suggesting, not just the ones a collision happens to force
+   further down the fallback chain. Also restated `suggestUnusedCode`'s
+   priority order to match James's more precise round-4 rule: word 1's
+   first letter, then word 2's, then word 3's; then word 1's first and
+   second consonant, then word 2's, then word 3's; then leave blank. Kept
+   PR #82's connector-word filter (by/and/etc.) — without it, "Order
+   Cancelled BY Consumer" would offer "B" as a real candidate, which
+   isn't just meaningless but can land earlier in the alphabet than an
+   already-used sibling code and break ascending order for no reason —
+   filtering removes it from the word list entirely now, rather than
+   skipping-with-fallback-to-the-next-word as PR #82 did. Verified against
+   his exact repro: produces C / N / S for the three children — distinct,
+   ascending, each traceable to a real letter in its own description, but
+   not byte-identical to his hand-picked C / S / T. Documented that gap
+   plainly (in the PR and back to James) rather than quietly forcing a
+   match: the consonant-counting mechanics land on the *first* available
+   consonant each time, where his own picks seem to have skipped one
+   further for reasons not fully recoverable from the example alone — he
+   was clear this "particularly tricky example" was as much an invitation
+   to see what the stated rule actually produces as a request to match it
+   exactly.
+
+Also re-attempted (unprompted, before writing up the response) the
+still-unreproduced Fill Codes-after-overtype bug from PR #82/#83 against
+this new algorithm's actual output plus an overtype-and-Override
+sequence on the real dataset — still could not make Fill Codes fail.
+Continues to await exact repro steps or the project file from James.
+New/updated tests: `unit_guidance.mjs` gained James's exact 4-row repro,
+a same-group-different-heading prefix case, a connector-word-only
+isolation case, and an updated single-word-collision case (many now
+resolve via word-1's own consonants rather than needing manual entry,
+per the restated rule); `smoke_wizard_word_rule.mjs` rewritten around the
+real repro; new `smoke_wizard_manual_entry.mjs` for the genuine
+"nothing works" fallback. Full existing regression suite re-run clean.
 
 ---
 
