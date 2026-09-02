@@ -60,54 +60,34 @@ async function storeHandle(handle: FileSystemDirectoryHandle): Promise<void> {
 
 let cachedHandle: FileSystemDirectoryHandle | null = null;
 
-// queryPermission/requestPermission can reject outright rather than resolving to "denied" —
-// e.g. requestPermission needs an active user gesture, and one can easily have expired by the
-// time this runs (a dynamic import earlier in the same export, for instance). Treating any
-// such rejection as "not available" — instead of letting it propagate — is what keeps a
-// permission hiccup from silently hanging the whole export.
-async function verifyPermission(handle: FileSystemDirectoryHandle): Promise<boolean> {
-  try {
-    const opts = { mode: 'readwrite' as const };
-    if ((await handle.queryPermission(opts)) === 'granted') return true;
-    if ((await handle.requestPermission(opts)) === 'granted') return true;
-    return false;
-  } catch {
-    return false;
-  }
-}
+// One-shot: set by chooseExportFolder(), consumed by the very next successful saveExportFile()
+// call, then cleared. James reported the Save dialog kept reopening in a stale, days-old
+// default even right after explicitly navigating to a different folder for that save — root
+// cause was this being treated as a *permanent* override, applied to literally every future
+// save forever, rather than a one-time "start here next" nudge. It should only steer the ONE
+// save right after a deliberate "Choose Export Folder" pick; after that, `saveExportFile`'s own
+// `id` already reflects wherever the user has actually been saving (updated automatically by
+// the browser on every real save, with no extra bookkeeping needed here) — which is exactly
+// "the latest folder" the user wants remembered, and a stale explicit pick must never be able to
+// keep overriding it indefinitely.
+let pendingExplicitFolder: FileSystemDirectoryHandle | null = null;
 
-/** Lets the user pick (or replace) the folder Save/Export writes to; remembered for next time.
- * Reopens starting at the currently remembered folder, if there is one, rather than the
- * browser's own default starting location. */
+/** Lets the user pick (or replace) the folder the very NEXT Save/Export starts in; remembered
+ * (its name, for display) across the session and, via IndexedDB, across reloads. Reopens
+ * starting at the currently remembered folder, if there is one, rather than the browser's own
+ * default starting location. */
 export async function chooseExportFolder(): Promise<FileSystemDirectoryHandle | null> {
   if (!supportsFileSystemAccess()) return null;
   try {
     const startIn = cachedHandle ?? (await loadStoredHandle()) ?? undefined;
     const handle = await window.showDirectoryPicker!({ id: 'taxonomy-builder-exports', ...(startIn ? { startIn } : {}) });
     cachedHandle = handle;
+    pendingExplicitFolder = handle;
     await storeHandle(handle);
     return handle;
   } catch {
     return null; // user cancelled the picker, or it couldn't be shown
   }
-}
-
-/** The remembered folder, with permission already verified — without prompting to pick one if
- * there isn't one yet. Used as a starting-location hint for the per-save "Save As" dialog, so
- * it's fine for this to come back empty; the dialog itself still lets the user browse anywhere. */
-async function peekVerifiedFolder(): Promise<FileSystemDirectoryHandle | null> {
-  try {
-    if (!supportsFileSystemAccess()) return null;
-    if (cachedHandle && (await verifyPermission(cachedHandle))) return cachedHandle;
-    const stored = await loadStoredHandle();
-    if (stored && (await verifyPermission(stored))) {
-      cachedHandle = stored;
-      return stored;
-    }
-  } catch {
-    // Falls through to null below.
-  }
-  return null;
 }
 
 /** The remembered folder's name, without prompting for permission — for a UI label only. */
@@ -131,9 +111,10 @@ function acceptTypesFor(filename: string, mimeType: string): FilePickerAcceptTyp
 /**
  * Saves a blob via the browser's native "Save As" dialog — filename and destination folder are
  * the user's choice every time, not fixed to one remembered folder — starting, when the browser
- * supports it, in whichever folder was set via "Choose Export Folder" (a default location, not
- * a silent destination). Falls back to a normal browser download when the picker API isn't
- * supported (Firefox, Safari) or the save otherwise can't go through the picker.
+ * supports it, wherever the previous save actually went (or, right after an explicit "Choose
+ * Export Folder" pick, that folder — see `pendingExplicitFolder` above). Falls back to a normal
+ * browser download when the picker API isn't supported (Firefox, Safari) or the save otherwise
+ * can't go through the picker.
  *
  * `usedFolder` tells a caller showing "Folder: X" in its UI whether the remembered default is
  * still worth trusting (a permission lapse etc. would make that label inaccurate). `cancelled`
@@ -145,23 +126,24 @@ export async function saveExportFile(
   filename: string,
 ): Promise<{ usedFolder: boolean; cancelled: boolean }> {
   if (supportsSaveFilePicker()) {
+    // A fixed `id` is what makes Chromium remember the *last folder actually used*, on its own,
+    // across every Save/Export call — updated automatically to wherever the user just saved on
+    // every successful pick, with or without `startIn`. `pendingExplicitFolder` is only ever
+    // set right after "Choose Export Folder" and is consumed below on success, so it can steer
+    // exactly the one save right after a deliberate pick without pinning every future save to
+    // it — that permanent pin was the actual bug (a folder picked once, days ago, keeps winning
+    // over the id's own steadily-more-current memory forever). One shared id across
+    // Save/CSV/XLSX/block-transfer (all funnel through this one function) is deliberate: they're
+    // overwhelmingly the same working folder in practice.
+    const startIn = pendingExplicitFolder ?? undefined;
     try {
-      const startIn = (await peekVerifiedFolder()) ?? undefined;
-      // A fixed `id` is what makes Chromium remember the *last folder actually used*, on its
-      // own, across every Save/Export call — independent of "Choose Export Folder" above. James
-      // reported the picker kept reopening in a stale default rather than wherever the previous
-      // save went; `startIn` alone can't fix that (it only ever points at the one folder chosen
-      // via that menu action, which most saves never touch), but the picker updates its own
-      // per-id memory to the folder the user just saved into on every successful call, with or
-      // without `startIn` — so the very next save reopens there automatically. One shared id
-      // across Save/CSV/XLSX/block-transfer (all funnel through this one function) is deliberate:
-      // they're overwhelmingly the same working folder in practice.
       const handle = await window.showSaveFilePicker!({
         id: 'taxonomy-builder-save',
         suggestedName: filename,
         types: acceptTypesFor(filename, blob.type),
         ...(startIn ? { startIn } : {}),
       });
+      pendingExplicitFolder = null;
       const writable = await handle.createWritable();
       await writable.write(blob);
       await writable.close();

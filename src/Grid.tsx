@@ -429,11 +429,15 @@ export default function Grid({
   // bound skips any row that the cascade below will sweep up (blank, or smaller than char)
   // since those aren't real boundaries — only a row that will survive the cascade is.
   function findOrderBounds(editIndex: number, level: number, char: string) {
-    const parentValue = level > 0 ? (rows[editIndex].codes[level - 1] ?? '') : null;
+    const parent = level > 0 ? immediateParentIndex(editIndex) : null;
 
     let upper: string | null = null;
     for (let i = editIndex - 1; i >= 0; i--) {
-      if (parentValue !== null && (rows[i].codes[level - 1] ?? '') !== parentValue) break;
+      const li = levelOf(rows[i]);
+      if (li === -1) continue;
+      if (li < level) break; // walked past this group's own parent — exited the segment
+      if (li > level) continue; // a deeper descendant of an earlier sibling — not a bound itself
+      if (parent !== null && immediateParentIndex(i) !== parent) break; // a different segment
       const v = rows[i].codes[level] ?? '';
       if (v !== '') {
         upper = v;
@@ -447,7 +451,11 @@ export default function Grid({
     const isRightmost = level === numLevels - 1;
     let lower: string | null = null;
     for (let i = editIndex + 1; i < rows.length; i++) {
-      if (parentValue !== null && (rows[i].codes[level - 1] ?? '') !== parentValue) break;
+      const li = levelOf(rows[i]);
+      if (li === -1) continue;
+      if (li < level) break;
+      if (li > level) continue;
+      if (parent !== null && immediateParentIndex(i) !== parent) break;
       const v = rows[i].codes[level] ?? '';
       if (v === '' || (!isRightmost && v.charCodeAt(0) < char.charCodeAt(0))) continue; // will be swept up by the cascade
       lower = v;
@@ -565,8 +573,6 @@ export default function Grid({
       }
     }
 
-    const parentValue = level > 0 ? (rows[editIndex].codes[level - 1] ?? '') : null;
-
     // No code — real or "." padding — can exist to the right of the deepest description
     // written anywhere in the taxonomy; there's no level of hierarchy deeper than that yet.
     const maxDescCol = getMaxDescriptionColumn();
@@ -585,9 +591,11 @@ export default function Grid({
     // cascades (below), it has to scan the whole sibling range itself rather than relying on
     // a cascade to have already kept things apart.
     if (char !== '' && !isPadding && level === numLevels - 1 && char !== oldValue) {
+      const parent = level > 0 ? immediateParentIndex(editIndex) : null;
       const collides = rows.some((row, idx) => {
         if (idx === editIndex) return false;
-        if (parentValue !== null && (row.codes[level - 1] ?? '') !== parentValue) return false;
+        if (levelOf(row) !== level) return false;
+        if (parent !== null && immediateParentIndex(idx) !== parent) return false;
         const v = row.codes[level] ?? '';
         return v !== '' && v !== paddingChar && v === char;
       });
@@ -661,6 +669,7 @@ export default function Grid({
         if (idx === editIndex) return applyCode(row);
         if (!cascadeActive) return row;
         const rowParent = level > 0 ? (row.codes[level - 1] ?? '') : null;
+        const parentValue = level > 0 ? (rows[editIndex].codes[level - 1] ?? '') : null;
         if (parentValue !== null && rowParent !== parentValue) {
           cascadeActive = false;
           return row;
@@ -1855,6 +1864,27 @@ export default function Grid({
   function levelOf(row: TaxonomyRow): number {
     for (let i = row.descriptions.length - 1; i >= 0; i--) {
       if ((row.descriptions[i] ?? '').trim()) return i;
+    }
+    return -1;
+  }
+
+  // The row index of idx's nearest shallower row above it — its actual parent by STRUCTURE, not
+  // by matching a code value. James's "ERROR ON CODE FOR FIRST IN SEGMENT" repro: during the
+  // Simple Taxonomy wizard's coding stage, every not-yet-Fill-Codes'd child row's ancestor
+  // column genuinely reads "" — the same blank value for every segment in the whole taxonomy —
+  // so grouping siblings by `codes[level-1] === parentValue` (the old approach here and in
+  // findOrderBounds/the rightmost-column duplicate check below) collapsed every segment's
+  // children into one giant false "sibling group" sharing that blank parent value. A code
+  // that only collided with an unrelated heading's child several segments away (both
+  // legitimately using the same mnemonic letter, since letters recur across independent
+  // segments) then read as a same-segment duplicate or an ascending-order violation, blocking
+  // entry outright with no way through until Fill Codes happened to carry the real ancestor
+  // codes down and made the code-based grouping accidentally correct again.
+  function immediateParentIndex(idx: number): number {
+    const level = levelOf(rows[idx]);
+    for (let i = idx - 1; i >= 0; i--) {
+      const l = levelOf(rows[i]);
+      if (l !== -1 && l < level) return i;
     }
     return -1;
   }
