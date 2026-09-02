@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #86, 2026-09-02)
+## Current status (as of PR #88, 2026-09-02)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -42,7 +42,15 @@ further rounds of testing feedback. The tool currently supports, in full:
   holds its own distinct leaf identifier — and its uniqueness check scans
   the whole sibling range (ahead of the softer, overridable ascending-order
   check, so an exact duplicate there is a hard block); entering a code
-  there auto-advances the cursor down. A code typed in the wrong case for
+  there auto-advances the cursor down. Both that duplicate check and the
+  ascending-order bounds check scope "the sibling range" by row structure
+  (nearest shallower row = actual parent), not by comparing ancestor code
+  values (PR #88) — the latter collapsed every not-yet-Fill-Codes'd
+  segment in the whole taxonomy into one false group, since every child
+  row's blank ancestor column reads the same "" regardless of which
+  heading it's actually under, hard-blocking a code that only happened to
+  match an unrelated segment's own (entirely legitimate) reuse of the same
+  mnemonic letter. A code typed in the wrong case for
   the active Code Restriction is auto-corrected instead of rejected (PR #80),
   with a one-time notice explaining the correction — an earlier version of
   this and the heading-capitalization notice guessed at whether to add
@@ -58,11 +66,17 @@ further rounds of testing feedback. The tool currently supports, in full:
   columns, literal "." filter on code columns).
 - Save/load as a local JSON project file, with the File System Access API's
   native Save As dialog on Chromium, and a plain download fallback
-  elsewhere. The dialog now remembers the last folder actually used across
+  elsewhere. The dialog remembers the last folder actually used across
   every Save/Export call, via a fixed picker `id` (PR #86) — the existing
   "Choose Export Folder" `startIn` hint only ever covered the one folder
   explicitly chosen through that menu action, not the common case of
-  picking a folder ad hoc in the dialog itself.
+  picking a folder ad hoc in the dialog itself. That explicit pick is now
+  one-shot (PR #88) — consumed by the very next successful save, then
+  cleared — since passing it as `startIn` on *every* future save (the
+  PR #86 fix's own oversight) permanently overrode the `id`'s own
+  continuously-updating memory of wherever the user actually last saved,
+  which is exactly what kept reopening the dialog on a stale, days-old
+  default.
 - Settings screen to revisit title/purpose/description-length/padding/
   delimiter/code-column-count after creation; right-click Add/Delete Column.
 - Create Block / Import Block for moving content between separate taxonomy
@@ -460,6 +474,69 @@ new `smoke_other_not_last.mjs`, `smoke_other_code.mjs`, and
 `smoke_alphabet_band.mjs` drive each feature end to end through the real
 wizard; full existing regression suite (9 prior smoke scripts plus the
 round-4 word-rule tests) re-run clean.
+
+### Cross-segment code collisions before Fill Codes, one-shot export folder (PR #88)
+James finally supplied the missing piece for the "Fill Codes"/blank-code
+reports that had gone unreproduced across three prior rounds: a saved
+project file captured mid-error (`Test 27 Credit Note Reason Codes ...
+ERROR_ON_CODE_FOR_FIRST_IN_SEGMENT.json`), with his exact narration —
+"SUPPLY ISSUES / Order Duplication at the top of the segment auto codes
+'O', overtype or delete to enter 'D' get [an error] ... No matter what I
+do I get this error and cannot code that cell – the message give OK but
+needs to give 'Override' as well. The error also refers to 'delimited by
+"."' but there are no '.' at this point in the wizard."
+
+Root cause, found directly against the file: Grid.tsx's rightmost-column
+duplicate check and its ascending-order bounds check (`findOrderBounds`)
+both determined "which rows are this row's siblings" by comparing each
+row's own ancestor code value (`codes[level-1]`) to the edited row's. In
+the wizard's coding stage, before Fill Codes has run, every not-yet-filled
+child row's ancestor column genuinely reads `""` — the *same* blank value
+for every segment in the entire taxonomy, not just the one being edited
+— so both checks treated all of them as one giant false sibling group. His
+"Order Duplication" (first child of "SUPPLY ISSUES") collided on "D" with
+"Defective Product" and "Discontinued", both children of entirely
+different headings several segments away — a completely legitimate reuse
+of the same mnemonic letter, wrongly caught by a hard, no-override
+duplicate check that was never supposed to compare across segments at all.
+
+Fixed by scoping both checks the way `guidance.ts`'s mnemonic suggestion
+already does (PR #84's own fix for the identical class of bug there): by
+row *structure* — the nearest shallower row is a row's actual parent,
+regardless of what code value that parent currently holds — via a new
+`immediateParentIndex` helper. Once the false hard block was gone, the
+softer, already-overridable ascending-order check (re-scoped the same
+way) correctly took over for the genuine, if pre-existing, ordering
+question underneath (SUPPLY ISSUES' own children were already out of
+strict order as a block) — which is exactly what resolves James's
+"needs to give Override as well" ask, without adding an override to the
+hard duplicate check itself, which should stay a hard block once it's
+actually comparing the right rows. Left the "delimited by '.'" message
+wording alone, since it was never really about literal padding characters
+being present yet — it was purely a symptom of the false trigger, which
+no longer fires for this case.
+
+Separately fixed a real regression in last round's own save-folder fix:
+PR #86 added a fixed `id` to the native Save As picker (the mechanism
+Chromium actually uses to remember the last folder used across calls),
+but left the OLD `startIn` hint — sourced from whatever folder was ever
+explicitly set via "Choose Export Folder" — being passed on *every*
+subsequent save, which permanently pins the dialog to that one folder
+forever, overriding the `id`'s own steadily-more-current memory. Exactly
+James's "still points to the default of yesterday" report. Made the
+explicit pick one-shot (`pendingExplicitFolder` in `exportFolder.ts`):
+consumed by the very next successful save, then cleared, so a folder
+picked once doesn't keep winning over wherever the user has actually been
+saving since. Updated the toolbar button's tooltip to describe this
+honestly ("Sets where your next Save/Export starts — after that, it
+reopens wherever you last saved").
+
+New `smoke_first_in_segment.mjs` loads James's actual uploaded file and
+drives the exact repro end to end: confirms the false "must be unique"
+hard block is gone, the code is successfully entered (via the legitimate
+Override prompt underneath), unrelated segments' own "D"s are untouched,
+and a genuine same-segment duplicate is still hard-blocked. Full existing
+regression suite (14 prior smoke scripts) re-run clean.
 
 ---
 
