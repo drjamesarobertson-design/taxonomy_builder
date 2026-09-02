@@ -48,73 +48,118 @@ export function maxLevelUsed(rows: TaxonomyRow[]): number {
   return rows.reduce((max, row) => Math.max(max, levelOf(row)), 0);
 }
 
-// Small, deliberately short list — words common enough in a business description to carry no
-// distinguishing meaning of their own. Not exhaustive by design (James's own phrase was "NOT
-// by, and, etcetera") — extend it if a real taxonomy needs more.
-const INSIGNIFICANT_WORDS = new Set([
-  'by', 'and', 'or', 'of', 'the', 'a', 'an', 'to', 'in', 'on', 'for', 'with', 'from', 'as', 'at',
-]);
-
 function isConsonant(upperChar: string): boolean {
   return /^[A-Z]$/.test(upperChar) && !'AEIOU'.includes(upperChar);
 }
 
-// James's round-3 feedback: not truly "phonetic" (his word) — a consonant picked from a
-// distinguishing word later in the description, chosen so the resulting code stays unique and
-// keeps ascending order within its sibling group, tried in this priority order (his own rule,
-// stated directly rather than reverse-engineered from an example):
-//   1. First letter of the description's own first word (today's simple default).
-//   2. First letter of the next SIGNIFICANT word — the second word if it's not an
-//      insignificant one like "by"/"and", otherwise the third word.
-//   3. The first, then second, consonant of that same word.
-//   4. The first, then second, consonant of the word after that, if there is one.
-//   5. Nothing usable — leave the row blank so it can be flagged for manual entry (see
-//      findRowsNeedingManualCode) rather than falling back to an arbitrary charset letter that
-//      no longer has anything to do with the description.
-function suggestUnusedCode(description: string, used: Set<string>, restriction: CodeRestriction): string | null {
+function wordsOf(description: string): string[] {
+  return description.split(/\s+/).filter((w) => w.length > 0);
+}
+
+// Small, deliberately short list — grammatical connectors that carry no distinguishing meaning
+// of their own (James's round-2 phrase: "NOT by, and, etcetera"). Removed from a row's word
+// list entirely before the word-1/2/3 rule runs, rather than merely skipped-with-fallback —
+// otherwise "Order Cancelled BY Consumer" would offer up "B" as a real candidate, which not
+// only isn't meaningful but can land earlier in the alphabet than an already-used sibling code
+// and break ascending order for no good reason. Not exhaustive by design — extend it if a real
+// taxonomy needs more.
+const CONNECTOR_WORDS = new Set([
+  'by', 'and', 'or', 'of', 'the', 'a', 'an', 'to', 'in', 'on', 'for', 'with', 'from', 'as', 'at',
+]);
+
+// James's round-4 restatement, tried in this exact order against a row's own description
+// (after stripWordsSharedByWholeGroup below has already dropped any leading words every
+// sibling starts with — his own repro: with the leading words still in, the first child under
+// "ORDER CANCELLED" picks "O" from "Order", which "pushes the available codes lower down to
+// the end of the alphabet" for every later sibling, since every one of them starts with the
+// same two words):
+//   1. First letter of word 1.
+//   2. First letter of word 2, if there is one.
+//   3. First letter of word 3, if there is one.
+//   4. First consonant within word 1.
+//   5. Second consonant within word 1.
+//   6. First consonant within word 2, if there is one.
+//   7. Second consonant within word 2.
+//   8. First consonant within word 3, if there is one.
+//   9. Second consonant within word 3.
+// If none of those nine produces a letter that's both allowed and not already used by an
+// earlier sibling, the row is left blank (findRowsNeedingManualCode flags it) rather than
+// falling back to an arbitrary charset letter with no connection to the description.
+function suggestUnusedCode(words: string[], used: Set<string>, restriction: CodeRestriction): string | null {
   const upperCase = restriction !== 'Alpha Both Cases Only' && restriction !== 'Alpha Numeric with All Alpha';
   const tryChar = (raw: string): string | null => {
     const char = upperCase ? raw.toUpperCase() : raw;
     return !used.has(char) && isAllowedByCodeRestriction(char, restriction) ? char : null;
   };
-  const consonantsOf = (word: string): string[] => [...word].filter((c) => isConsonant(c.toUpperCase()));
+  // A word's own first letter is tried separately (steps 1-3) before its consonants (steps
+  // 4+), so the consonant search starts one character in — retrying the same letter twice
+  // would just repeat the same failure.
+  const consonantsAfterFirst = (word: string): string[] => [...word.slice(1)].filter((c) => isConsonant(c.toUpperCase()));
 
-  const words = description.split(/\s+/).filter((w) => w.length > 0);
-  if (words.length === 0) return null;
-
-  const firstWordAttempt = tryChar(words[0][0]);
-  if (firstWordAttempt) return firstWordAttempt;
-
-  // "Second word, or third if the second isn't significant" — checked at most one word further,
-  // matching James's own two-step description rather than skipping arbitrarily many stopwords.
-  let significantIndex = -1;
-  for (let i = 1; i <= 2 && i < words.length; i++) {
-    if (!INSIGNIFICANT_WORDS.has(words[i].toLowerCase())) {
-      significantIndex = i;
-      break;
-    }
+  for (let i = 0; i < 3; i++) {
+    if (!words[i]) continue;
+    const attempt = tryChar(words[i][0]);
+    if (attempt) return attempt;
   }
-  const significantWord = significantIndex !== -1 ? words[significantIndex] : null;
-
-  if (significantWord) {
-    const wordAttempt = tryChar(significantWord[0]);
-    if (wordAttempt) return wordAttempt;
-    for (const consonant of consonantsOf(significantWord.slice(1)).slice(0, 2)) {
+  for (let i = 0; i < 3; i++) {
+    if (!words[i]) continue;
+    for (const consonant of consonantsAfterFirst(words[i]).slice(0, 2)) {
       const attempt = tryChar(consonant);
       if (attempt) return attempt;
     }
   }
-
-  const nextIndex = (significantIndex !== -1 ? significantIndex : 2) + 1;
-  const nextWord = words[nextIndex];
-  if (nextWord) {
-    for (const consonant of consonantsOf(nextWord).slice(0, 2)) {
-      const attempt = tryChar(consonant);
-      if (attempt) return attempt;
-    }
-  }
-
   return null;
+}
+
+// James's round-4 report: "First Column code picks Order even though O pushes the available
+// codes lower down to the end of the alphabet ... which does not work" — every child under one
+// heading starting with the same word(s) (typically because it's the heading's own wording
+// repeated verbatim) means using that word's letter for ANY of them, even the very first,
+// wastes it for zero distinguishing benefit and forces every later sibling further down the
+// alphabet chasing consonants. Finds, for each sibling group (rows sharing the same immediate
+// parent ROW — not parent CODE, which is usually still blank at this point, before Fill Codes
+// has run), how many of their OWN leading words are identical (case-insensitively) across
+// EVERY member of the group, so suggestUnusedCode can skip them for all siblings alike, not
+// just the ones where a collision happens to force a fallback. Always leaves at least one word
+// per row, even if that means the "shared" prefix isn't quite as long as it could be for some.
+function computeSharedPrefixLengths(rows: TaxonomyRow[]): Map<string, number> {
+  function immediateParentIndex(idx: number): number {
+    const level = levelOf(rows[idx]);
+    for (let i = idx - 1; i >= 0; i--) {
+      const l = levelOf(rows[i]);
+      if (l !== -1 && l < level) return i;
+    }
+    return -1;
+  }
+
+  const groups = new Map<string, TaxonomyRow[]>();
+  rows.forEach((row, idx) => {
+    const level = levelOf(row);
+    if (level === -1) return;
+    const key = `${level}:${immediateParentIndex(idx)}`;
+    const group = groups.get(key);
+    if (group) group.push(row);
+    else groups.set(key, [row]);
+  });
+
+  const result = new Map<string, number>();
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const wordLists = group.map((r) => wordsOf(r.descriptions[levelOf(r)] ?? ''));
+    const minLen = Math.min(...wordLists.map((w) => w.length));
+    let shared = 0;
+    while (
+      shared < minLen &&
+      wordLists.every((w) => w[shared].toLowerCase() === wordLists[0][shared].toLowerCase())
+    ) {
+      shared++;
+    }
+    const cappedShared = Math.min(shared, minLen - 1);
+    if (cappedShared > 0) {
+      for (const row of group) result.set(row.id, cappedShared);
+    }
+  }
+  return result;
 }
 
 /** Rows whose description (at their own level) suggestMnemonicCodes left without a code — step
@@ -140,6 +185,7 @@ export function findRowsNeedingManualCode(rows: TaxonomyRow[]): { rowId: string;
 // Ascending Order" (existing right-click action) is the way to spot and fix the rare case
 // where it doesn't.
 export function suggestMnemonicCodes(rows: TaxonomyRow[], maxLevel: number, restriction: CodeRestriction): TaxonomyRow[] {
+  const sharedPrefixLengths = computeSharedPrefixLengths(rows);
   const usedAtLevel: Set<string>[] = Array.from({ length: maxLevel + 1 }, () => new Set<string>());
   let prevLevel = -1;
   return rows.map((row) => {
@@ -163,7 +209,10 @@ export function suggestMnemonicCodes(rows: TaxonomyRow[], maxLevel: number, rest
       usedAtLevel[level].add(existing);
       return row;
     }
-    const suggestion = suggestUnusedCode(row.descriptions[level] ?? '', usedAtLevel[level], restriction);
+    const words = wordsOf(row.descriptions[level] ?? '')
+      .slice(sharedPrefixLengths.get(row.id) ?? 0)
+      .filter((w) => !CONNECTOR_WORDS.has(w.toLowerCase()));
+    const suggestion = suggestUnusedCode(words, usedAtLevel[level], restriction);
     if (!suggestion) return row;
     usedAtLevel[level].add(suggestion);
     return { ...row, codes: row.codes.map((c, i) => (i === level ? suggestion : c)) };

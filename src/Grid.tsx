@@ -122,17 +122,15 @@ export default function Grid({
   // firing only once ever.
   const [showCapsNotice, setShowCapsNotice] = useState(false);
   const capsNoticeShownRef = useRef(false);
-  // The physical Caps Lock key's last-known state, tracked from real keystrokes anywhere in
-  // the grid — browsers only expose it via KeyboardEvent.getModifierState, so it can't be
-  // queried on demand; null means "no keystroke observed yet, state unknown".
-  const capsLockOnRef = useRef<boolean | null>(null);
-  const [capsNoticeSuggestCapsLock, setCapsNoticeSuggestCapsLock] = useState(false);
   // A one-time notice the first time a code character's case is silently auto-corrected to
-  // match the taxonomy's Code Restriction (James's ask: typing continues smoothly either way,
-  // but a nudge to just turn Caps Lock on saves having to rely on the auto-correction at all).
+  // match the taxonomy's Code Restriction (James's ask: typing continues smoothly either way).
+  // Earlier versions of both this and the heading notice above suggested "turn Caps Lock on"
+  // based on KeyboardEvent.getModifierState('CapsLock') — James reported that firing even with
+  // Caps Lock genuinely on, and since both cells force/convert case regardless of the physical
+  // key anyway, the suggestion was never load-bearing — dropped rather than chasing a browser
+  // modifier-state quirk that can't be verified from here.
   const [showCodeCaseNotice, setShowCodeCaseNotice] = useState(false);
   const codeCaseNoticeShownRef = useRef(false);
-  const [codeCaseNoticeSuggestCapsLock, setCodeCaseNoticeSuggestCapsLock] = useState(false);
   // Right-click toggle: when on, Down Arrow in a description cell always inserts a new row
   // immediately beneath the current one and focuses it (like Insert Row Below), rather than
   // only doing that at the very last row — James found the "necessary" right-click detour
@@ -304,19 +302,6 @@ export default function Grid({
     };
     window.addEventListener('mouseup', endDrag);
     return () => window.removeEventListener('mouseup', endDrag);
-  }, []);
-
-  useEffect(() => {
-    // Caps Lock state has no on-demand query — only a live KeyboardEvent exposes it — so it's
-    // tracked passively from whatever typing happens anywhere in the grid, ready by the time
-    // the one-time capitalization notice needs it.
-    const trackCapsLock = (e: KeyboardEvent) => {
-      if (typeof e.getModifierState === 'function') {
-        capsLockOnRef.current = e.getModifierState('CapsLock');
-      }
-    };
-    window.addEventListener('keydown', trackCapsLock);
-    return () => window.removeEventListener('keydown', trackCapsLock);
   }, []);
 
   useEffect(() => {
@@ -532,7 +517,6 @@ export default function Grid({
         char = flipped;
         if (!codeCaseNoticeShownRef.current) {
           codeCaseNoticeShownRef.current = true;
-          setCodeCaseNoticeSuggestCapsLock(capsLockOnRef.current === false);
           setTimeout(() => setShowCodeCaseNotice(true), 0);
         }
       }
@@ -2353,7 +2337,6 @@ export default function Grid({
                               // finishes — swallowing that click instead of acting on it.
                               if (!capsNoticeShownRef.current && (row.descriptions[0] ?? '').trim()) {
                                 capsNoticeShownRef.current = true;
-                                setCapsNoticeSuggestCapsLock(capsLockOnRef.current === false);
                                 setTimeout(() => setShowCapsNotice(true), 0);
                               }
                             }
@@ -2735,10 +2718,7 @@ export default function Grid({
               e.stopPropagation();
             }}
           >
-            <p>
-              All headings should be capitalized
-              {capsNoticeSuggestCapsLock ? ' — please turn Caps Lock on.' : ''}
-            </p>
+            <p>All headings should be capitalized.</p>
             <button type="button" onClick={() => setShowCapsNotice(false)}>
               OK
             </button>
@@ -2749,11 +2729,7 @@ export default function Grid({
       {showCodeCaseNotice && (
         <div className="validation-overlay" onClick={() => setShowCodeCaseNotice(false)}>
           <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
-            <p>
-              Codes typed in the wrong case are automatically converted to match this
-              taxonomy's Code Restriction
-              {codeCaseNoticeSuggestCapsLock ? ' — please turn Caps Lock on.' : '.'}
-            </p>
+            <p>Codes typed in the wrong case are automatically converted to match this taxonomy's Code Restriction.</p>
             <button type="button" onClick={() => setShowCodeCaseNotice(false)}>
               OK
             </button>
