@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #78, 2026-09-02)
+## Current status (as of PR #80, 2026-09-02)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -28,9 +28,23 @@ further rounds of testing feedback. The tool currently supports, in full:
   colour coding, ALL CAPS/Proper Case, per Section 4.
 - Full editing: case toggle, promote/demote (single entry or with children),
   alpha sort, drag/manual reorder, insert/delete row, Move, Copy Rows.
+  Insert Row Above/Below and Delete Row both work on a multi-row selection
+  (Insert relative to the top of the range either way; Delete removes every
+  selected row, with its own subtree, after one "Delete N rows?" confirm —
+  PR #80 fix, it previously only ever acted on the single row right-clicked
+  or inserted below the bottom of the range). A right-click "Add Row on
+  Down Arrow" toggle (PR #80) makes Down Arrow insert-and-focus a new row
+  beneath the current one anywhere, not just at the very last row.
 - Code validation: charset, left-to-right population, ASCII ascending order
   (with Override), the "0" soft warning, and a hard cross-block duplicate
-  check on the deepest column.
+  check on the deepest column. The deepest (rightmost) column never
+  cascades a real code down to blank rows below it (PR #80) — each row
+  holds its own distinct leaf identifier — and its uniqueness check scans
+  the whole sibling range (ahead of the softer, overridable ascending-order
+  check, so an exact duplicate there is a hard block); entering a code
+  there auto-advances the cursor down. A code typed in the wrong case for
+  the active Code Restriction is auto-corrected instead of rejected, with
+  a one-time Caps Lock notice (PR #80).
 - Undo/redo across all structural and content operations.
 - Notes are **not yet implemented** (Section 6.9 — see "Not yet built" below).
 - Export: CSV and Excel, in both Discrete Columns and Concatenated modes,
@@ -131,8 +145,20 @@ further rounds of testing feedback. The tool currently supports, in full:
   both leave a row's own code column and any already-filled cell alone,
   and both stay correct at any depth, not just Simple Taxonomy's two
   levels. **Finish** ends the wizard once these look right. "Exit
-  Guidance" drops out to full unrestricted editing at any stage. The other
-  four guided levels (Intermediate/Advanced/Chart of Accounts/Item Master)
+  Guidance" drops out to full unrestricted editing at any stage. The
+  coding stage's Numeric/Alpha choice is now the full Code Restriction
+  dropdown (round-2 fix, PR #80) — the same five options as the main
+  screen's own dropdown, which is hidden for the wizard's whole duration
+  so the two never show at once. A genuine bug in the mnemonic suggestion
+  itself is also fixed (PR #80): it was clearing its duplicate-avoidance
+  tracking on every same-level sibling instead of only when moving to a
+  shallower level, so it forgot what it had just assigned to the previous
+  sibling — this is what produced repeated first-letter codes. A
+  "Duplicate First Letters" notice (focusing the offending cell) and a
+  "Sort or Accept" prompt for codes that land out of order (e.g. children
+  typed out of alpha order — Sort reorders by code, ascending, carrying
+  each entry's own children with it) now back that fix up. The other four
+  guided levels (Intermediate/Advanced/Chart of Accounts/Item Master)
   still open today's ungated setup screen — not yet built.
 - A simple email/password sign-on gate (`Login.tsx`/`auth.ts`), shown
   before anything else: checks a salted SHA-256 hash (via the browser's
@@ -294,6 +320,24 @@ further rounds of testing feedback. The tool currently supports, in full:
   the ask, at which point it's a real distribution-model conversation
   (separate deployments, a way to push updates to all of them, a way to
   track who has which), not a small addition.
+- **Phonetically-intuitive mnemonic codes — flagged by James as possibly
+  under-specified, not yet built.** His round-2 feedback (item 7)
+  described how he actually picks a manual code in practice: not always
+  the first letter, but a consonant elsewhere in the description that's
+  phonetically memorable AND keeps ascending order against the row above
+  — his worked example was "Order Cancelled by Consumer" needing to sort
+  after "Order Cancelled by Credit Control" (coded "C"), so he'd pick the
+  "S" in "ConSumer" (emphasizing the sound) rather than reuse "C". He
+  said himself he wasn't sure he'd given enough to replicate this — it's
+  a judgement call blending phonetics, sort-order constraints, and
+  memorability, not a mechanical rule like "first usable letter." Current
+  `suggestUnusedCode` (guidance.ts) already falls back through a
+  description's OTHER letters when the first one collides, and the
+  wizard's Sort/Accept + duplicate-notice (PR #80) now cover the
+  uniqueness and ordering half of what he's asking for — the missing
+  piece is specifically the *phonetic* judgement of which letter to pick
+  when there's a choice. Left for a follow-up conversation rather than
+  guessed at.
 
 ---
 
@@ -680,6 +724,68 @@ columns) — moved the overtype-still-works check to the very last row
 Fill/Pad assertions above it. Verified with an extended
 `smoke_simple_wizard.mjs` plus a re-run of `smoke_workflow_menu.mjs`,
 `smoke_lock_taxonomy.mjs`, and `smoke_resume_work.mjs` — no regressions.
+
+### Round-2 wizard/grid refinements (PR #80)
+A second batch from James actually building out a real example against
+the wizard end to end. Eleven points; all but one were clear enough to
+build straight away (see "Known open questions" for the one that wasn't).
+The standout was a genuine bug: `suggestMnemonicCodes` cleared its
+duplicate-avoidance tracking on `level <= prevLevel`, starting the clear
+AT that level — meaning two siblings at the very same level (a run of
+children, or two headings in a row) wiped each other's tracking on every
+single transition, which is exactly what let four descriptions all
+starting with "D" suggest the same letter four times over. Fixed to
+`level < prevLevel`, clearing only levels strictly deeper than the
+current one — verified against James's exact repro plus a suite of
+multi-level cases in a new `unit_guidance.mjs` (compiled straight from
+`guidance.ts` via `tsc`, run under plain Node — faster and more reliable
+than trying to force a duplicate through the browser once the root cause
+was actually fixed). Backed up with `findDuplicateCode` (a defensive
+safety net — a genuine pre-existing duplicate, e.g. typed manually or
+pushed through the ascending-order Override, still gets caught and the
+cursor dropped on it) and `hasOutOfOrderCodes`/`sortAllCodesAscending`
+(a "Sort or Accept" prompt when a sibling group's codes land out of
+order — e.g. children typed out of alpha order — Sort reorders by code
+per sibling group, shallowest level first, each entry carrying its own
+children along, same rule as Alpha Sort).
+
+Also: a right-click "Add Row on Down Arrow" toggle (Down Arrow inserts
+and focuses a new row beneath the current one anywhere, not just at the
+last row); "Insert Rows Below" on a multi-row selection is now relative
+to the *first* row in the range rather than the last (previously "select
+row 1 downward, Insert Below" landed the new rows after the whole range,
+never immediately under row 1 itself); multi-row "Delete Row" confirms
+once ("Delete N rows?") and removes every selected row instead of just
+the one right-clicked; the rightmost code column no longer cascades a
+real code down to rows below it and checks uniqueness across the whole
+sibling range rather than just the adjacent row — moved ahead of the
+softer, overridable ascending-order check so an exact duplicate there is
+a hard block (an "Override" on the order check would otherwise have let
+two identical rightmost codes through, since equal counts as "not
+greater" there too) — and auto-advances the cursor down after a
+successful entry; a code typed in the wrong case for the active Code
+Restriction is auto-corrected instead of rejected, with a one-time Caps
+Lock notice (reusing the same caps-lock-tracking approach as the existing
+heading-capitalization notice); the wizard's own "Codes must advance from
+left to right" check is suppressed while guidance is active (entering a
+row's own code before Fill Codes has carried the ancestor columns down is
+the wizard's normal flow, not a mistake — the check still fires as before
+everywhere else); and the coding stage's Numeric/Alpha prompt is now the
+full Code Restriction dropdown, with the main-screen dropdown hidden for
+guidance's whole duration so the two can't show, and conflict, at once.
+
+New `src/domIds.ts` holds the code/desc cell DOM-id helpers, shared
+between `Grid.tsx` (which renders them) and `GuidanceBanner.tsx` (which
+needs to focus a specific cell directly for the duplicate notice) —
+pulled out of `Grid.tsx` specifically to keep that file component-only
+after oxlint's `only-export-components` flagged exporting a plain
+function from it. Verified with `smoke_grid_refinements.mjs` (the
+toggle, insert-anchor fix, multi-delete, wizard-only left-to-right
+suppression with an outside-the-wizard regression check, case
+auto-correction, and the rightmost column's no-cascade/full-range-
+duplicate/auto-advance behavior) and `smoke_wizard_sort_and_duplicate.mjs`
+(the Sort action end to end), plus a full re-run of the existing
+regression suite — no regressions.
 
 ---
 
