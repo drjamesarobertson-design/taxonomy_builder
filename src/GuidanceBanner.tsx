@@ -1,14 +1,18 @@
 import { useState } from 'react';
 import type { CodeRestriction, TaxonomyProject, TaxonomyRow, TaxonomySettings } from './types';
-import { growRowsToLevels } from './types';
+import { CODE_RESTRICTIONS, growRowsToLevels } from './types';
 import {
   countChildrenPerHeading,
   countHeadings,
   fillCodesDown,
+  findDuplicateCode,
+  hasOutOfOrderCodes,
   maxLevelUsed,
   padCodes,
+  sortAllCodesAscending,
   suggestMnemonicCodes,
 } from './guidance';
+import { codeInputId } from './domIds';
 
 interface GuidanceBannerProps {
   project: TaxonomyProject;
@@ -26,6 +30,19 @@ export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExi
   const [confirmOverride, setConfirmOverride] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [codingPrompt, setCodingPrompt] = useState<'restriction' | 'mnemonic' | null>(null);
   const [pendingRestriction, setPendingRestriction] = useState<CodeRestriction | null>(null);
+  // Item 5: the wizard's own "Numeric or Alpha?" prompt now carries the full Code Restriction
+  // choice itself (defaulting to whatever the taxonomy already has), rather than showing a
+  // binary Numeric/Alpha pair AND leaving the separate main-screen dropdown visible at the same
+  // time — the two were conflicting during the wizard, per James's report. App.tsx hides that
+  // main-screen dropdown for the whole time guidance is active.
+  const [selectedRestriction, setSelectedRestriction] = useState<CodeRestriction>(project.settings.codeRestriction);
+  // Item 6's safety net: the first row (if any) whose suggested code duplicates an earlier
+  // sibling's — the root cause in guidance.ts is fixed, so this should rarely fire, but it's a
+  // cheap backstop, and also catches a duplicate the user had typed in manually before Suggest
+  // Codes ever ran.
+  const [duplicateWarning, setDuplicateWarning] = useState<{ rowId: string; level: number } | null>(null);
+  // Item 2: any level's sibling codes not in strictly ascending order after Suggest Codes.
+  const [showOrderWarning, setShowOrderWarning] = useState(false);
 
   const guidance = project.settings.guidance;
   if (!guidance) return null;
@@ -111,6 +128,35 @@ export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExi
     onSettingsAndRowsChange({ ...project.settings, codeRestriction: restriction }, newRows);
     setCodingPrompt(null);
     setPendingRestriction(null);
+
+    if (!useMnemonic) return;
+    const duplicate = findDuplicateCode(newRows, level);
+    if (duplicate) {
+      setDuplicateWarning(duplicate);
+    } else if (hasOutOfOrderCodes(newRows, level)) {
+      setShowOrderWarning(true);
+    }
+  }
+
+  // Item 6: dismissing the duplicate notice drops the cursor straight onto the offending cell
+  // so it's ready to edit, rather than leaving the user to go hunting for it.
+  function dismissDuplicateWarning() {
+    if (duplicateWarning) {
+      const id = codeInputId(duplicateWarning.level, duplicateWarning.rowId);
+      requestAnimationFrame(() => {
+        const input = document.getElementById(id) as HTMLInputElement | null;
+        input?.focus();
+        input?.select();
+      });
+    }
+    setDuplicateWarning(null);
+  }
+
+  // Item 2: "Sort" reorders every level's sibling groups by code, ascending, each entry
+  // carrying its own children along — "Accept" leaves the codes exactly as suggested.
+  function handleSortCodes() {
+    onSettingsAndRowsChange(project.settings, sortAllCodesAscending(rows, maxLevelUsed(rows)));
+    setShowOrderWarning(false);
   }
 
   // Fill Codes / Pad Codes (James's round-2 feedback): the per-row mnemonic suggestion only
@@ -211,13 +257,47 @@ export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExi
       {codingPrompt === 'restriction' && (
         <div className="validation-overlay">
           <div className="validation-dialog">
-            <p>Numeric or Alpha codes?</p>
+            <p>Choose the Code Restriction for this taxonomy:</p>
+            <select
+              value={selectedRestriction}
+              onChange={(e) => setSelectedRestriction(e.target.value as CodeRestriction)}
+            >
+              {CODE_RESTRICTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
             <div className="confirm-dialog-actions">
-              <button type="button" onClick={() => chooseRestriction('Numeric Only')}>
-                Numeric
+              <button type="button" onClick={() => chooseRestriction(selectedRestriction)}>
+                Continue
               </button>
-              <button type="button" onClick={() => chooseRestriction('Alpha Upper Case Only')}>
-                Alpha
+            </div>
+          </div>
+        </div>
+      )}
+
+      {duplicateWarning && (
+        <div className="validation-overlay" onClick={dismissDuplicateWarning}>
+          <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
+            <p>Duplicate First Letters. Please edit manually.</p>
+            <button type="button" onClick={dismissDuplicateWarning}>
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showOrderWarning && (
+        <div className="validation-overlay">
+          <div className="validation-dialog">
+            <p>Mnemonic codes are not in increasing order, sort or accept?</p>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setShowOrderWarning(false)}>
+                Accept
+              </button>
+              <button type="button" onClick={handleSortCodes}>
+                Sort
               </button>
             </div>
           </div>

@@ -4,6 +4,7 @@ import { createEmptyRow, growRowsToLevels } from './types';
 import { getLevelColor } from './colors';
 import { toggleCase } from './caseUtils';
 import { isValidCodeChar, isAllowedByCodeRestriction, hasCodeGap } from './codeValidation';
+import { codeInputId, descInputId } from './domIds';
 import type { TaxonomyBlock } from './blockTransfer';
 import { parseBlockFile } from './blockTransfer';
 import type { HelpTextMap } from './helpText';
@@ -58,8 +59,6 @@ interface ContextMenuState {
   rowId: string;
 }
 
-const codeInputId = (level: number, rowId: string) => `code-${level}-${rowId}`;
-const descInputId = (level: number, rowId: string) => `desc-${level}-${rowId}`;
 const suffixInputId = (index: number, rowId: string) => `suffix-${index}-${rowId}`;
 
 export default function Grid({
@@ -128,6 +127,17 @@ export default function Grid({
   // queried on demand; null means "no keystroke observed yet, state unknown".
   const capsLockOnRef = useRef<boolean | null>(null);
   const [capsNoticeSuggestCapsLock, setCapsNoticeSuggestCapsLock] = useState(false);
+  // A one-time notice the first time a code character's case is silently auto-corrected to
+  // match the taxonomy's Code Restriction (James's ask: typing continues smoothly either way,
+  // but a nudge to just turn Caps Lock on saves having to rely on the auto-correction at all).
+  const [showCodeCaseNotice, setShowCodeCaseNotice] = useState(false);
+  const codeCaseNoticeShownRef = useRef(false);
+  const [codeCaseNoticeSuggestCapsLock, setCodeCaseNoticeSuggestCapsLock] = useState(false);
+  // Right-click toggle: when on, Down Arrow in a description cell always inserts a new row
+  // immediately beneath the current one and focuses it (like Insert Row Below), rather than
+  // only doing that at the very last row — James found the "necessary" right-click detour
+  // tedious while adding a heading's children one at a time in column 2+.
+  const [addRowOnDownArrow, setAddRowOnDownArrow] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
     message: string;
     confirmLabel?: string;
@@ -438,11 +448,15 @@ export default function Grid({
       }
     }
 
+    // The rightmost column never cascades (each row holds its own distinct leaf identifier,
+    // never inherited from a neighbour — see updateCode), so a smaller real value below it is
+    // a genuine ascending-order violation there, not something a cascade would sweep away.
+    const isRightmost = level === numLevels - 1;
     let lower: string | null = null;
     for (let i = editIndex + 1; i < rows.length; i++) {
       if (parentValue !== null && (rows[i].codes[level - 1] ?? '') !== parentValue) break;
       const v = rows[i].codes[level] ?? '';
-      if (v === '' || v.charCodeAt(0) < char.charCodeAt(0)) continue; // will be swept up by the cascade
+      if (v === '' || (!isRightmost && v.charCodeAt(0) < char.charCodeAt(0))) continue; // will be swept up by the cascade
       lower = v;
       break;
     }
@@ -496,7 +510,7 @@ export default function Grid({
       showValidationError('Only one character permitted');
       return;
     }
-    const char = value;
+    let char = value;
     const editIndex = rows.findIndex((r) => r.id === rowId);
     if (editIndex === -1) return;
 
@@ -506,6 +520,22 @@ export default function Grid({
     if (locked && rows[editIndex].protected) {
       showValidationError('Change of existing codes will corrupt the long term integrity of the existing data and is therefore not allowed');
       return;
+    }
+
+    // A letter typed in the "wrong" case for this taxonomy's Code Restriction (e.g. lower case
+    // with Alpha Upper Case Only active) is silently flipped to the case that IS allowed,
+    // rather than rejected outright — typing continues smoothly regardless of Caps Lock state.
+    // A one-time notice nudges the user to just turn Caps Lock on instead of relying on this.
+    if (char !== '' && !isAllowedByCodeRestriction(char, codeRestriction)) {
+      const flipped = char === char.toUpperCase() ? char.toLowerCase() : char.toUpperCase();
+      if (flipped !== char && isAllowedByCodeRestriction(flipped, codeRestriction)) {
+        char = flipped;
+        if (!codeCaseNoticeShownRef.current) {
+          codeCaseNoticeShownRef.current = true;
+          setCodeCaseNoticeSuggestCapsLock(capsLockOnRef.current === false);
+          setTimeout(() => setShowCodeCaseNotice(true), 0);
+        }
+      }
     }
 
     const oldValue = rows[editIndex].codes[level] ?? '';
@@ -529,8 +559,11 @@ export default function Grid({
     // value before this one can. The padding character is a filler that only ever belongs at
     // the end of a code string (Section 4.4) — it's never a valid "real" code to build on top
     // of, so a padding character sitting to the left doesn't satisfy this for a genuinely new
-    // real code (only for more padding continuing the same run rightward).
-    if (char !== '') {
+    // real code (only for more padding continuing the same run rightward). Not enforced while
+    // the guided wizard is active: its own coding stage deliberately has the user enter each
+    // row's own code before Fill Codes has carried the ancestor columns down, so a genuinely
+    // blank ancestor cell at that point is expected, not a mistake.
+    if (char !== '' && !guidance) {
       for (let i = 0; i < level; i++) {
         const leftValue = rows[editIndex].codes[i] ?? '';
         if (!leftValue || (!isPadding && leftValue === paddingChar)) {
@@ -540,12 +573,38 @@ export default function Grid({
       }
     }
 
+    const parentValue = level > 0 ? (rows[editIndex].codes[level - 1] ?? '') : null;
+
     // No code — real or "." padding — can exist to the right of the deepest description
     // written anywhere in the taxonomy; there's no level of hierarchy deeper than that yet.
     const maxDescCol = getMaxDescriptionColumn();
     if (char !== '' && level > maxDescCol) {
       showValidationError('Enter Descriptions Before Entering Codes');
       return;
+    }
+
+    // The deepest code column has no column to its right to distinguish siblings under
+    // different parents, so every row sharing this row's own immediate parent (the heading
+    // range one column to the left — not just the immediately adjacent rows) must hold a
+    // distinct value here. This runs BEFORE the softer, overridable ascending-order check
+    // below — an exact duplicate here is a hard block with no override (an "Override" on the
+    // order check would otherwise let two identical rightmost codes straight through, since
+    // equal counts as "not greater" there too) — and, since the rightmost column never
+    // cascades (below), it has to scan the whole sibling range itself rather than relying on
+    // a cascade to have already kept things apart.
+    if (char !== '' && !isPadding && level === numLevels - 1 && char !== oldValue) {
+      const collides = rows.some((row, idx) => {
+        if (idx === editIndex) return false;
+        if (parentValue !== null && (row.codes[level - 1] ?? '') !== parentValue) return false;
+        const v = row.codes[level] ?? '';
+        return v !== '' && v !== paddingChar && v === char;
+      });
+      if (collides) {
+        showValidationError(
+          'Ending codes within a code block delimited by "." at start and end must be unique, please change one of these codes',
+        );
+        return;
+      }
     }
 
     if (char !== '' && !isPadding && char !== oldValue && !options?.skipOrderCheck) {
@@ -566,25 +625,6 @@ export default function Grid({
       }
     }
 
-    // The deepest code column has no column to its right to distinguish siblings under
-    // different parents — two leaf rows that happen to land on the same character, with
-    // nothing but "." padding rows separating them, would otherwise look like a single
-    // contiguous run. This is narrower than (and independent of) the ascending-order check
-    // above: it only compares against the immediate neighbour rows, not the whole sibling
-    // group, and it is a hard block with no override.
-    if (char !== '' && !isPadding && level === numLevels - 1 && char !== oldValue) {
-      const aboveValue = editIndex > 0 ? (rows[editIndex - 1].codes[level] ?? '') : '';
-      const belowValue = editIndex < rows.length - 1 ? (rows[editIndex + 1].codes[level] ?? '') : '';
-      const aboveReal = aboveValue !== '' && aboveValue !== paddingChar;
-      const belowReal = belowValue !== '' && belowValue !== paddingChar;
-      if ((aboveReal && aboveValue === char) || (belowReal && belowValue === char)) {
-        showValidationError(
-          'Ending codes within a code block delimited by "." at start and end must be unique, please change one of these codes',
-        );
-        return;
-      }
-    }
-
     // "0" reads awkwardly in later analysis (easy to confuse with a genuine zero total, or
     // with the padding character on a taxonomy that pads with "."), so flag it — but only
     // when it isn't itself the configured padding character, in which case it's not a code
@@ -597,8 +637,6 @@ export default function Grid({
       });
       return;
     }
-
-    const parentValue = level > 0 ? (rows[editIndex].codes[level - 1] ?? '') : null;
 
     // Entering a real value clears a real code sitting to the right — it was scoped to the
     // old value at this column and may no longer make sense — but leaves an existing padding
@@ -618,33 +656,41 @@ export default function Grid({
       return;
     }
 
-    let cascadeActive = true;
-    let updated = rows.map((row, idx) => {
-      if (idx < editIndex) return row;
-      if (idx === editIndex) return applyCode(row);
-      if (!cascadeActive) return row;
-      const rowParent = level > 0 ? (row.codes[level - 1] ?? '') : null;
-      if (parentValue !== null && rowParent !== parentValue) {
-        cascadeActive = false;
-        return row;
-      }
-      const rowOwnOld = row.codes[level] ?? '';
-      if (char === '') {
-        // Clearing propagates only through rows that held the exact value being cleared.
-        if (rowOwnOld !== oldValue) {
+    // The rightmost column holds each row's own distinct leaf identifier — never inherited
+    // from a neighbour — so entering a real code there only ever touches the row being
+    // edited; every other column keeps the existing sweep-down cascade.
+    let updated: TaxonomyRow[];
+    if (level === numLevels - 1) {
+      updated = rows.map((row, idx) => (idx === editIndex ? applyCode(row) : row));
+    } else {
+      let cascadeActive = true;
+      updated = rows.map((row, idx) => {
+        if (idx < editIndex) return row;
+        if (idx === editIndex) return applyCode(row);
+        if (!cascadeActive) return row;
+        const rowParent = level > 0 ? (row.codes[level - 1] ?? '') : null;
+        if (parentValue !== null && rowParent !== parentValue) {
           cascadeActive = false;
           return row;
         }
-      } else {
-        // A real code sweeps through blank cells and any smaller value below it, and
-        // stops at the first cell that already holds an equal or greater one.
-        if (rowOwnOld !== '' && rowOwnOld.charCodeAt(0) >= char.charCodeAt(0)) {
-          cascadeActive = false;
-          return row;
+        const rowOwnOld = row.codes[level] ?? '';
+        if (char === '') {
+          // Clearing propagates only through rows that held the exact value being cleared.
+          if (rowOwnOld !== oldValue) {
+            cascadeActive = false;
+            return row;
+          }
+        } else {
+          // A real code sweeps through blank cells and any smaller value below it, and
+          // stops at the first cell that already holds an equal or greater one.
+          if (rowOwnOld !== '' && rowOwnOld.charCodeAt(0) >= char.charCodeAt(0)) {
+            cascadeActive = false;
+            return row;
+          }
         }
-      }
-      return applyCode(row);
-    });
+        return applyCode(row);
+      });
+    }
 
     // Completing a leaf row's own code (Section 5: "the remaining Code Columns on that row
     // will auto populate with '.'") — any row that just received this real value at exactly
@@ -889,6 +935,43 @@ export default function Grid({
     }
   }
 
+  // Deletes every row in a multi-row selection at once (James's ask): "Delete Row" from the
+  // right-click menu used to only ever remove the single row actually clicked, silently
+  // ignoring the rest of an active drag/shift-click selection. Each selected row's own
+  // descendant subtree comes along too, exactly like a single-row delete already does — the
+  // confirm message says so whenever that pulls in more rows than were actually highlighted.
+  function deleteMultipleRows(rowIds: Set<string>) {
+    const selectedIndices = rows.map((r, i) => (rowIds.has(r.id) ? i : -1)).filter((i) => i !== -1);
+    if (selectedIndices.length === 0) return;
+
+    const toRemove = new Set<number>();
+    for (const idx of selectedIndices) {
+      const level = levelOf(rows[idx]);
+      const end = level === -1 ? idx + 1 : getDescendantEndIndex(idx);
+      for (let i = idx; i < end; i++) toRemove.add(i);
+    }
+
+    if (locked && [...toRemove].some((i) => rows[i].protected)) {
+      showValidationError(
+        'One or more of these entries (or their children) is protected by Lock Taxonomy and cannot be deleted — use "Mark as Delete" on its description instead.',
+      );
+      return;
+    }
+
+    const extraCount = toRemove.size - selectedIndices.length;
+    const message =
+      extraCount > 0
+        ? `Delete ${selectedIndices.length} rows? Their children will be deleted too (${toRemove.size} rows in total).`
+        : `Delete ${selectedIndices.length} rows?`;
+    setConfirmDialog({
+      message,
+      onConfirm: () => {
+        onChange(rows.filter((_, i) => !toRemove.has(i)));
+        setSelection(null);
+      },
+    });
+  }
+
   // How many rows "Insert Row Above/Below" would add for the current context menu: more
   // than one when the row it was opened on is part of a multi-row drag/shift-click
   // selection — dragging down a column to highlight a range is how many rows to insert.
@@ -902,8 +985,10 @@ export default function Grid({
 
   // Right-click "Insert Row(s) Above" / "Insert Row(s) Below" (Section 6.5) — one or more
   // blank new entries. For a single row, relative to whichever row the context menu was
-  // opened on; for a multi-row drag/shift-click selection, relative to the top (Above) or
-  // bottom (Below) of the whole selected range, not wherever within it was right-clicked.
+  // opened on; for a multi-row drag/shift-click selection, both Above and Below are relative
+  // to the TOP row of the selected range, not wherever within it was right-clicked — James
+  // found "Below" landing after the whole range's bottom meant a range starting at row 1 could
+  // never get new rows placed immediately under row 1 itself.
   function handleInsertRow(position: 'above' | 'below') {
     if (!contextMenu) return;
     const count = pendingInsertCount();
@@ -912,7 +997,7 @@ export default function Grid({
       const selectedIndices = rows
         .map((r, i) => (selection.rowIds.has(r.id) ? i : -1))
         .filter((i) => i !== -1);
-      idx = position === 'above' ? Math.min(...selectedIndices) : Math.max(...selectedIndices);
+      idx = Math.min(...selectedIndices);
     } else {
       idx = rows.findIndex((r) => r.id === contextMenu.rowId);
     }
@@ -980,6 +1065,10 @@ export default function Grid({
     if (!contextMenu) return;
     const rowId = contextMenu.rowId;
     setContextMenu(null);
+    if (selection && selection.rowIds.has(rowId) && selection.rowIds.size > 1) {
+      deleteMultipleRows(selection.rowIds);
+      return;
+    }
     deleteRow(rowId);
   }
 
@@ -1006,7 +1095,20 @@ export default function Grid({
     if (kind === 'code' && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
       const row = rows[rowIndex];
-      if (row) updateCode(row.id, level, e.key);
+      if (row) {
+        const typedChar = e.key;
+        updateCode(row.id, level, typedChar);
+        // In the rightmost column, move straight down to the next row after a successful
+        // entry — it's filled one leaf code after another, so this matches the same rhythm
+        // as typing down a description column. Only advances if the value actually took (not
+        // rejected, and not left pending behind a confirm-override dialog).
+        if (level === numLevels - 1) {
+          requestAnimationFrame(() => {
+            const input = document.getElementById(codeInputId(level, row.id)) as HTMLInputElement | null;
+            if (input && input.value === typedChar) focusCell('code', level, rowIndex + 1);
+          });
+        }
+      }
       return;
     }
 
@@ -1025,13 +1127,30 @@ export default function Grid({
     }
 
     switch (e.key) {
-      case 'Enter':
-      case 'ArrowDown': {
+      case 'Enter': {
         e.preventDefault();
         const isLastRow = rowIndex === rows.length - 1;
         if (kind === 'desc' && isLastRow) {
           const newRow = createRowInheritingFrom(rows[rowIndex]);
           onChange([...rows, newRow]);
+          requestAnimationFrame(() => {
+            document.getElementById(descInputId(level, newRow.id))?.focus();
+          });
+          return;
+        }
+        focusCell(kind, level, rowIndex + 1);
+        return;
+      }
+      case 'ArrowDown': {
+        e.preventDefault();
+        const isLastRow = rowIndex === rows.length - 1;
+        // The "Add Row on Down Arrow" toggle inserts a new row right here regardless of
+        // position, not just at the very bottom — the same insertion Enter already does at
+        // the last row, just available everywhere while the toggle is on.
+        if (kind === 'desc' && (isLastRow || addRowOnDownArrow)) {
+          const newRow = createRowInheritingFrom(rows[rowIndex]);
+          const insertAt = rowIndex + 1;
+          onChange([...rows.slice(0, insertAt), newRow, ...rows.slice(insertAt)]);
           requestAnimationFrame(() => {
             document.getElementById(descInputId(level, newRow.id))?.focus();
           });
@@ -2365,7 +2484,16 @@ export default function Grid({
           {contextMenu.kind !== 'suffix' && selection && selection.rowIds.size > 0 && (
             <li onClick={handleExportBlockMenuClick}>Export Block</li>
           )}
-          <li className="context-menu-separator" onClick={() => handleInsertRow('above')}>
+          <li
+            className="context-menu-separator"
+            onClick={() => {
+              setAddRowOnDownArrow((v) => !v);
+              setContextMenu(null);
+            }}
+          >
+            {addRowOnDownArrow ? '✓ ' : ''}Add Row on Down Arrow
+          </li>
+          <li onClick={() => handleInsertRow('above')}>
             {pendingInsertCount() > 1 ? `Insert ${pendingInsertCount()} Rows Above` : 'Insert Row Above'}
           </li>
           <li onClick={() => handleInsertRow('below')}>
@@ -2612,6 +2740,21 @@ export default function Grid({
               {capsNoticeSuggestCapsLock ? ' — please turn Caps Lock on.' : ''}
             </p>
             <button type="button" onClick={() => setShowCapsNotice(false)}>
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showCodeCaseNotice && (
+        <div className="validation-overlay" onClick={() => setShowCodeCaseNotice(false)}>
+          <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
+            <p>
+              Codes typed in the wrong case are automatically converted to match this
+              taxonomy's Code Restriction
+              {codeCaseNoticeSuggestCapsLock ? ' — please turn Caps Lock on.' : '.'}
+            </p>
+            <button type="button" onClick={() => setShowCodeCaseNotice(false)}>
               OK
             </button>
           </div>

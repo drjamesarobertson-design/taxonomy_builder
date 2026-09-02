@@ -976,21 +976,23 @@ export default function App() {
             <p className="table-name">Table: {project.tableName}</p>
             {project.purpose && <p className="purpose">{project.purpose}</p>}
           </section>
-          <section className="code-restriction-bar">
-            <label>
-              Code Restrictions
-              <select
-                value={project.settings.codeRestriction}
-                onChange={(e) => handleCodeRestrictionChange(e.target.value as CodeRestriction)}
-              >
-                {CODE_RESTRICTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </section>
+          {!project.settings.guidance && (
+            <section className="code-restriction-bar">
+              <label>
+                Code Restrictions
+                <select
+                  value={project.settings.codeRestriction}
+                  onChange={(e) => handleCodeRestrictionChange(e.target.value as CodeRestriction)}
+                >
+                  {CODE_RESTRICTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </section>
+          )}
           {project.settings.guidance ? (
             <GuidanceBanner
               project={project}
