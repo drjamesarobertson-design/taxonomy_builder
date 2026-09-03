@@ -83,6 +83,27 @@
   min-height: 1rem;
 }
 
+/* Cubic Business Model Related's own heading is a plain label, not a drop target — its four
+   sub-headings (below) are where entries actually live and where drops land. */
+.library-category-heading-static {
+  cursor: default;
+}
+
+.library-subcategory {
+  margin-left: 0.6rem;
+}
+
+.library-subcategory-heading {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #7f9acb;
+  margin: 0.4rem 0 0.2rem;
+  padding-bottom: 0.1rem;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.12);
+  min-height: 0.9rem;
+}
+
 .library-entry-list {
   list-style: none;
   margin: 0;
@@ -409,6 +430,17 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+/* A plain grouping label, not a button (James: "Cubic Business Model is a heading, it is NOT
+   clickable") — sits above the four items it groups, pulled tight against them via negative
+   margin so the grouping reads clearly against the flex column's usual 0.5rem gap. */
+.workflow-level-group-heading {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #667;
+  margin-bottom: -0.15rem;
 }
 
 .workflow-level-buttons button,
