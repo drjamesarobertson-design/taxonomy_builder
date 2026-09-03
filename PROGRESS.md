@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #98, 2026-09-03)
+## Current status (as of PR #100, 2026-09-03)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -98,6 +98,11 @@ further rounds of testing feedback. The tool currently supports, in full:
   Move to Work Area / Edit Title / Move Up / Move Down / Move to Category…
   / Remove from Library, and drag-and-drop reordering within or across
   headings (both the right-click and drag mechanisms work side by side).
+  One heading — Cubic Business Model Related (PR #100, renamed from
+  "General Ledger Related") — is itself broken into four fixed sub-headings
+  (DIVISIONS / LOCATIONS / FUNCTIONS / GL ACCOUNTS), each with its own
+  drag/drop, Move Up/Down, and Move to Category sub-heading picker; every
+  other heading stays a single flat list.
   Persisted in this browser's own IndexedDB — per-browser, not a file, and
   not synced anywhere.
 - A "Code Restrictions" dropdown at the top of the work area, narrowing
@@ -154,15 +159,17 @@ further rounds of testing feedback. The tool currently supports, in full:
   of deleting it; and CSV Import (which replaces the whole table outside
   any per-cell guard) is blocked outright.
 - A post-sign-on landing menu (`WorkflowMenu.tsx`): "Create a New Taxonomy"
-  with six starting points (Simple / Intermediate / Advanced Complexity
-  Taxonomy, Chart of Accounts, Item Master, Highly Experienced User — No
-  Guidance) and "Work on an Existing Taxonomy" (Load from File / Import
-  CSV / Library). Five of the six levels (all but Simple Taxonomy) still
-  open today's same taxonomy setup screen with a "Creating a `<level>`"
-  label and no further guidance — their guided workflows remain
-  not-yet-built follow-up work (see "Not yet built"). Also: a larger
-  header logo and a "Taxonomy Builder by the ERP Doctor James A Robertson
-  and Associates Limited" tagline on the sign-on screens.
+  with a non-clickable "Cubic Business Model" heading (PR #100 — CLAUDE.md
+  Section 9's Cubic Business Model©) grouping Division / Location /
+  Function / Chart of Accounts, followed by Simple Taxonomy / Advanced
+  Complexity Taxonomy / Item Master / Highly Experienced User — No Guidance
+  (Intermediate Complexity Taxonomy removed, PR #100); and "Work on an
+  Existing Taxonomy" (Load from File / Import CSV / Library). Every level
+  but Simple Taxonomy still opens today's same taxonomy setup screen with a
+  "Creating a `<level>`" label and no further guidance — their guided
+  workflows remain not-yet-built follow-up work (see "Not yet built"). Also:
+  a larger header logo and a "Taxonomy Builder by the ERP Doctor James A
+  Robertson and Associates Limited" tagline on the sign-on screens.
 - **Simple Taxonomy guided wizard** (`SimpleTaxonomySetup.tsx`,
   `GuidanceBanner.tsx`, `guidance.ts`): choosing "Simple Taxonomy" opens a
   trimmed setup screen (title, table name, purpose, max description length
@@ -426,6 +433,66 @@ further rounds of testing feedback. The tool currently supports, in full:
   piece is specifically the *phonetic* judgement of which letter to pick
   when there's a choice. Left for a follow-up conversation rather than
   guessed at.
+
+### Cubic Business Model heading/sub-headings in the Library and New Taxonomy menu (PR #100)
+James's next round, right after confirming the Library fixes: two structural
+asks, applied in parallel to the two places a taxonomy's "kind" gets picked.
+
+1. **Library:** "replace GENERAL LEDGER RELATED with CUBIC BUSINESS MODEL
+   RELATED and under that sub-headings DIVISIONS / LOCATIONS / FUNCTIONS /
+   GL ACCOUNTS." Renamed `LIBRARY_CATEGORIES[0]` and gave `LibraryEntry` an
+   optional `subcategory` field, meaningful only for this one category
+   (CLAUDE.md Section 9's Cubic Business Model© — Divisions, Locations,
+   Functions and [GL] Asset Class "all interacting", the multi-taxonomy
+   library management explicitly deferred there; this is the Library
+   groundwork for that, not the full deferred feature). Every grouping
+   operation that used to key on `category` alone now keys on
+   `(category, subcategory)` — `entriesFor`, `nextOrder`,
+   `setLibraryCategoryOrder` — so an ordinary heading (subcategory always
+   undefined for every one of its entries) behaves exactly as before, and
+   Cubic Business Model Related additionally partitions by sub-heading.
+   `LibrarySidebar` renders that one heading's four sub-headings as nested
+   drop targets/lists instead of one flat `<ul>`, each with its own
+   drag/drop, Move Up/Down, and Move to Category sub-heading picker (a
+   second `<select>` that only appears once Cubic Business Model Related is
+   chosen, in both the "Add to Library" and "Move to Category…" dialogs).
+   Renaming a live category string risks orphaning any real data already
+   saved under the old name — added a one-time migration in
+   `listLibraryEntries()` that re-saves any entry still carrying the literal
+   old "General Ledger Related" string as Cubic Business Model
+   Related/GL ACCOUNTS, so nothing already in James's own Library vanishes
+   from every heading the next time it loads.
+2. **New Taxonomy menu:** "Do the same on the Wizard menu – need Wizards for
+   each of these." Clarified with James (menu structure and wizard depth)
+   before building, since a literal "same as Library" read as sub-headings
+   nested arbitrarily deep, and "need Wizards" was ambiguous between a
+   genuine guided multi-stage wizard per item versus routing to today's
+   plain setup screen. His answer: a plain, non-clickable "Cubic Business
+   Model" label above four items — Division, Location, Function, and the
+   existing Chart of Accounts moved under it (not a new fifth "GL Accounts"
+   wizard, reusing Chart of Accounts instead) — with every other level kept
+   except Intermediate Complexity Taxonomy, removed; and the three new
+   items should route to today's standard setup screen, same as every other
+   still-unguided level, not a new guided wizard. `WORKFLOW_LEVELS`
+   reordered with Division/Location/Function/Chart of Accounts first, and a
+   new `CUBIC_BUSINESS_MODEL_WORKFLOW_LEVELS` constant tells
+   `WorkflowMenu.tsx` which of them sit under the plain heading label versus
+   rendering as ordinary top-level buttons (everything else, unchanged).
+
+Separately answered (no code change): whether spell-checking needs a
+browser add-in like Grammarly — no, description cells are plain
+`<input type="text">` with no `spellCheck={false}` override, so the
+browser's own native spellcheck (red squiggly underline) already applies;
+confirmed no `spellcheck`/`spellCheck` attribute anywhere in the codebase
+overrides that default.
+
+New `smoke_cubic_business_model.mjs` covers the sub-heading picker on both
+Add to Library and Move to Category, the DIVISIONS/GL-etc. sub-heading
+assignment, the removed Intermediate Complexity Taxonomy button, and the
+non-clickable Cubic Business Model heading. `smoke_library.mjs`,
+`smoke_library_bugs.mjs`, and `smoke_workflow_menu.mjs` updated for the
+renamed category and restructured menu. Full existing Playwright suite
+re-run clean.
 
 ### Library silent-overwrite and Edit Title layout fixes (PR #98)
 Two bugs from James, right after confirming Auto Code worked well:
