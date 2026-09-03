@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #100, 2026-09-03)
+## Current status (as of PR #103, 2026-09-03)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -84,6 +84,13 @@ further rounds of testing feedback. The tool currently supports, in full:
   default.
 - Settings screen to revisit title/purpose/description-length/padding/
   delimiter/code-column-count after creation; right-click Add/Delete Column.
+  Also sets Column 1 Code Length (PR #102, James's ask): column 1 may hold
+  1 to 5 characters instead of the usual single one, defaulting to 1 so
+  every other column, and every older project file, is unaffected. Every
+  charset, ascending-order, left-to-right, padding, and duplicate check
+  that assumed one character now operates on the full value; Lock
+  Taxonomy's insert-gap detection is single-character-only and is skipped
+  (never a false hard block) once column 1 holds more than one character.
 - Create Block / Import Block for moving content between separate taxonomy
   files.
 - Field-level help icons (New Taxonomy + Settings) and right-click menu help,
@@ -110,14 +117,19 @@ further rounds of testing feedback. The tool currently supports, in full:
   with Upper Case Alpha Only / Alpha Upper Case Only / Alpha Both Cases
   Only, on top of the fixed global charset; the padding character is
   always exempt.
-- **Auto Code** (PR #96): a general-purpose toolbar action for coding a
-  taxonomy that has none yet — independent of the Simple Taxonomy wizard's
-  own mnemonic Suggest Codes (guidance.ts), so it works on any taxonomy,
-  not just ones built through that wizard. Within any sibling group,
-  spreads codes evenly across 1-9 (first sibling "1", last "9", "0" never
-  used), extending into capital letters only past 9 members, applied
-  uniformly at every level; then carries ancestor codes down through
-  descendants and pads every deeper column, reusing `fillCodesDown`/
+- **Auto Code** (PR #96, revised PR #102): a general-purpose toolbar action
+  for coding a taxonomy that has none yet — independent of the Simple
+  Taxonomy wizard's own mnemonic Suggest Codes (guidance.ts), so it works
+  on any taxonomy, not just ones built through that wizard. Within any
+  sibling group, spreads ordinary codes across 1-8 — not 1-9 — reserving
+  "9" for a possible Other/Miscellaneous sibling even when none is present
+  yet (PR #102; only a genuine 9th+ ordinary member forces "9" into use),
+  extending into capital letters only past that; applied uniformly at
+  every level. An actual Other/Miscellaneous sibling always lands on "9"
+  (or the next slot past wherever its ordinary siblings actually reached),
+  regardless of where it sits among them — mirroring the wizard's own
+  Suggest Codes precedent. Ancestor codes are then carried down through
+  descendants and every deeper column is padded, reusing `fillCodesDown`/
   `padCodes` rather than reimplementing them. A dropdown names all five
   Code-Restriction-style types up front, though only "Alpha Numeric with
   Upper Case Alpha Only" is actually implemented so far — the rest say
@@ -159,17 +171,20 @@ further rounds of testing feedback. The tool currently supports, in full:
   of deleting it; and CSV Import (which replaces the whole table outside
   any per-cell guard) is blocked outright.
 - A post-sign-on landing menu (`WorkflowMenu.tsx`): "Create a New Taxonomy"
-  with a non-clickable "Cubic Business Model" heading (PR #100 — CLAUDE.md
+  listing, in order, Simple Taxonomy, Advanced Complexity Taxonomy, then a
+  non-clickable "Cubic Business Model" heading (PR #100 — CLAUDE.md
   Section 9's Cubic Business Model©) grouping Division / Location /
-  Function / Chart of Accounts, followed by Simple Taxonomy / Advanced
-  Complexity Taxonomy / Item Master / Highly Experienced User — No Guidance
-  (Intermediate Complexity Taxonomy removed, PR #100); and "Work on an
-  Existing Taxonomy" (Load from File / Import CSV / Library). Every level
-  but Simple Taxonomy still opens today's same taxonomy setup screen with a
-  "Creating a `<level>`" label and no further guidance — their guided
-  workflows remain not-yet-built follow-up work (see "Not yet built"). Also:
-  a larger header logo and a "Taxonomy Builder by the ERP Doctor James A
-  Robertson and Associates Limited" tagline on the sign-on screens.
+  Function / Chart of Accounts, then Item Master and Highly Experienced
+  User — No Guidance (Intermediate Complexity Taxonomy removed, PR #100;
+  exact order corrected in PR #102 after James clarified the Cubic
+  Business Model group belongs in the middle of the list, not at the top);
+  and "Work on an Existing Taxonomy" (Load from File / Import CSV /
+  Library). Every level but Simple Taxonomy still opens today's same
+  taxonomy setup screen with a "Creating a `<level>`" label and no further
+  guidance — their guided workflows remain not-yet-built follow-up work
+  (see "Not yet built"). Also: a larger header logo and a "Taxonomy
+  Builder by the ERP Doctor James A Robertson and Associates Limited"
+  tagline on the sign-on screens.
 - **Simple Taxonomy guided wizard** (`SimpleTaxonomySetup.tsx`,
   `GuidanceBanner.tsx`, `guidance.ts`): choosing "Simple Taxonomy" opens a
   trimmed setup screen (title, table name, purpose, max description length
@@ -218,7 +233,15 @@ further rounds of testing feedback. The tool currently supports, in full:
   Segment") fires if a later sibling is typed after one — checked across
   the whole sibling group on every description blur, so it also catches
   an *earlier* "Other" row retroactively once a later sibling makes it a
-  violation, not just the row just edited (PR #86). And each level-0
+  violation, not just the row just edited (PR #86). A second, independent
+  soft nudge (PR #102) fires the moment ANY description reads as "Other"
+  or "Miscellaneous" at all, regardless of position — "It is recommended
+  that 'Other' and 'Miscellaneous' should be at end of the segment and
+  coded 9 / Z / z — please confirm" — catching the intent right when it's
+  typed rather than waiting for a later sibling to turn it into a genuine
+  structural violation; the two dialogs never stack on the same blur (the
+  softer one steps aside whenever the stronger not-last check, or the
+  unrelated first-heading tip, is already firing that same blur). And each level-0
   heading's default code is checked against how early it sits among the
   taxonomy's other headings — "the first mnemonic code should be in the
   first third of the alphabet depending on number of column 1 categories"
@@ -433,6 +456,105 @@ further rounds of testing feedback. The tool currently supports, in full:
   piece is specifically the *phonetic* judgement of which letter to pick
   when there's a choice. Left for a follow-up conversation rather than
   guessed at.
+
+### Menu order fix, Auto Code's 9-reservation, Other/Misc nudge, multi-char column 1 (PR #102)
+James's next round, right after the Cubic Business Model restructure. Five
+items — a follow-up correction, three behaviour changes, and one new
+setting:
+
+1. **Menu order correction.** "I should have been more explicit – on the
+   menu keep 'Simple Taxonomy' first, then Advanced, then Division,
+   Location, Function, Chart of Accounts, then Item Master, then Highly
+   experienced." PR #100 had put the whole Cubic Business Model group
+   first; reordered `WORKFLOW_LEVELS` and `WorkflowMenu.tsx`'s rendering
+   (which now walks the list once, inserting the non-clickable heading
+   directly above whichever item happens to be first in
+   `CUBIC_BUSINESS_MODEL_WORKFLOW_LEVELS`, rather than assuming that group
+   sits at the top) to match exactly.
+2. **Auto Code should not force "9".** "preferably keep 9 clear for other,
+   and, as far as possible spread 1 to 8, unless there is a ninth item
+   that cannot be avoided -- where there IS Other it should be at the end
+   of the particular range and coded 9 / Z / z." `spreadSlots` now spreads
+   ordinary siblings across indices 0-7 ("1"-"8") by proportional
+   rounding, only reaching "9" (and, past that, letters with no gaps) once
+   a group has 9+ ordinary members. `assignLevelCodes` now separates each
+   sibling group into ordinary rows and Other/Miscellaneous rows (via
+   guidance.ts's existing `isOtherOrMiscellaneousLabel`) — ordinary rows
+   draw from that reserved 1-8 pool, and any Other/Miscellaneous row is
+   coded afterwards, always at the group's actual top slot ("9" whenever
+   the ordinary rows fit in 1-8), regardless of which physical row in the
+   group it happens to be.
+3. **New "Other/Miscellaneous encountered" nudge.** "If Other or
+   Miscellaneous is encountered at the start of a Description pop up a
+   note, 'It is recommended that "Other" and "Miscellaneous" should be at
+   end of the segment and coded 9 / Z / z please confirm.'" This is
+   deliberately a second, independent check from PR #86's existing
+   "Other or Miscellaneous Should be the Last Entry in a Segment" warning
+   (which only fires once a *later* sibling retroactively turns an
+   earlier Other/Miscellaneous row into a genuine violation) — the new one
+   fires immediately, the moment any row's own text reads as Other or
+   Miscellaneous at all, even as the very first (and so far only) entry in
+   its segment. Warned once per row while the text still qualifies
+   (cleared and free to fire again if edited away and back), and
+   deliberately skipped for a blur where the stronger not-last dialog, or
+   the unrelated one-time "first heading" tip, is already firing — so no
+   two of this app's notice overlays ever stack on the same blur.
+4. **Right-click menu ordering — extraction only, not yet implemented.**
+   "Sort the code and description right click drop downs into logical
+   order ... if you extract the content of the two lists and give them to
+   me in the chat I will sort them the way I want them." Per that explicit
+   request, the current Code and Description context-menu item lists (in
+   their current order) were posted back to James in chat rather than
+   reordered here — waiting on his own ordering before touching
+   `Grid.tsx`'s menu JSX.
+5. **Column 1 multi-character codes.** "Option to code column 1 with more
+   than one character – in settings 1 to 5 char default to 1." Added
+   `TaxonomySettings.column1CodeLength` (1-5, default 1, migrated in for
+   older project files in `storage.ts`) and a "Column 1 Code Length"
+   `<select>` in `SettingsModal.tsx`, guarded the same way `numLevels`
+   already is — can't shrink below the longest code already sitting in
+   column 1. In `Grid.tsx`: the code `<input>`'s `maxLength`/width are
+   level-0-aware; the existing keystroke-by-keystroke interception (needed
+   for genuine single-character cells — see the code's own long-standing
+   comment on why) is bypassed for a multi-character column 1, falling
+   through to native input handling (via the cell's own `onChange`) so
+   typing, backspace, and select-on-focus all behave like an ordinary text
+   field. Every check that assumed a single character now operates on the
+   whole value: the charset/Code-Restriction/case-flip checks run
+   per-character; "is this cell padding" is "every character is the pad
+   character" rather than exact equality to one; the ascending-order
+   check (and the cascade-sweep, and the manual "Check Ascending Order"
+   tool) switched from `charCodeAt(0)` comparisons to plain string
+   comparisons, which give the same answer for a single character and the
+   correct lexicographic answer for a longer one; and column 1's own
+   padding value is `paddingChar` repeated to its configured width
+   (`padValueForColumn`), used everywhere a bare `paddingChar` comparison
+   could otherwise apply to column 1 specifically (left-to-right
+   enforcement, the rightmost-column duplicate check, the collapse/filter
+   feature, and clearing stale padding when a row gains its first child).
+   Lock Taxonomy's insert-gap detection (`hasCodeGap` and its own
+   "no gap" soft warning) is explicitly single-character-only — there's no
+   general way to compute whether a real value fits between two arbitrary
+   multi-character strings — so both are skipped entirely (never a false
+   hard block, never a false soft nag) once either neighbouring column-1
+   value is more than one character.
+
+Separately answered: spell-checking needs no browser add-in — native
+browser spellcheck already applies to description cells since they're
+plain `<input type="text">` with no override; made explicit anyway via
+`spellCheck` (PR #103) so it's guaranteed rather than left to a given
+browser's own default.
+
+New `unit_autocode.mjs` cases for the reserved-9 spread and an
+Other/Miscellaneous sibling landing on "9" regardless of its own position;
+new `smoke_round13.mjs` for the corrected menu order, the new
+Other/Miscellaneous nudge (including that it doesn't stack with the other
+two dialogs it could otherwise collide with), and multi-character column 1
+end to end (typing, `maxLength`, the ascending-order Override dialog on a
+multi-character value, and column 2 staying single-character regardless).
+`smoke_other_code.mjs` and `smoke_other_not_last.mjs` updated to dismiss
+the new nudge where it now appears in their existing flows. Full existing
+Playwright suite re-run clean.
 
 ### Cubic Business Model heading/sub-headings in the Library and New Taxonomy menu (PR #100)
 James's next round, right after confirming the Library fixes: two structural
