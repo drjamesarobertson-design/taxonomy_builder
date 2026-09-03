@@ -11,6 +11,8 @@ import {
 import { exportBlock } from './blockTransfer';
 import { chooseExportFolder, peekExportFolderName, supportsFileSystemAccess } from './exportFolder';
 import { hasBlankCodeGaps } from './codeValidation';
+import { AUTO_CODE_TYPES, IMPLEMENTED_AUTO_CODE_TYPES, autoCodeAlphaNumeric } from './autoCode';
+import type { AutoCodeType } from './autoCode';
 import { loadHelpText } from './helpText';
 import type { HelpTextMap } from './helpText';
 import NewTaxonomyForm from './NewTaxonomyForm';
@@ -149,6 +151,14 @@ export default function App() {
   // easy to forget to adjust something (e.g. the description length limit) before the grid
   // fills up with rows built against it.
   const [showSettings, setShowSettings] = useState(false);
+
+  // Auto Code (James's ask): a general-purpose numeric-first gap-coding action, independent of
+  // the Simple Taxonomy wizard's own mnemonic Suggest Codes — usable any time, on any taxonomy,
+  // most useful for one imported with no codes at all (like Import CSV's description-only path).
+  // The dropdown names every code type up front, per James's own ask, so it doesn't need
+  // rebuilding later — only one is actually implemented so far (autoCode.ts).
+  const [showAutoCode, setShowAutoCode] = useState(false);
+  const [autoCodeType, setAutoCodeType] = useState<AutoCodeType>(AUTO_CODE_TYPES[0]);
 
   // Export folder (Section 8-adjacent convenience James asked for): on Chromium browsers,
   // Save/Export can write straight into a folder picked once via the File System Access API,
@@ -711,6 +721,29 @@ export default function App() {
     setDirty(true);
   }
 
+  function handleAutoCodeClick() {
+    if (!project) return;
+    // Bulk, whole-table structural operation — same precedent as CSV Import, blocked outright
+    // while locked rather than trying to thread protected-row guards through it.
+    if (project.settings.locked) {
+      alert('This taxonomy is locked and cannot be auto-coded. Unlock it first if this is genuinely necessary.');
+      return;
+    }
+    setAutoCodeType(AUTO_CODE_TYPES[0]);
+    setShowAutoCode(true);
+  }
+
+  function handleAutoCodeGenerate() {
+    if (!project) return;
+    if (!IMPLEMENTED_AUTO_CODE_TYPES.includes(autoCodeType)) {
+      setLoadError(`Auto Code for "${autoCodeType}" isn't built yet — only "${IMPLEMENTED_AUTO_CODE_TYPES[0]}" is available right now.`);
+      return;
+    }
+    const newRows = autoCodeAlphaNumeric(project.rows, project.settings.paddingChar);
+    handleSettingsAndRowsChange({ ...project.settings, codeRestriction: autoCodeType }, newRows);
+    setShowAutoCode(false);
+  }
+
   function handleNewTaxonomy() {
     if (project && dirty && !confirm('Discard the current taxonomy and start a new one?')) return;
     setProject(null);
@@ -830,6 +863,11 @@ export default function App() {
                 title="Lift protection so existing rows can be edited again — use with care"
               >
                 🔓 Unlock Taxonomy
+              </button>
+            )}
+            {project && (
+              <button type="button" onClick={handleAutoCodeClick} title="Auto-fill blank codes throughout the taxonomy">
+                Auto Code
               </button>
             )}
             {project && (
@@ -1045,6 +1083,33 @@ export default function App() {
           onClose={() => setShowSettings(false)}
           helpText={helpText}
         />
+      )}
+
+      {showAutoCode && (
+        <div className="validation-overlay" onClick={() => setShowAutoCode(false)}>
+          <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
+            <p>Choose the type of code to generate:</p>
+            <select value={autoCodeType} onChange={(e) => setAutoCodeType(e.target.value as AutoCodeType)}>
+              {AUTO_CODE_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                  {IMPLEMENTED_AUTO_CODE_TYPES.includes(type) ? '' : ' (coming soon)'}
+                </option>
+              ))}
+            </select>
+            <p className="csv-import-summary">
+              Only "{IMPLEMENTED_AUTO_CODE_TYPES[0]}" is available right now — the rest are coming soon.
+            </p>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setShowAutoCode(false)}>
+                Cancel
+              </button>
+              <button type="button" onClick={handleAutoCodeGenerate}>
+                Generate Codes
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {pendingCsvImport && (
