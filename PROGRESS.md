@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #94, 2026-09-02)
+## Current status (as of PR #96, 2026-09-03)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -102,6 +102,19 @@ further rounds of testing feedback. The tool currently supports, in full:
   with Upper Case Alpha Only / Alpha Upper Case Only / Alpha Both Cases
   Only, on top of the fixed global charset; the padding character is
   always exempt.
+- **Auto Code** (PR #96): a general-purpose toolbar action for coding a
+  taxonomy that has none yet — independent of the Simple Taxonomy wizard's
+  own mnemonic Suggest Codes (guidance.ts), so it works on any taxonomy,
+  not just ones built through that wizard. Within any sibling group,
+  spreads codes evenly across 1-9 (first sibling "1", last "9", "0" never
+  used), extending into capital letters only past 9 members, applied
+  uniformly at every level; then carries ancestor codes down through
+  descendants and pads every deeper column, reusing `fillCodesDown`/
+  `padCodes` rather than reimplementing them. A dropdown names all five
+  Code-Restriction-style types up front, though only "Alpha Numeric with
+  Upper Case Alpha Only" is actually implemented so far — the rest say
+  plainly they're coming soon rather than doing nothing or the wrong
+  thing. Only fills genuinely blank codes; blocked outright while locked.
 - "Import CSV": brings in a taxonomy already in the same shape this app's
   own Discrete Columns CSV export produces — level count, delimiter
   positions, and suffix columns inferred from the file's own structure,
@@ -639,6 +652,70 @@ UI) and with a dedicated Save-to-file/reload round trip for notes
 (`smoke_notes_persist.mjs`); `smoke_csv_import_regression.mjs` confirms
 the existing coded-CSV import path is unaffected. Full existing regression
 suite (16 prior smoke scripts) re-run clean.
+
+### General-purpose Auto Code (PR #96)
+James's next request against the freshly-imported GL Analyzer CoA (144
+rows, no codes at all): auto-code the whole structure. He explicitly
+invited clarification before starting, and it took two rounds to land on
+a precise rule:
+
+- **Round 1** (his original message): numeric-first codes, 1-9, gap-coded
+  so the last item in a sibling group reaches "9" where there's room,
+  overflowing into capital letters only if a group exceeds 9 members —
+  but a *different*, tighter "sequential number, no gaps" rule specifically
+  for the deepest column actually used per branch, versus gap-spread
+  everywhere shallower. Also floated whether this needed a dedicated
+  "Auto Code" button distinct from the wizard's own mnemonic Suggest Codes.
+- **Round 2** (his corrections): (1) same gap-coding rule throughout —
+  no special tighter rule for the deepest column after all; (2) yes to a
+  genuinely general-purpose "Auto Code" button, with a dropdown asking
+  which code type to generate and acting accordingly — built now for
+  "Alpha Numeric" (digits + capital letters), with the dropdown naming
+  every other type up front and a plain note that their functionality is
+  still to follow, so the UI doesn't need rebuilding later.
+
+Built as new `src/autoCode.ts`, deliberately separate from guidance.ts
+(which is scoped to the Simple Taxonomy wizard's own letter-derived
+mnemonic scheme) since this needed to work on any taxonomy, wizard-built
+or not. The rule: within any sibling group — rows sharing the same
+immediate parent by row structure, the same grouping approach used
+elsewhere in this app for exactly the reason that ancestor codes are
+often still blank at this point — spread codes evenly across "1" to "9"
+(proportional rounding, not a fixed step, so the first sibling always
+lands on "1" and the last always lands on "9" regardless of count) with
+"0" excluded entirely, extending into "A", "B", "C"... with no further
+gapping once a group genuinely exceeds 9 members (already past the
+taxonomy's own 5-9 guidance by then, so nothing left to reserve room
+for). Own-level codes assigned this way at every level, then
+`fillCodesDown`/`padCodes` (both already built, both reused rather than
+reimplemented) carry each ancestor's code down through its descendants
+and pad every column deeper than a row's own level.
+
+The "Auto Code" toolbar button opens a dropdown listing all five
+Code-Restriction-style type names, defaulting to "Alpha Numeric with
+Upper Case Alpha Only" — the only one actually wired up
+(`IMPLEMENTED_AUTO_CODE_TYPES`) — with the other four visibly marked
+"(coming soon)" and a note line saying the same. Picking one of the
+unimplemented four and clicking "Generate Codes" shows a plain "isn't
+built yet" message and leaves the dropdown open rather than closing or
+silently doing nothing. Generating codes for real also updates the
+taxonomy's own Code Restriction to match, so a code typed manually
+afterwards validates against the same rule Auto Code just used. Only
+ever fills genuinely blank codes — a taxonomy with some codes already
+entered keeps them exactly as they are — and is blocked outright while
+locked, the same precedent CSV Import already set for a bulk,
+whole-table structural operation.
+
+New `unit_autocode.mjs` (tsc-compiled, Node-run) covers the spread
+maths directly — 2/3/5-way groups landing exactly on 1 and 9, the
+>9-member overflow into letters staying distinct, a pre-existing manual
+code never being touched or collided with, "0" never appearing — plus a
+full run against James's real 144-row file confirming every row gets a
+valid code and the always-blank Level 4 column ends up padded
+throughout. New `smoke_auto_code.mjs` drives the dropdown, the
+unimplemented-type message, and the generated result through the actual
+UI end to end. Full existing regression suite (19 prior smoke scripts)
+re-run clean.
 
 ---
 
