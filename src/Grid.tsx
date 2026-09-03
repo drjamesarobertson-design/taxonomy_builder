@@ -4,7 +4,7 @@ import { createEmptyRow, growRowsToLevels } from './types';
 import { getLevelColor } from './colors';
 import { toggleCase } from './caseUtils';
 import { isValidCodeChar, isAllowedByCodeRestriction, hasCodeGap } from './codeValidation';
-import { findOtherNotLastInGroup, isOtherEntryNotLast } from './guidance';
+import { findOtherNotLastInGroup, isOtherEntryNotLast, isOtherOrMiscellaneousLabel } from './guidance';
 import { codeInputId, descInputId } from './domIds';
 import type { TaxonomyBlock } from './blockTransfer';
 import { parseBlockFile } from './blockTransfer';
@@ -81,6 +81,7 @@ export default function Grid({
     codeRestriction,
     locked,
     guidance,
+    column1CodeLength,
   } = settings;
   // Simple Taxonomy wizard: no code column is shown at all until the coding stage — the
   // 'headings' and 'subItems' stages are description-only by design. `numLevels` itself grows
@@ -139,6 +140,13 @@ export default function Grid({
   // every incidental blur.
   const [otherNotLastWarningRowId, setOtherNotLastWarningRowId] = useState<string | null>(null);
   const otherNotLastWarnedRef = useRef<Set<string>>(new Set());
+  // James's newer ask: nudge the MOMENT an Other/Miscellaneous description is typed anywhere —
+  // not just once a later sibling retroactively turns it into the stronger not-last violation
+  // above — so the recommendation lands right when the intent is formed. Warned once per row
+  // while the text still reads as Other/Miscellaneous (cleared if edited away from that), and
+  // skipped for this blur if the not-last dialog is already firing, so the two never overlap.
+  const [otherEncounteredWarningRowId, setOtherEncounteredWarningRowId] = useState<string | null>(null);
+  const otherEncounteredWarnedRef = useRef<Set<string>>(new Set());
   // Section 6.9: an optional free-text note per entry, added/edited via right-click "Add
   // Note"/"Edit Note" on the description cell. `noteEditRowId` is the row currently being
   // edited (null when the dialog is closed); `noteEditDraft` is the textarea's own live value,
@@ -463,7 +471,7 @@ export default function Grid({
       if (li > level) continue;
       if (parent !== null && immediateParentIndex(i) !== parent) break;
       const v = rows[i].codes[level] ?? '';
-      if (v === '' || (!isRightmost && v.charCodeAt(0) < char.charCodeAt(0))) continue; // will be swept up by the cascade
+      if (v === '' || (!isRightmost && v < char)) continue; // will be swept up by the cascade
       lower = v;
       break;
     }
@@ -480,6 +488,12 @@ export default function Grid({
   // column written anywhere in the taxonomy (the caller passes getMaxDescriptionColumn()) —
   // padding only ever spans the range of columns that actually correspond to a description
   // somewhere; there's no level of hierarchy deeper than that yet for it to mean anything.
+  // Column 1's own padding value repeats the padding character to fill its configured width
+  // (Settings, 1 to 5) rather than the single character every other column pads with.
+  function padValueForColumn(columnIndex: number): string {
+    return columnIndex === 0 ? paddingChar.repeat(column1CodeLength) : paddingChar;
+  }
+
   function padFromLevel(rowsIn: TaxonomyRow[], editIndex: number, fromLevel: number, toLevel: number): TaxonomyRow[] {
     const parentValue = fromLevel > 0 ? (rowsIn[editIndex].codes[fromLevel - 1] ?? '') : null;
     let end = rowsIn.length;
@@ -492,13 +506,13 @@ export default function Grid({
     }
     const updated = rowsIn.map((row, idx) => {
       if (idx !== editIndex) return { ...row, codes: [...row.codes] };
-      const codes = row.codes.map((c, i) => (i >= fromLevel && i <= toLevel ? paddingChar : c));
+      const codes = row.codes.map((c, i) => (i >= fromLevel && i <= toLevel ? padValueForColumn(i) : c));
       return { ...row, codes };
     });
     for (let c = fromLevel; c <= toLevel; c++) {
       for (let i = editIndex + 1; i < end; i++) {
         if ((updated[i].codes[c] ?? '') === '') {
-          updated[i].codes[c] = paddingChar;
+          updated[i].codes[c] = padValueForColumn(c);
         } else {
           break;
         }
@@ -513,8 +527,11 @@ export default function Grid({
     value: string,
     options?: { skipOrderCheck?: boolean; skipZeroWarning?: boolean },
   ) {
-    if (value.length > 1) {
-      showValidationError('Only one character permitted');
+    // James's ask: column 1 (level 0) may hold more than the usual single character (Settings,
+    // 1 to 5, default 1) — every other column stays exactly 1, unchanged.
+    const maxCharsHere = level === 0 ? column1CodeLength : 1;
+    if (value.length > maxCharsHere) {
+      showValidationError(maxCharsHere === 1 ? 'Only one character permitted' : `Only ${maxCharsHere} characters permitted`);
       return;
     }
     let char = value;
@@ -533,9 +550,17 @@ export default function Grid({
     // with Alpha Upper Case Only active) is silently flipped to the case that IS allowed,
     // rather than rejected outright — typing continues smoothly regardless of Caps Lock state.
     // A one-time notice nudges the user to just turn Caps Lock on instead of relying on this.
-    if (char !== '' && !isAllowedByCodeRestriction(char, codeRestriction)) {
-      const flipped = char === char.toUpperCase() ? char.toLowerCase() : char.toUpperCase();
-      if (flipped !== char && isAllowedByCodeRestriction(flipped, codeRestriction)) {
+    // Applied per character so a multi-character column-1 value can mix a fine character with
+    // one that needs flipping.
+    if (char !== '' && ![...char].every((c) => isAllowedByCodeRestriction(c, codeRestriction))) {
+      const flipped = [...char]
+        .map((c) => {
+          if (isAllowedByCodeRestriction(c, codeRestriction)) return c;
+          const f = c === c.toUpperCase() ? c.toLowerCase() : c.toUpperCase();
+          return isAllowedByCodeRestriction(f, codeRestriction) ? f : c;
+        })
+        .join('');
+      if (flipped !== char && [...flipped].every((c) => isAllowedByCodeRestriction(c, codeRestriction))) {
         char = flipped;
         if (!codeCaseNoticeShownRef.current) {
           codeCaseNoticeShownRef.current = true;
@@ -545,18 +570,20 @@ export default function Grid({
     }
 
     const oldValue = rows[editIndex].codes[level] ?? '';
-    // Retyping the same character is a deliberate re-entry (e.g. re-cascading padding), not a
-    // no-op — it still runs the full cascade/clear-right logic below.
-    const isPadding = char === paddingChar;
+    // Retyping the same character(s) is a deliberate re-entry (e.g. re-cascading padding), not
+    // a no-op — it still runs the full cascade/clear-right logic below. A multi-character
+    // column-1 value counts as padding once every character in it is the padding character —
+    // it doesn't have to already be the full configured length to be recognised while typing.
+    const isPadding = char !== '' && [...char].every((c) => c === paddingChar);
 
-    if (char !== '' && !isValidCodeChar(char)) {
+    if (char !== '' && ![...char].every((c) => isValidCodeChar(c))) {
       showValidationError('Invalid code. Valid codes are: ".", 0 to 9, A to Z, a to z');
       return;
     }
 
     // Item 1: a per-taxonomy Code Restriction narrows the charset above further, for any
     // real (non-padding) character — the padding character itself is always exempt.
-    if (char !== '' && !isPadding && !isAllowedByCodeRestriction(char, codeRestriction)) {
+    if (char !== '' && !isPadding && ![...char].every((c) => isAllowedByCodeRestriction(c, codeRestriction))) {
       showValidationError(`Code Limited to "${codeRestriction}" — Please Correct Your Entry`);
       return;
     }
@@ -572,7 +599,7 @@ export default function Grid({
     if (char !== '' && !guidance) {
       for (let i = 0; i < level; i++) {
         const leftValue = rows[editIndex].codes[i] ?? '';
-        if (!leftValue || (!isPadding && leftValue === paddingChar)) {
+        if (!leftValue || (!isPadding && leftValue === padValueForColumn(i))) {
           showValidationError('Codes must advance from left to right');
           return;
         }
@@ -603,7 +630,7 @@ export default function Grid({
         if (levelOf(row) !== level) return false;
         if (parent !== null && immediateParentIndex(idx) !== parent) return false;
         const v = row.codes[level] ?? '';
-        return v !== '' && v !== paddingChar && v === char;
+        return v !== '' && v !== padValueForColumn(level) && v === char;
       });
       if (collides) {
         showValidationError(
@@ -615,8 +642,8 @@ export default function Grid({
 
     if (char !== '' && !isPadding && char !== oldValue && !options?.skipOrderCheck) {
       const { upper, lower } = findOrderBounds(editIndex, level, char);
-      const tooLow = upper !== null && char.charCodeAt(0) <= upper.charCodeAt(0);
-      const tooHigh = lower !== null && char.charCodeAt(0) >= lower.charCodeAt(0);
+      const tooLow = upper !== null && char <= upper;
+      const tooHigh = lower !== null && char >= lower;
       if (tooLow || tooHigh) {
         // Section 4.4/6.7's ascending-order rule is a hard rule everywhere else, but James
         // asked for an escape hatch here specifically — mid-restructure, a user may know a
@@ -690,7 +717,7 @@ export default function Grid({
         } else {
           // A real code sweeps through blank cells and any smaller value below it, and
           // stops at the first cell that already holds an equal or greater one.
-          if (rowOwnOld !== '' && rowOwnOld.charCodeAt(0) >= char.charCodeAt(0)) {
+          if (rowOwnOld !== '' && rowOwnOld >= char) {
             cascadeActive = false;
             return row;
           }
@@ -785,7 +812,7 @@ export default function Grid({
           return { ...row, descriptions: row.descriptions.map((d, i) => (i === level ? value : d)) };
         }
         if (idx === newParentIdx) {
-          const codes = row.codes.map((c, i) => (i > prevDepth! && c === paddingChar ? '' : c));
+          const codes = row.codes.map((c, i) => (i > prevDepth! && c === padValueForColumn(i) ? '' : c));
           const codesChanged = codes.some((c, i) => c !== row.codes[i]);
           // Simple Taxonomy wizard convenience (guidance-only, not a general app behaviour —
           // Section 6.2 keeps case toggling manual everywhere else): a heading that just
@@ -1024,11 +1051,17 @@ export default function Grid({
 
     const doInsert = () => performInsertRow(insertAt, count, refLevel);
 
+    // Both gap checks below are single-character-only: they can't reliably tell whether a real
+    // multi-character column-1 value (e.g. "AA" vs "AB") leaves room for something between it
+    // and its neighbour, so they're skipped entirely once either neighbour is more than one
+    // character — never a false hard block for Lock Taxonomy, never a false soft nag either.
+    const bothSingleChar = aboveCode.length <= 1 && belowCode.length <= 1;
+
     // Lock Taxonomy: once locked, a new row can only go where a real code actually fits
     // between its two neighbours (e.g. "1"/"3" has room for "2"; "1"/"2" doesn't) — otherwise
     // it would force recoding an existing, possibly-protected neighbour, which locking exists
     // to prevent. Unlike the soft warning below, this is a hard block with no override.
-    if (locked && hasNeighboursBothWays && !hasCodeGap(aboveCode, belowCode, codeRestriction, paddingChar)) {
+    if (locked && hasNeighboursBothWays && bothSingleChar && !hasCodeGap(aboveCode, belowCode, codeRestriction, paddingChar)) {
       setContextMenu(null);
       showValidationError(
         `There is no available code between "${aboveCode}" and "${belowCode}" at this level — inserting a new entry here would require renumbering an existing entry while the taxonomy is locked, which is not allowed. Unlock the taxonomy first if this is genuinely necessary.`,
@@ -1036,7 +1069,7 @@ export default function Grid({
       return;
     }
 
-    const noGap = hasNeighboursBothWays && belowCode.charCodeAt(0) - aboveCode.charCodeAt(0) === 1;
+    const noGap = hasNeighboursBothWays && bothSingleChar && belowCode.charCodeAt(0) - aboveCode.charCodeAt(0) === 1;
     if (noGap) {
       setContextMenu(null);
       setConfirmDialog({
@@ -1098,8 +1131,13 @@ export default function Grid({
     // already focused (no fresh focus event, so nothing gets selected) silently blocks a
     // second character at the native level, and separately, retyping the exact character
     // already there (e.g. re-cascading "." padding) never fires a change event because the
-    // value doesn't change. Handling the key ourselves sidesteps both.
-    if (kind === 'code' && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    // value doesn't change. Handling the key ourselves sidesteps both. A genuinely
+    // multi-character column-1 cell (column1CodeLength > 1) is the one exception — it needs
+    // real native typing (accumulating characters, backspace, cursor position, select-on-focus
+    // replacing on the first keystroke), so it's left to the input's own onChange instead.
+    if (kind === 'code' && level === 0 && column1CodeLength > 1) {
+      // fall through to native handling below
+    } else if (kind === 'code' && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
       const row = rows[rowIndex];
       if (row) {
@@ -1660,7 +1698,15 @@ export default function Grid({
     if (locked && anchorIndex > 0) {
       const aboveCode = rows[anchorIndex - 1].codes[anchorLevel] ?? '';
       const belowCode = rows[anchorIndex].codes[anchorLevel] ?? '';
-      if (aboveCode !== '' && belowCode !== '' && !hasCodeGap(aboveCode, belowCode, codeRestriction, paddingChar)) {
+      // Single-character-only check (see the same guard in handleInsertRow above) — skipped
+      // for a real multi-character column-1 value rather than risk a false hard block.
+      if (
+        aboveCode !== '' &&
+        belowCode !== '' &&
+        aboveCode.length <= 1 &&
+        belowCode.length <= 1 &&
+        !hasCodeGap(aboveCode, belowCode, codeRestriction, paddingChar)
+      ) {
         showValidationError(
           `There is no available code between "${aboveCode}" and "${belowCode}" at this level — importing a block here would require renumbering an existing entry while the taxonomy is locked, which is not allowed. Unlock the taxonomy first if this is genuinely necessary.`,
         );
@@ -1879,7 +1925,7 @@ export default function Grid({
     for (const idx of indices) {
       const value = rows[idx].codes[level] ?? '';
       if (!value) continue;
-      if (prevValue !== null && value.charCodeAt(0) < prevValue.charCodeAt(0)) {
+      if (prevValue !== null && value < prevValue) {
         showValidationError(
           `Out of order: row ${idx + 1} ("${value}") comes after row ${prevRowNumber} ("${prevValue}").`,
           () => focusCell('code', level, idx),
@@ -2198,7 +2244,7 @@ export default function Grid({
         <div className="collapse-banner">
           {collapseFilter.kind === 'level'
             ? `Showing entries down to column ${collapseFilter.level + 1} only.`
-            : `Showing only rows padded with "${paddingChar}" in code column ${collapseFilter.level + 1}.`}
+            : `Showing only rows padded with "${padValueForColumn(collapseFilter.level)}" in code column ${collapseFilter.level + 1}.`}
           <button type="button" onClick={() => setCollapseFilter(null)}>
             Show All
           </button>
@@ -2244,7 +2290,7 @@ export default function Grid({
                           title={
                             collapseFilter?.kind === 'codeDot' && collapseFilter.level === level
                               ? 'Show all rows again'
-                              : `Filter — show only rows padded with "${paddingChar}" in this column`
+                              : `Filter — show only rows padded with "${padValueForColumn(level)}" in this column`
                           }
                         >
                           ▾
@@ -2306,7 +2352,7 @@ export default function Grid({
               collapseFilter?.kind === 'level'
                 ? levelOf(row) > collapseFilter.level
                 : collapseFilter?.kind === 'codeDot'
-                  ? (row.codes[collapseFilter.level] ?? '') !== paddingChar
+                  ? (row.codes[collapseFilter.level] ?? '') !== padValueForColumn(collapseFilter.level)
                   : false;
             const rowClasses = [
               moveMode?.rowIds.has(row.id) ? 'row-moving' : copyMode?.rowIds.has(row.id) ? 'row-copying' : null,
@@ -2347,7 +2393,8 @@ export default function Grid({
                             id={codeInputId(level, row.id)}
                             className="code-cell"
                             type="text"
-                            maxLength={1}
+                            maxLength={level === 0 ? column1CodeLength : 1}
+                            style={level === 0 && column1CodeLength > 1 ? { width: `${column1CodeLength}ch` } : undefined}
                             value={row.codes[level] ?? ''}
                             onChange={(e) => updateCode(row.id, level, e.target.value)}
                             onKeyDown={(e) => handleCellKeyDown(e, 'code', level, rowIndex)}
@@ -2404,7 +2451,9 @@ export default function Grid({
                         // within that same synchronous dispatch can cover the very element being
                         // clicked before its own click finishes — swallowing that click instead
                         // of acting on it.
-                        if (rowIndex === 0 && level === 0 && !capsNoticeShownRef.current && (row.descriptions[0] ?? '').trim()) {
+                        const capsNoticeFiredThisBlur =
+                          rowIndex === 0 && level === 0 && !capsNoticeShownRef.current && !!(row.descriptions[0] ?? '').trim();
+                        if (capsNoticeFiredThisBlur) {
                           capsNoticeShownRef.current = true;
                           setTimeout(() => setShowCapsNotice(true), 0);
                         }
@@ -2419,6 +2468,19 @@ export default function Grid({
                           setTimeout(() => setOtherNotLastWarningRowId(toWarn), 0);
                         } else if (!isOtherEntryNotLast(rows, row.id)) {
                           otherNotLastWarnedRef.current.delete(row.id);
+                        }
+                        // The earlier, softer nudge — fires the moment this row's own text reads
+                        // as Other/Miscellaneous, regardless of position — skipped when the
+                        // stronger not-last dialog, or the unrelated caps notice, is already
+                        // firing this same blur, so no two overlays ever stack; not marked as
+                        // "warned" when skipped this way, so it still gets its own turn on a
+                        // later blur once nothing else is competing for the dialog.
+                        const startsOtherOrMisc = isOtherOrMiscellaneousLabel(row.descriptions[level] ?? '');
+                        if (!startsOtherOrMisc) {
+                          otherEncounteredWarnedRef.current.delete(row.id);
+                        } else if (!otherEncounteredWarnedRef.current.has(row.id) && !toWarn && !capsNoticeFiredThisBlur) {
+                          otherEncounteredWarnedRef.current.add(row.id);
+                          setTimeout(() => setOtherEncounteredWarningRowId(row.id), 0);
                         }
                       }}
                     />
@@ -2838,6 +2900,20 @@ export default function Grid({
             <p>Other or Miscellaneous Should be the Last Entry in a Segment</p>
             <button type="button" onClick={() => setOtherNotLastWarningRowId(null)}>
               OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      {otherEncounteredWarningRowId && (
+        <div className="validation-overlay" onClick={() => setOtherEncounteredWarningRowId(null)}>
+          <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
+            <p>
+              It is recommended that "Other" and "Miscellaneous" should be at end of the segment and coded 9 / Z / z —
+              please confirm
+            </p>
+            <button type="button" onClick={() => setOtherEncounteredWarningRowId(null)}>
+              Confirm
             </button>
           </div>
         </div>

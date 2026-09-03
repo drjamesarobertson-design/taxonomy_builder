@@ -4,6 +4,7 @@ tableName,Table Name,The target filename for the ERP or other software
 purpose,Purpose,Any information you want to record about the table
 maxDescriptionLength,Maximum ERP Description Field Length,The maximum description length that is permitted by the software for this particular table
 numLevels,Number of Code Columns,"Your best estimate of the number of columns required for the table, you can add and remove tables in the worksheet"
+column1CodeLength,Column 1 Code Length,"How many characters column 1's own code may hold -- 1 to 5, defaulting to 1 like every other column. Only raise this if column 1 genuinely needs a multi-character code (e.g. a 2-character division prefix)."
 paddingChar,Pad codes with trailing,The padding character defaults to period (fullstop) but can be changed to 0 -- 0 is NOT recommended
 codeDelimiterChar,Delimit codes with,Code delimiter defaults to dash (-) but offers other options for aesthetic reasons and software constraints
 delimiterPositions,Code Delimiters,"Specify the location of delimiters, default is after every three code characters which is optimum for human interpretation and anotation"

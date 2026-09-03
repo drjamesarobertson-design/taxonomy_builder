@@ -21,12 +21,12 @@ export type CodeRestriction = (typeof CODE_RESTRICTIONS)[number];
 // currently open the same taxonomy setup screen except Simple Taxonomy (which has its own
 // guided wizard) — per-level guided workflows for the rest are a later piece of work.
 export const WORKFLOW_LEVELS = [
+  'Simple Taxonomy',
+  'Advanced Complexity Taxonomy',
   'Division',
   'Location',
   'Function',
   'Chart of Accounts',
-  'Simple Taxonomy',
-  'Advanced Complexity Taxonomy',
   'Item Master',
   'Highly Experienced User — No Guidance',
 ] as const;
@@ -118,6 +118,12 @@ export interface TaxonomySettings {
    * still just open today's ordinary setup screen — their own guided wizards aren't built
    * yet). Cleared once the wizard completes or is exited early. */
   guidance?: GuidanceState;
+  /** James's ask: column 1 (level 0) may hold more than the usual single character — 1 to 5,
+   * set in Settings, defaulting to 1 so every older project file (and every other column, which
+   * always stays exactly 1 character) behaves exactly as before. Ascending-order and charset
+   * validation apply per character within the value; Lock Taxonomy's insert-gap check is a
+   * single-character-only feature and is skipped (never hard-blocks) once this is above 1. */
+  column1CodeLength: number;
 }
 
 export interface TaxonomyRow {
@@ -167,6 +173,7 @@ export const DEFAULT_SETTINGS: TaxonomySettings = {
   suffixes: [],
   codeRestriction: 'Alpha Numeric with All Alpha',
   locked: false,
+  column1CodeLength: 1,
 };
 
 export function createEmptyRow(numLevels: number, suffixes: SuffixField[] = []): TaxonomyRow {

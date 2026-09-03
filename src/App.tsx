@@ -746,6 +746,7 @@ export default function App() {
         indentChar: fields.indentChar,
         numLevels: newNumLevels,
         delimiterPositions: fields.delimiterPositions,
+        column1CodeLength: fields.column1CodeLength,
       },
     });
     setDirty(true);
