@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #96, 2026-09-03)
+## Current status (as of PR #98, 2026-09-03)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -91,12 +91,15 @@ further rounds of testing feedback. The tool currently supports, in full:
   collapsible "Worksheet Guidance" panel.
 - A Library sidebar (left-hand, collapsible) for saving multiple taxonomies
   under eight fixed headings, independent of file-based Save/Load: "Add to
-  Library" (prompts for a heading, or updates the linked entry in place),
-  right-click Move to Work Area / Edit Title / Move Up / Move Down / Move
-  to Category… / Remove from Library, and drag-and-drop reordering within
-  or across headings (both the right-click and drag mechanisms work side
-  by side). Persisted in this browser's own IndexedDB — per-browser, not a
-  file, and not synced anywhere.
+  Library" (prompts for a heading; if the open taxonomy is already linked
+  to an entry, asks Overwrite-or-New-Version instead of updating it
+  silently — PR #98 — with "New Version" adding a separate entry under the
+  same heading, titled with an incrementing " v1.NN" suffix), right-click
+  Move to Work Area / Edit Title / Move Up / Move Down / Move to Category…
+  / Remove from Library, and drag-and-drop reordering within or across
+  headings (both the right-click and drag mechanisms work side by side).
+  Persisted in this browser's own IndexedDB — per-browser, not a file, and
+  not synced anywhere.
 - A "Code Restrictions" dropdown at the top of the work area, narrowing
   real codes to Numeric Only / Alpha Numeric with All Alpha / Alpha Numeric
   with Upper Case Alpha Only / Alpha Upper Case Only / Alpha Both Cases
@@ -423,6 +426,51 @@ further rounds of testing feedback. The tool currently supports, in full:
   piece is specifically the *phonetic* judgement of which letter to pick
   when there's a choice. Left for a follow-up conversation rather than
   guessed at.
+
+### Library silent-overwrite and Edit Title layout fixes (PR #98)
+Two bugs from James, right after confirming Auto Code worked well:
+
+1. **"When one takes a taxonomy out of the library and save it back to the
+   library it over rides without checking if want to keep previous version
+   – prompt 'Overwrite or New Version' – if new version give an incremental
+   version number."** `handleAddToLibraryClick` had no confirmation branch
+   at all once a taxonomy was linked to a Library entry (via "Move to Work
+   Area" or a first "Add to Library") — it called `updateLibraryEntryProject`
+   straight away. Added a confirm dialog with three choices: Cancel,
+   Overwrite (the prior direct-update behaviour), and New Version, which
+   creates a genuinely separate entry under the same heading via
+   `addLibraryEntry`, carrying the incrementing " v1.NN" title suffix
+   already used for Save-to-File filenames — reused the existing
+   `bumpFileVersion`/`fileVersions` mechanism from `fileVersion.ts` with a
+   new `'library'` counter key, rather than inventing a second scheme. A
+   prior version suffix is stripped before appending the next one, so
+   repeated versioning reads "Title v1.03", never "Title v1.02 v1.03". The
+   work area re-links to the newly created entry afterwards, matching what
+   "Move to Work Area" already does.
+2. **"When Edit Title in the Library get a blank field and the entry moves
+   one column left in the Library display."** Root-caused as a pure CSS
+   layout bug, not a data bug — the entry's category/order were never
+   touched. `.library-entry`'s lock-icon span and the rename `<input>`
+   were laid out as plain inline siblings, and the input's `width: 100%`
+   resolved against the whole row rather than the space left after the
+   icon; the two together overflowed the row's own box, and the browser's
+   inline layout pushed the icon left, outside its own container — reading
+   as a blank, shifted field even though the input's actual value (checked
+   directly) was always correctly pre-filled. Fixed by making
+   `.library-entry` a flex container (`display: flex; align-items:
+   center`) with `flex-shrink: 0` on the icon and `flex: 1; min-width: 0`
+   on both the rename input and the read-only title span, so the two
+   states lay out identically.
+
+New `smoke_library_bugs.mjs` covers both: the Cancel/Overwrite/New Version
+dialog and its distinct-entry/title-suffix behaviour, and the rename
+input's pre-filled value plus its bounding-box position relative to the
+lock icon. `smoke_library.mjs` and `smoke_lock_taxonomy.mjs` (both
+pre-dating this fix) updated for the new confirmation step on a second
+"Add to Library" click, and — while touching `smoke_library.mjs` — also
+updated its `createTaxonomy` helper for the sign-on/workflow-menu flow it
+predated, since it's the most thorough drag/drop/category regression test
+the Library has. Full existing Playwright suite re-run clean.
 
 ### "Other"/"Miscellaneous" handling, early-alphabet heading guidance, save-folder memory (PR #86)
 James's fifth round, still building out his real ASCO Credit Note Reasons
