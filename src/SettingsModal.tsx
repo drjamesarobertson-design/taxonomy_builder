@@ -13,6 +13,7 @@ export interface SettingsFields {
   indentChar: string;
   numLevels: number;
   delimiterPositions: number[];
+  column1CodeLength: number;
 }
 
 interface SettingsModalProps {
@@ -62,6 +63,8 @@ export default function SettingsModal({ project, onSave, onClose, helpText }: Se
   const [numLevelsText, setNumLevelsText] = useState(String(project.settings.numLevels));
   const [numLevelsError, setNumLevelsError] = useState<string | null>(null);
   const [delimiterPositions, setDelimiterPositions] = useState<number[]>(project.settings.delimiterPositions);
+  const [column1CodeLengthText, setColumn1CodeLengthText] = useState(String(project.settings.column1CodeLength));
+  const [column1CodeLengthError, setColumn1CodeLengthError] = useState<string | null>(null);
 
   // The fewest columns that would still hold every row's actual content — a decrease below
   // this would silently cut off real descriptions/codes, so it's blocked rather than allowed
@@ -69,6 +72,10 @@ export default function SettingsModal({ project, onSave, onClose, helpText }: Se
   // when the user can just leave the extra columns blank instead.
   const maxRowLevel = Math.max(-1, ...project.rows.map(levelOf));
   const minSafeLevels = Math.max(1, maxRowLevel + 1);
+
+  // Same protection for column 1's own code length — a decrease below the longest code
+  // actually already sitting there would silently truncate real data.
+  const minSafeColumn1CodeLength = Math.max(1, ...project.rows.map((r) => (r.codes[0] ?? '').length));
 
   function addDelimiter() {
     const numLevels = Math.max(1, Number(numLevelsText) || project.settings.numLevels);
@@ -105,6 +112,14 @@ export default function SettingsModal({ project, onSave, onClose, helpText }: Se
       return;
     }
     setNumLevelsError(null);
+    const column1CodeLength = Math.max(1, Math.min(5, Number(column1CodeLengthText) || project.settings.column1CodeLength));
+    if (column1CodeLength < minSafeColumn1CodeLength) {
+      setColumn1CodeLengthError(
+        `Column 1 already holds a ${minSafeColumn1CodeLength}-character code somewhere — reduce it to at least ${minSafeColumn1CodeLength}, or shorten that code first.`,
+      );
+      return;
+    }
+    setColumn1CodeLengthError(null);
     const sortedDelimiters = [...new Set(delimiterPositions)].filter((p) => p < numLevels).sort((a, b) => a - b);
     const maxDescriptionLength = Math.max(
       1,
@@ -119,6 +134,7 @@ export default function SettingsModal({ project, onSave, onClose, helpText }: Se
       indentChar: replaceIndentChar ? indentChar : ' ',
       numLevels,
       delimiterPositions: sortedDelimiters,
+      column1CodeLength,
     });
   }
 
@@ -171,6 +187,24 @@ export default function SettingsModal({ project, onSave, onClose, helpText }: Se
           />
         </label>
         {numLevelsError && <p className="field-error">{numLevelsError}</p>}
+        <label>
+          Column 1 Code Length
+          <HelpIcon field="column1CodeLength" helpText={helpText} />
+          <select
+            value={column1CodeLengthText}
+            onChange={(e) => {
+              setColumn1CodeLengthText(e.target.value);
+              setColumn1CodeLengthError(null);
+            }}
+          >
+            {[1, 2, 3, 4, 5].map((n) => (
+              <option key={n} value={n}>
+                {n} character{n === 1 ? '' : 's'}
+              </option>
+            ))}
+          </select>
+        </label>
+        {column1CodeLengthError && <p className="field-error">{column1CodeLengthError}</p>}
         <label>
           Delimit codes with
           <HelpIcon field="codeDelimiterChar" helpText={helpText} />

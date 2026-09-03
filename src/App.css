@@ -433,14 +433,16 @@
 }
 
 /* A plain grouping label, not a button (James: "Cubic Business Model is a heading, it is NOT
-   clickable") — sits above the four items it groups, pulled tight against them via negative
-   margin so the grouping reads clearly against the flex column's usual 0.5rem gap. */
+   clickable") — sits directly above the first item it groups, inside that item's own
+   .workflow-level-item wrapper so it stays attached to that button even though the group can
+   now sit in the middle of the list rather than always at the top. */
 .workflow-level-group-heading {
+  display: block;
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: #667;
-  margin-bottom: -0.15rem;
+  margin-bottom: 0.2rem;
 }
 
 .workflow-level-buttons button,

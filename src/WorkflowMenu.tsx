@@ -37,17 +37,22 @@ export default function WorkflowMenu({ onChooseNew, onChooseExisting, resumeTitl
             option opens the same taxonomy setup screen.
           </p>
           <div className="workflow-level-buttons">
-            <span className="workflow-level-group-heading">Cubic Business Model</span>
-            {CUBIC_BUSINESS_MODEL_WORKFLOW_LEVELS.map((level) => (
-              <button key={level} type="button" onClick={() => onChooseNew(level)}>
-                {level}
-              </button>
-            ))}
-            {WORKFLOW_LEVELS.filter((level) => !CUBIC_BUSINESS_MODEL_WORKFLOW_LEVELS.includes(level)).map((level) => (
-              <button key={level} type="button" onClick={() => onChooseNew(level)}>
-                {level}
-              </button>
-            ))}
+            {WORKFLOW_LEVELS.map((level, index) => {
+              // The heading sits directly above the first Cubic Business Model item wherever
+              // that falls in WORKFLOW_LEVELS — James's ask to keep the four together but move
+              // the whole group to sit between Advanced Complexity Taxonomy and Item Master.
+              const isFirstCubicLevel =
+                CUBIC_BUSINESS_MODEL_WORKFLOW_LEVELS.includes(level) &&
+                WORKFLOW_LEVELS.slice(0, index).every((l) => !CUBIC_BUSINESS_MODEL_WORKFLOW_LEVELS.includes(l));
+              return (
+                <div key={level} className="workflow-level-item">
+                  {isFirstCubicLevel && <span className="workflow-level-group-heading">Cubic Business Model</span>}
+                  <button type="button" onClick={() => onChooseNew(level)}>
+                    {level}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
         <div className="workflow-menu-column">

@@ -70,6 +70,11 @@ export function loadProjectFromFile(file: File): Promise<TaxonomyProject> {
         // Older files predate Lock Taxonomy — default to unlocked, and no row was ever
         // marked protected, matching every taxonomy's behaviour before this existed.
         if (typeof settings.locked !== 'boolean') settings.locked = false;
+        // Older files predate the column-1 multi-character code length setting — default to 1,
+        // matching every taxonomy's single-character column 1 behaviour before this existed.
+        if (typeof settings.column1CodeLength !== 'number' || settings.column1CodeLength < 1 || settings.column1CodeLength > 5) {
+          settings.column1CodeLength = 1;
+        }
         const project = data as unknown as Record<string, unknown>;
         if (typeof project.fileVersions !== 'object' || project.fileVersions === null) {
           project.fileVersions = {};
