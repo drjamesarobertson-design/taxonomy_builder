@@ -91,13 +91,19 @@
 }
 
 .library-entry {
+  display: flex;
+  align-items: center;
   padding: 0.3rem 0.4rem;
   border-radius: 4px;
   cursor: grab;
   font-size: 0.85rem;
-  white-space: nowrap;
+}
+
+.library-entry-title {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .library-entry:hover {
@@ -118,6 +124,7 @@
    regardless of whether an entry is locked or not. */
 .library-lock-icon {
   display: inline-block;
+  flex-shrink: 0;
   width: 1.1rem;
   text-align: center;
   margin-right: 0.25rem;
@@ -125,7 +132,8 @@
 }
 
 .library-rename-input {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   box-sizing: border-box;
   font: inherit;
   padding: 0.15rem 0.3rem;
