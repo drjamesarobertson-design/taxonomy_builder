@@ -2436,6 +2436,10 @@ export default function Grid({
                         width: `${Math.max(1, (row.descriptions[level]?.length ?? 0) + 2)}ch`,
                       }}
                       type="text"
+                      // James asked whether spell checking needs a separate add-in — it doesn't;
+                      // this just makes the browser's own native spellcheck explicit rather than
+                      // relying on whatever a given browser defaults an <input> to.
+                      spellCheck
                       // Column 1 is forced to ALL CAPS as you type (Section 4.3) — hinting the
                       // same at the virtual-keyboard level, so a mobile/tablet keyboard visibly
                       // shows itself shifted into caps for this field, like a locked Caps Lock.
