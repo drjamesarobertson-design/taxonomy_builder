@@ -40,6 +40,7 @@ import {
   deleteLibraryEntry,
 } from './library';
 import type { LibraryCategory, LibraryEntry } from './library';
+import { bumpFileVersion } from './fileVersion';
 import './App.css';
 
 export default function App() {
@@ -194,6 +195,7 @@ export default function App() {
   const [libraryCategoryPrompt, setLibraryCategoryPrompt] = useState<LibraryCategory>(LIBRARY_CATEGORIES[0]);
   const [showLibraryCategoryPrompt, setShowLibraryCategoryPrompt] = useState(false);
   const [libraryRemoveTarget, setLibraryRemoveTarget] = useState<LibraryEntry | null>(null);
+  const [showLibraryOverwritePrompt, setShowLibraryOverwritePrompt] = useState(false);
   const [justAddedToLibrary, setJustAddedToLibrary] = useState(false);
   const libraryAddedFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -214,10 +216,10 @@ export default function App() {
   function handleAddToLibraryClick() {
     if (!project) return;
     if (currentLibraryEntryId) {
-      updateLibraryEntryProject(currentLibraryEntryId, project).then(() => {
-        refreshLibrary();
-        flashAddedToLibrary();
-      });
+      // Already linked to a Library entry — never overwrite silently (James's report):
+      // ask whether to update that same entry or park this as a new, separately-numbered
+      // version alongside it.
+      setShowLibraryOverwritePrompt(true);
     } else {
       setLibraryCategoryPrompt(LIBRARY_CATEGORIES[0]);
       setShowLibraryCategoryPrompt(true);
@@ -229,6 +231,36 @@ export default function App() {
     addLibraryEntry(project, libraryCategoryPrompt).then((entry) => {
       setCurrentLibraryEntryId(entry.id);
       setShowLibraryCategoryPrompt(false);
+      refreshLibrary();
+      flashAddedToLibrary();
+    });
+  }
+
+  function confirmOverwriteLibraryEntry() {
+    if (!project || !currentLibraryEntryId) return;
+    updateLibraryEntryProject(currentLibraryEntryId, project).then(() => {
+      setShowLibraryOverwritePrompt(false);
+      refreshLibrary();
+      flashAddedToLibrary();
+    });
+  }
+
+  // A prior "New Version" leaves an " v1.NN" suffix on the title (mirroring the existing
+  // Save-to-File filename convention) — stripped before appending the next one, so repeated
+  // versioning reads "Title v1.03", never "Title v1.02 v1.03".
+  function stripLibraryVersionSuffix(title: string): string {
+    return title.replace(/ v1\.\d{2,}$/, '');
+  }
+
+  function confirmNewLibraryVersion() {
+    if (!project || !currentLibraryEntryId) return;
+    const category = libraryEntries.find((e) => e.id === currentLibraryEntryId)?.category ?? LIBRARY_CATEGORIES[0];
+    const { project: versioned, versionLabel } = bumpFileVersion(project, 'library');
+    const newProject = { ...versioned, title: `${stripLibraryVersionSuffix(versioned.title)}${versionLabel}` };
+    addLibraryEntry(newProject, category).then((entry) => {
+      setProject(newProject);
+      setCurrentLibraryEntryId(entry.id);
+      setShowLibraryOverwritePrompt(false);
       refreshLibrary();
       flashAddedToLibrary();
     });
@@ -1329,6 +1361,25 @@ export default function App() {
               </button>
               <button type="button" onClick={confirmAddToLibrary}>
                 Add to Library
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showLibraryOverwritePrompt && (
+        <div className="validation-overlay" onClick={() => setShowLibraryOverwritePrompt(false)}>
+          <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <p>This taxonomy is already in the Library. Overwrite that entry, or keep it and save this as a new version?</p>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setShowLibraryOverwritePrompt(false)}>
+                Cancel
+              </button>
+              <button type="button" onClick={confirmOverwriteLibraryEntry}>
+                Overwrite
+              </button>
+              <button type="button" onClick={confirmNewLibraryVersion}>
+                New Version
               </button>
             </div>
           </div>
