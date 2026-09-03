@@ -9,7 +9,7 @@
 import type { TaxonomyProject } from './types';
 
 export const LIBRARY_CATEGORIES = [
-  'General Ledger Related',
+  'Cubic Business Model Related',
   'Item and Product Related',
   'Customer Related',
   'Personnel Related',
@@ -21,10 +21,21 @@ export const LIBRARY_CATEGORIES = [
 
 export type LibraryCategory = (typeof LIBRARY_CATEGORIES)[number];
 
+// James's Cubic Business Model© (CLAUDE.md Section 9) — the one category that, unlike the
+// other seven, is itself broken into four fixed sub-headings rather than holding entries in a
+// single flat list. `subcategory` is meaningless (and left undefined) for every other category.
+export const CUBIC_BUSINESS_MODEL_CATEGORY: LibraryCategory = 'Cubic Business Model Related';
+export const CUBIC_BUSINESS_MODEL_SUBCATEGORIES = ['DIVISIONS', 'LOCATIONS', 'FUNCTIONS', 'GL ACCOUNTS'] as const;
+export type CubicBusinessModelSubcategory = (typeof CUBIC_BUSINESS_MODEL_SUBCATEGORIES)[number];
+
 export interface LibraryEntry {
   id: string;
   category: LibraryCategory;
-  /** Position within its category, ascending. Not necessarily contiguous. */
+  /** Only set when `category` is `CUBIC_BUSINESS_MODEL_CATEGORY` — which of its four fixed
+   * sub-headings this entry sits under. Undefined for every other category. */
+  subcategory?: CubicBusinessModelSubcategory;
+  /** Position within its category (and subcategory, where one applies), ascending. Not
+   * necessarily contiguous. */
   order: number;
   project: TaxonomyProject;
   updatedAt: string;
@@ -47,14 +58,29 @@ function openDb(): Promise<IDBDatabase> {
   });
 }
 
+// Renamed from "General Ledger Related" — any entry already saved under that literal string
+// (from before the Cubic Business Model© restructure) is migrated on first read below, rather
+// than silently vanishing from every heading once it no longer matches LIBRARY_CATEGORIES.
+const LEGACY_GENERAL_LEDGER_CATEGORY = 'General Ledger Related';
+
 export async function listLibraryEntries(): Promise<LibraryEntry[]> {
   const db = await openDb();
-  return new Promise((resolve, reject) => {
+  const entries = await new Promise<LibraryEntry[]>((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readonly');
     const req = tx.objectStore(STORE_NAME).getAll();
     req.onsuccess = () => resolve(req.result as LibraryEntry[]);
     req.onerror = () => reject(req.error);
   });
+  const legacyEntries = entries.filter((e) => (e.category as string) === LEGACY_GENERAL_LEDGER_CATEGORY);
+  if (legacyEntries.length === 0) return entries;
+  const migrated = await Promise.all(
+    legacyEntries.map((e) => {
+      const updated: LibraryEntry = { ...e, category: CUBIC_BUSINESS_MODEL_CATEGORY, subcategory: 'GL ACCOUNTS' };
+      return putEntry(updated).then(() => updated);
+    }),
+  );
+  const migratedById = new Map(migrated.map((e) => [e.id, e]));
+  return entries.map((e) => migratedById.get(e.id) ?? e);
 }
 
 function putEntry(entry: LibraryEntry): Promise<void> {
@@ -79,18 +105,24 @@ export async function deleteLibraryEntry(id: string): Promise<void> {
   });
 }
 
-function nextOrder(entries: LibraryEntry[], category: LibraryCategory): number {
-  const inCategory = entries.filter((e) => e.category === category);
-  return inCategory.length === 0 ? 0 : Math.max(...inCategory.map((e) => e.order)) + 1;
+function nextOrder(entries: LibraryEntry[], category: LibraryCategory, subcategory?: CubicBusinessModelSubcategory): number {
+  const inScope = entries.filter((e) => e.category === category && e.subcategory === subcategory);
+  return inScope.length === 0 ? 0 : Math.max(...inScope.map((e) => e.order)) + 1;
 }
 
-/** Saves a snapshot of `project` as a brand-new Library entry under `category`. */
-export async function addLibraryEntry(project: TaxonomyProject, category: LibraryCategory): Promise<LibraryEntry> {
+/** Saves a snapshot of `project` as a brand-new Library entry under `category` (and, for the
+ * Cubic Business Model category, `subcategory`). */
+export async function addLibraryEntry(
+  project: TaxonomyProject,
+  category: LibraryCategory,
+  subcategory?: CubicBusinessModelSubcategory,
+): Promise<LibraryEntry> {
   const entries = await listLibraryEntries();
   const entry: LibraryEntry = {
     id: crypto.randomUUID(),
     category,
-    order: nextOrder(entries, category),
+    subcategory,
+    order: nextOrder(entries, category, subcategory),
     project,
     updatedAt: new Date().toISOString(),
   };
@@ -115,10 +147,15 @@ export async function renameLibraryEntry(id: string, title: string): Promise<voi
   await putEntry({ ...existing, project: { ...existing.project, title }, updatedAt: new Date().toISOString() });
 }
 
-/** Sets the full ordered id list for one category — covers both a plain reorder within a
- * category and a move from a different category in one call (every id passed here ends up
- * in `category`, at its position in the array). */
-export async function setLibraryCategoryOrder(category: LibraryCategory, orderedIds: string[]): Promise<void> {
+/** Sets the full ordered id list for one category (and, for the Cubic Business Model category,
+ * one of its four sub-headings) — covers both a plain reorder within that scope and a move in
+ * from a different one in the same call (every id passed here ends up in `category`/
+ * `subcategory`, at its position in the array). */
+export async function setLibraryCategoryOrder(
+  category: LibraryCategory,
+  orderedIds: string[],
+  subcategory?: CubicBusinessModelSubcategory,
+): Promise<void> {
   const entries = await listLibraryEntries();
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {
@@ -126,7 +163,7 @@ export async function setLibraryCategoryOrder(category: LibraryCategory, ordered
     const store = tx.objectStore(STORE_NAME);
     orderedIds.forEach((id, index) => {
       const existing = entries.find((e) => e.id === id);
-      if (existing) store.put({ ...existing, category, order: index });
+      if (existing) store.put({ ...existing, category, subcategory, order: index });
     });
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);

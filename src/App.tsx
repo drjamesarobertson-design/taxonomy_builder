@@ -32,6 +32,8 @@ import Login from './Login';
 import { getStoredAuthEmail, clearAuthEmail } from './auth';
 import {
   LIBRARY_CATEGORIES,
+  CUBIC_BUSINESS_MODEL_CATEGORY,
+  CUBIC_BUSINESS_MODEL_SUBCATEGORIES,
   listLibraryEntries,
   addLibraryEntry,
   updateLibraryEntryProject,
@@ -39,7 +41,7 @@ import {
   setLibraryCategoryOrder,
   deleteLibraryEntry,
 } from './library';
-import type { LibraryCategory, LibraryEntry } from './library';
+import type { CubicBusinessModelSubcategory, LibraryCategory, LibraryEntry } from './library';
 import { bumpFileVersion } from './fileVersion';
 import './App.css';
 
@@ -193,6 +195,9 @@ export default function App() {
   const [libraryEntries, setLibraryEntries] = useState<LibraryEntry[]>([]);
   const [currentLibraryEntryId, setCurrentLibraryEntryId] = useState<string | null>(null);
   const [libraryCategoryPrompt, setLibraryCategoryPrompt] = useState<LibraryCategory>(LIBRARY_CATEGORIES[0]);
+  const [librarySubcategoryPrompt, setLibrarySubcategoryPrompt] = useState<CubicBusinessModelSubcategory>(
+    CUBIC_BUSINESS_MODEL_SUBCATEGORIES[0],
+  );
   const [showLibraryCategoryPrompt, setShowLibraryCategoryPrompt] = useState(false);
   const [libraryRemoveTarget, setLibraryRemoveTarget] = useState<LibraryEntry | null>(null);
   const [showLibraryOverwritePrompt, setShowLibraryOverwritePrompt] = useState(false);
@@ -222,13 +227,15 @@ export default function App() {
       setShowLibraryOverwritePrompt(true);
     } else {
       setLibraryCategoryPrompt(LIBRARY_CATEGORIES[0]);
+      setLibrarySubcategoryPrompt(CUBIC_BUSINESS_MODEL_SUBCATEGORIES[0]);
       setShowLibraryCategoryPrompt(true);
     }
   }
 
   function confirmAddToLibrary() {
     if (!project) return;
-    addLibraryEntry(project, libraryCategoryPrompt).then((entry) => {
+    const subcategory = libraryCategoryPrompt === CUBIC_BUSINESS_MODEL_CATEGORY ? librarySubcategoryPrompt : undefined;
+    addLibraryEntry(project, libraryCategoryPrompt, subcategory).then((entry) => {
       setCurrentLibraryEntryId(entry.id);
       setShowLibraryCategoryPrompt(false);
       refreshLibrary();
@@ -254,10 +261,12 @@ export default function App() {
 
   function confirmNewLibraryVersion() {
     if (!project || !currentLibraryEntryId) return;
-    const category = libraryEntries.find((e) => e.id === currentLibraryEntryId)?.category ?? LIBRARY_CATEGORIES[0];
+    const linkedEntry = libraryEntries.find((e) => e.id === currentLibraryEntryId);
+    const category = linkedEntry?.category ?? LIBRARY_CATEGORIES[0];
+    const subcategory = linkedEntry?.subcategory;
     const { project: versioned, versionLabel } = bumpFileVersion(project, 'library');
     const newProject = { ...versioned, title: `${stripLibraryVersionSuffix(versioned.title)}${versionLabel}` };
-    addLibraryEntry(newProject, category).then((entry) => {
+    addLibraryEntry(newProject, category, subcategory).then((entry) => {
       setProject(newProject);
       setCurrentLibraryEntryId(entry.id);
       setShowLibraryOverwritePrompt(false);
@@ -285,8 +294,8 @@ export default function App() {
     renameLibraryEntry(id, title).then(refreshLibrary);
   }
 
-  function handleReorderLibrary(category: LibraryCategory, orderedIds: string[]) {
-    setLibraryCategoryOrder(category, orderedIds).then(refreshLibrary);
+  function handleReorderLibrary(category: LibraryCategory, orderedIds: string[], subcategory?: CubicBusinessModelSubcategory) {
+    setLibraryCategoryOrder(category, orderedIds, subcategory).then(refreshLibrary);
   }
 
   function handleRemoveLibraryEntry() {
@@ -1355,6 +1364,19 @@ export default function App() {
                 </option>
               ))}
             </select>
+            {libraryCategoryPrompt === CUBIC_BUSINESS_MODEL_CATEGORY && (
+              <select
+                className="library-category-select"
+                value={librarySubcategoryPrompt}
+                onChange={(e) => setLibrarySubcategoryPrompt(e.target.value as CubicBusinessModelSubcategory)}
+              >
+                {CUBIC_BUSINESS_MODEL_SUBCATEGORIES.map((subcategory) => (
+                  <option key={subcategory} value={subcategory}>
+                    {subcategory}
+                  </option>
+                ))}
+              </select>
+            )}
             <div className="confirm-dialog-actions">
               <button type="button" onClick={() => setShowLibraryCategoryPrompt(false)}>
                 Cancel

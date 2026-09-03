@@ -1,11 +1,13 @@
 // The landing menu shown once signed in with no taxonomy open (Section 5-adjacent facilitation
 // entry point): pick a starting complexity level for a new taxonomy, or go work on one that
-// already exists. The six levels are all wired to today's same taxonomy setup screen for now —
-// per-level guided workflows (hiding/revealing columns, step-by-step prompts) are the next
-// piece of work, tracked separately; this screen exists so the choice itself has a home before
-// that logic is built, and so choosing a level in the meantime isn't a dead end.
+// already exists. Every level (Simple Taxonomy aside, which has its own guided wizard) is wired
+// to today's same taxonomy setup screen for now — per-level guided workflows (hiding/revealing
+// columns, step-by-step prompts) are the next piece of work, tracked separately; this screen
+// exists so the choice itself has a home before that logic is built, and so choosing a level in
+// the meantime isn't a dead end. Division/Location/Function/Chart of Accounts are grouped under
+// a plain "Cubic Business Model" label (James's ask) — that label is not itself a button.
 
-import { WORKFLOW_LEVELS } from './types';
+import { CUBIC_BUSINESS_MODEL_WORKFLOW_LEVELS, WORKFLOW_LEVELS } from './types';
 import type { WorkflowLevel } from './types';
 
 interface WorkflowMenuProps {
@@ -35,7 +37,13 @@ export default function WorkflowMenu({ onChooseNew, onChooseExisting, resumeTitl
             option opens the same taxonomy setup screen.
           </p>
           <div className="workflow-level-buttons">
-            {WORKFLOW_LEVELS.map((level) => (
+            <span className="workflow-level-group-heading">Cubic Business Model</span>
+            {CUBIC_BUSINESS_MODEL_WORKFLOW_LEVELS.map((level) => (
+              <button key={level} type="button" onClick={() => onChooseNew(level)}>
+                {level}
+              </button>
+            ))}
+            {WORKFLOW_LEVELS.filter((level) => !CUBIC_BUSINESS_MODEL_WORKFLOW_LEVELS.includes(level)).map((level) => (
               <button key={level} type="button" onClick={() => onChooseNew(level)}>
                 {level}
               </button>

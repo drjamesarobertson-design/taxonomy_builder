@@ -17,19 +17,31 @@ export const CODE_RESTRICTIONS = [
 
 export type CodeRestriction = (typeof CODE_RESTRICTIONS)[number];
 
-// The sign-on landing menu's six starting points for a new taxonomy (WorkflowMenu). All six
-// currently open the same taxonomy setup screen — per-level guided workflows (hiding/revealing
-// columns, step-by-step prompts) are the next piece of work, not yet built.
+// The sign-on landing menu's starting points for a new taxonomy (WorkflowMenu). All of them
+// currently open the same taxonomy setup screen except Simple Taxonomy (which has its own
+// guided wizard) — per-level guided workflows for the rest are a later piece of work.
 export const WORKFLOW_LEVELS = [
-  'Simple Taxonomy',
-  'Intermediate Complexity Taxonomy',
-  'Advanced Complexity Taxonomy',
+  'Division',
+  'Location',
+  'Function',
   'Chart of Accounts',
+  'Simple Taxonomy',
+  'Advanced Complexity Taxonomy',
   'Item Master',
   'Highly Experienced User — No Guidance',
 ] as const;
 
 export type WorkflowLevel = (typeof WORKFLOW_LEVELS)[number];
+
+// Division/Location/Function/Chart of Accounts are grouped on the menu under a plain,
+// non-clickable "Cubic Business Model" heading (CLAUDE.md Section 9's Cubic Business Model©)
+// rather than sitting as top-level buttons like every other WORKFLOW_LEVELS entry.
+export const CUBIC_BUSINESS_MODEL_WORKFLOW_LEVELS: readonly WorkflowLevel[] = [
+  'Division',
+  'Location',
+  'Function',
+  'Chart of Accounts',
+];
 
 // The Simple Taxonomy guided wizard's stages, in order. 'headings' shows only description
 // column 1 with every code column hidden; 'subItems' reveals column 2 (still no codes) for
