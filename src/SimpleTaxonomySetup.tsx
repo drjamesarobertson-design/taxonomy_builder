@@ -10,6 +10,7 @@ interface SimpleTaxonomySetupProps {
     purpose: string,
     maxDescriptionLength: number,
     column1CodeLength: number,
+    properCaseOnly: boolean,
   ) => void;
   helpText: HelpTextMap;
 }
@@ -24,7 +25,8 @@ interface SimpleTaxonomySetupProps {
 // character) is silently defaulted here and only ever surfaces once the wizard's coding stage
 // actually needs it — no reason to ask a first-time user to make five structural decisions
 // before they've typed a single heading. Every other workflow-menu level still uses the full
-// form unchanged, with column 1 staying a single character.
+// form unchanged, with column 1 staying a single character. A Proper-Case-throughout checkbox
+// appears once Column 1 Code Length is raised above 1 — meaningless (and hidden) otherwise.
 export default function SimpleTaxonomySetup({ onCreate, helpText }: SimpleTaxonomySetupProps) {
   const [title, setTitle] = useState('');
   const [tableName, setTableName] = useState('');
@@ -33,13 +35,25 @@ export default function SimpleTaxonomySetup({ onCreate, helpText }: SimpleTaxono
     String(DEFAULT_SETTINGS.maxDescriptionLength),
   );
   const [column1CodeLengthText, setColumn1CodeLengthText] = useState(String(DEFAULT_SETTINGS.column1CodeLength));
+  // James's ask: once column 1 carries more than one character, offer to keep every
+  // description in Proper Case throughout rather than the usual ALL CAPS-for-structural-
+  // entries convention — meaningless (and hidden) while column 1 stays a single character.
+  const [properCaseOnly, setProperCaseOnly] = useState(false);
+  const showProperCasePrompt = Number(column1CodeLengthText) > 1;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim() || !tableName.trim()) return;
     const maxDescriptionLength = Math.max(1, Number(maxDescriptionLengthText) || DEFAULT_SETTINGS.maxDescriptionLength);
     const column1CodeLength = Math.max(1, Math.min(5, Number(column1CodeLengthText) || DEFAULT_SETTINGS.column1CodeLength));
-    onCreate(title.trim(), tableName.trim(), purpose.trim(), maxDescriptionLength, column1CodeLength);
+    onCreate(
+      title.trim(),
+      tableName.trim(),
+      purpose.trim(),
+      maxDescriptionLength,
+      column1CodeLength,
+      column1CodeLength > 1 && properCaseOnly,
+    );
   }
 
   return (
@@ -107,6 +121,14 @@ export default function SimpleTaxonomySetup({ onCreate, helpText }: SimpleTaxono
           ))}
         </select>
       </label>
+      {showProperCasePrompt && (
+        <label className="checkbox-label">
+          <input type="checkbox" checked={properCaseOnly} onChange={(e) => setProperCaseOnly(e.target.checked)} />
+          Keep descriptions in Proper Case throughout — skip the usual ALL CAPS heading
+          convention and its prompts for this taxonomy?
+          <HelpIcon field="properCaseOnly" helpText={helpText} />
+        </label>
+      )}
       <div className="form-actions">
         <button type="submit">Start Building</button>
       </div>

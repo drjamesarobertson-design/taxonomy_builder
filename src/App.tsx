@@ -32,8 +32,6 @@ import Login from './Login';
 import { getStoredAuthEmail, clearAuthEmail } from './auth';
 import {
   LIBRARY_CATEGORIES,
-  CUBIC_BUSINESS_MODEL_CATEGORY,
-  CUBIC_BUSINESS_MODEL_SUBCATEGORIES,
   listLibraryEntries,
   addLibraryEntry,
   updateLibraryEntryProject,
@@ -41,7 +39,7 @@ import {
   setLibraryCategoryOrder,
   deleteLibraryEntry,
 } from './library';
-import type { CubicBusinessModelSubcategory, LibraryCategory, LibraryEntry } from './library';
+import type { LibraryCategory, LibraryEntry } from './library';
 import { bumpFileVersion } from './fileVersion';
 import './App.css';
 
@@ -195,9 +193,6 @@ export default function App() {
   const [libraryEntries, setLibraryEntries] = useState<LibraryEntry[]>([]);
   const [currentLibraryEntryId, setCurrentLibraryEntryId] = useState<string | null>(null);
   const [libraryCategoryPrompt, setLibraryCategoryPrompt] = useState<LibraryCategory>(LIBRARY_CATEGORIES[0]);
-  const [librarySubcategoryPrompt, setLibrarySubcategoryPrompt] = useState<CubicBusinessModelSubcategory>(
-    CUBIC_BUSINESS_MODEL_SUBCATEGORIES[0],
-  );
   const [showLibraryCategoryPrompt, setShowLibraryCategoryPrompt] = useState(false);
   const [libraryRemoveTarget, setLibraryRemoveTarget] = useState<LibraryEntry | null>(null);
   const [showLibraryOverwritePrompt, setShowLibraryOverwritePrompt] = useState(false);
@@ -227,15 +222,13 @@ export default function App() {
       setShowLibraryOverwritePrompt(true);
     } else {
       setLibraryCategoryPrompt(LIBRARY_CATEGORIES[0]);
-      setLibrarySubcategoryPrompt(CUBIC_BUSINESS_MODEL_SUBCATEGORIES[0]);
       setShowLibraryCategoryPrompt(true);
     }
   }
 
   function confirmAddToLibrary() {
     if (!project) return;
-    const subcategory = libraryCategoryPrompt === CUBIC_BUSINESS_MODEL_CATEGORY ? librarySubcategoryPrompt : undefined;
-    addLibraryEntry(project, libraryCategoryPrompt, subcategory).then((entry) => {
+    addLibraryEntry(project, libraryCategoryPrompt).then((entry) => {
       setCurrentLibraryEntryId(entry.id);
       setShowLibraryCategoryPrompt(false);
       refreshLibrary();
@@ -263,10 +256,9 @@ export default function App() {
     if (!project || !currentLibraryEntryId) return;
     const linkedEntry = libraryEntries.find((e) => e.id === currentLibraryEntryId);
     const category = linkedEntry?.category ?? LIBRARY_CATEGORIES[0];
-    const subcategory = linkedEntry?.subcategory;
     const { project: versioned, versionLabel } = bumpFileVersion(project, 'library');
     const newProject = { ...versioned, title: `${stripLibraryVersionSuffix(versioned.title)}${versionLabel}` };
-    addLibraryEntry(newProject, category, subcategory).then((entry) => {
+    addLibraryEntry(newProject, category).then((entry) => {
       setProject(newProject);
       setCurrentLibraryEntryId(entry.id);
       setShowLibraryOverwritePrompt(false);
@@ -294,8 +286,8 @@ export default function App() {
     renameLibraryEntry(id, title).then(refreshLibrary);
   }
 
-  function handleReorderLibrary(category: LibraryCategory, orderedIds: string[], subcategory?: CubicBusinessModelSubcategory) {
-    setLibraryCategoryOrder(category, orderedIds, subcategory).then(refreshLibrary);
+  function handleReorderLibrary(category: LibraryCategory, orderedIds: string[]) {
+    setLibraryCategoryOrder(category, orderedIds).then(refreshLibrary);
   }
 
   function handleRemoveLibraryEntry() {
@@ -389,10 +381,18 @@ export default function App() {
     purpose: string,
     maxDescriptionLength: number,
     column1CodeLength: number,
+    properCaseOnly: boolean,
   ) {
     const newProject = createProject(title, tableName, purpose, maxDescriptionLength, [], ' ', 1);
     newProject.settings.guidance = { level: 'Simple Taxonomy', stage: 'headings' };
     newProject.settings.column1CodeLength = column1CodeLength;
+    newProject.settings.properCaseOnly = properCaseOnly;
+    // James's report: the wizard's own Code Restriction prompt (GuidanceBanner) preselects
+    // whatever the taxonomy already has, which was silently the global default "Alpha Numeric
+    // with All Alpha" — not the sensible starting point for auto-suggested mnemonic codes drawn
+    // from ALL CAPS/Proper Case English text. Simple Taxonomy taxonomies start from the
+    // upper-case-alpha restriction instead; still fully changeable in that same prompt.
+    newProject.settings.codeRestriction = 'Alpha Numeric with Upper Case Alpha Only';
     newProject.rows = [createEmptyRow(1)];
     setProject(newProject);
     setDirty(true);
@@ -1372,19 +1372,6 @@ export default function App() {
                 </option>
               ))}
             </select>
-            {libraryCategoryPrompt === CUBIC_BUSINESS_MODEL_CATEGORY && (
-              <select
-                className="library-category-select"
-                value={librarySubcategoryPrompt}
-                onChange={(e) => setLibrarySubcategoryPrompt(e.target.value as CubicBusinessModelSubcategory)}
-              >
-                {CUBIC_BUSINESS_MODEL_SUBCATEGORIES.map((subcategory) => (
-                  <option key={subcategory} value={subcategory}>
-                    {subcategory}
-                  </option>
-                ))}
-              </select>
-            )}
             <div className="confirm-dialog-actions">
               <button type="button" onClick={() => setShowLibraryCategoryPrompt(false)}>
                 Cancel

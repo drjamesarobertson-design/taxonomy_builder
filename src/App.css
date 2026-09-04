@@ -83,25 +83,16 @@
   min-height: 1rem;
 }
 
-/* Cubic Business Model Related's own heading is a plain label, not a drop target — its four
-   sub-headings (below) are where entries actually live and where drops land. */
-.library-category-heading-static {
-  cursor: default;
-}
-
-.library-subcategory {
-  margin-left: 0.6rem;
-}
-
-.library-subcategory-heading {
-  font-size: 0.7rem;
+/* Groups Division/Location/Function/Chart of Accounts together in the Library list — a plain
+   label, not a drop target, mirroring WorkflowMenu's own "Cubic Business Model" heading. */
+.library-category-group-heading {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  color: #7f9acb;
-  margin: 0.4rem 0 0.2rem;
-  padding-bottom: 0.1rem;
-  border-bottom: 1px dashed rgba(255, 255, 255, 0.12);
-  min-height: 0.9rem;
+  color: #7fb0ff;
+  margin: 0.6rem 0 0.15rem;
 }
 
 .library-entry-list {

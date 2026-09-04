@@ -30,6 +30,9 @@ interface GuidanceBannerProps {
 // stage machine and hands Grid whatever new settings/rows a transition produces.
 export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExitGuidance }: GuidanceBannerProps) {
   const [confirmOverride, setConfirmOverride] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  // James's ask: asked at the end of every description column (not just after the first) so
+  // the wizard supports more than two columns — see resolveAnotherColumn below.
+  const [anotherColumnPrompt, setAnotherColumnPrompt] = useState(false);
   const [codingPrompt, setCodingPrompt] = useState<'restriction' | 'mnemonic' | null>(null);
   const [pendingRestriction, setPendingRestriction] = useState<CodeRestriction | null>(null);
   // Item 5: the wizard's own "Numeric or Alpha?" prompt now carries the full Code Restriction
@@ -63,8 +66,12 @@ export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExi
   const { stage, level: guidanceLevel } = guidance;
   const rows = project.rows;
 
+  // Reveals exactly one more description column than exists already (1 -> 2 the first time,
+  // then 2 -> 3, 3 -> 4, ... on every later "Yes" from the Another Description Column? prompt —
+  // James's ask for more than two columns). The Math.max floor only matters on that very first
+  // call, from the headings stage's numLevels of 1.
   function advanceToSubItems() {
-    const newNumLevels = Math.max(project.settings.numLevels, 2);
+    const newNumLevels = Math.max(project.settings.numLevels + 1, 2);
     onSettingsAndRowsChange(
       { ...project.settings, numLevels: newNumLevels, guidance: { level: guidanceLevel, stage: 'subItems' } },
       growRowsToLevels(rows, newNumLevels),
@@ -79,12 +86,12 @@ export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExi
         message: `You have ${count} heading${count === 1 ? '' : 's'} — recommended 5 to 9. Continue anyway?`,
         onConfirm: () => {
           setConfirmOverride(null);
-          advanceToSubItems();
+          setAnotherColumnPrompt(true);
         },
       });
       return;
     }
-    advanceToSubItems();
+    setAnotherColumnPrompt(true);
   }
 
   function beginCoding() {
@@ -113,12 +120,23 @@ export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExi
         } an unusual number of sub-items (recommended 5 to 9, when used at all). Continue anyway?`,
         onConfirm: () => {
           setConfirmOverride(null);
-          beginCoding();
+          setAnotherColumnPrompt(true);
         },
       });
       return;
     }
-    beginCoding();
+    setAnotherColumnPrompt(true);
+  }
+
+  // James's ask: this used to jump straight from headings to exactly one further column
+  // (subItems) and then straight to coding — now every column's "Next Step" (headings included)
+  // asks first, so the wizard supports as many description columns as the taxonomy actually
+  // needs, not just two. "Yes" reveals one more column and stays on the same repeatable stage;
+  // "No" moves on to coding with however many columns exist so far.
+  function resolveAnotherColumn(addAnother: boolean) {
+    setAnotherColumnPrompt(false);
+    if (addAnother) advanceToSubItems();
+    else beginCoding();
   }
 
   function chooseRestriction(restriction: CodeRestriction) {
@@ -303,6 +321,22 @@ export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExi
               </button>
               <button type="button" onClick={confirmOverride.onConfirm}>
                 Continue Anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {anotherColumnPrompt && (
+        <div className="validation-overlay">
+          <div className="validation-dialog">
+            <p>Another Description Column?</p>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => resolveAnotherColumn(false)}>
+                No — Move to Coding
+              </button>
+              <button type="button" onClick={() => resolveAnotherColumn(true)}>
+                Yes — Add Another Column
               </button>
             </div>
           </div>
