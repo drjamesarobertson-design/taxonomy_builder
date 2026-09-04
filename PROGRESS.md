@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #105, 2026-09-04)
+## Current status (as of PR #108, 2026-09-04)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -95,7 +95,15 @@ further rounds of testing feedback. The tool currently supports, in full:
   it on the general Settings dialog and the full New Taxonomy form first,
   then decided "in general multiple characters is a mess" everywhere else,
   so it isn't offered there or on the ongoing Settings dialog at all; the
-  underlying Grid.tsx logic is identical regardless of where it's set.
+  underlying Grid.tsx logic is identical regardless of where it's set. Once
+  it's raised above 1, that same setup screen offers a Proper Case
+  Throughout checkbox (PR #107, `settings.properCaseOnly`) — checked, every
+  description stays in Proper Case for that taxonomy and the automatic
+  ALL CAPS-for-structural-entries convention (forced typing, the
+  auto-capitalize hint, the "gained a child" auto-uppercase, and the
+  one-time "All headings should be capitalized" tip) is skipped entirely;
+  Toggle Case stays available manually either way. Defaults false/hidden
+  everywhere else, so no other taxonomy is affected.
 - Create Block / Import Block for moving content between separate taxonomy
   files.
 - Field-level help icons (New Taxonomy + Settings) and right-click menu help,
@@ -110,11 +118,17 @@ further rounds of testing feedback. The tool currently supports, in full:
   Move to Work Area / Edit Title / Move Up / Move Down / Move to Category…
   / Remove from Library, and drag-and-drop reordering within or across
   headings (both the right-click and drag mechanisms work side by side).
-  One heading — Cubic Business Model Related (PR #100, renamed from
-  "General Ledger Related") — is itself broken into four fixed sub-headings
-  (DIVISIONS / LOCATIONS / FUNCTIONS / GL ACCOUNTS), each with its own
-  drag/drop, Move Up/Down, and Move to Category sub-heading picker; every
-  other heading stays a single flat list.
+  Division, Location, Function, and Chart of Accounts sit directly in that
+  same eleven-heading list (PR #107) rather than behind a single "Cubic
+  Business Model Related" category with its own nested sub-category
+  dropdown — James's report that the nested picker hid the real choices
+  ("Add to library only offers Cubic Business Model, need to replace that
+  with Divisions, Locations, etc"); the sidebar still groups those four
+  under a shared, non-clickable "Cubic Business Model" heading (mirroring
+  WorkflowMenu's own grouping), and entries saved under either older
+  category shape (the original "General Ledger Related", PR #100's "Cubic
+  Business Model Related" + sub-heading) are migrated automatically on
+  first read. Every heading, grouped or not, is a single flat list now.
   Persisted in this browser's own IndexedDB — per-browser, not a file, and
   not synced anywhere.
 - A "Code Restrictions" dropdown at the top of the work area, narrowing
@@ -148,7 +162,26 @@ further rounds of testing feedback. The tool currently supports, in full:
   file with no code columns at all — a header reading "Level 1", "Level
   2", ... optionally followed by "Notes" (PR #94) — bringing in every
   Level column as a real description level with codes left genuinely
-  blank, and each row's Notes text landing in that row's note.
+  blank, and each row's Notes text landing in that row's note. Elaborated
+  (PR #108) for a real "GL Analyser" export James supplied on top of that
+  plain shape: (1) a file's deepest items can overflow one column past the
+  last named "Level N" header into an arbitrarily-named column (his own
+  file reused "Account (from client CoA)" for a genuine 7th level) —
+  detected structurally, by never being populated on the same row as the
+  column before it, since there's no way to know that column's name in
+  advance; (2) optional trailing columns for an old/existing GL code
+  ("6 char but allow for 10" — the general suffix width cap raised from 8
+  to 10) and a certainty/confidence rating, recognised by header name
+  (several common spellings each) and imported as ordinary suffix columns;
+  (3) explanatory comment rows sitting alone in a description column
+  (long, prose-like text with no code or certainty of its own) are folded
+  into a note on the row directly above them and removed, instead of
+  landing as bogus taxonomy entries — verified against his file's 12 such
+  rows. All three are independently optional; the plain "Level N + Notes"
+  shape and the other two import paths (headered discrete columns,
+  headerless) are unaffected. Once imported, the existing general-purpose
+  Auto Code toolbar action (below) runs on the result as-is — no separate
+  import-time autocoding was needed.
 - Grid's own right-click "Export Block" on a selected row range (alongside
   the toolbar's whole-table Create Block), with an "Include Suffix? Y/N"
   choice.
@@ -203,8 +236,19 @@ further rounds of testing feedback. The tool currently supports, in full:
   revealed (code columns stay hidden); any heading may stay flat — only a
   *non-zero* out-of-range child count triggers the same override-required
   warning; a heading's first child is auto-capped to ALL CAPS as it's
-  typed. **Coding**: code columns are revealed to exactly the depth
-  actually used, then Numeric vs. Alpha is asked, then — a deliberate,
+  typed (skipped under Proper Case Throughout, see Column 1 Code Length
+  above). "Next Step" no longer jumps straight from headings to exactly
+  one further column and then straight to coding (PR #107) — every
+  column's "Next Step", headings included, now asks "Another Description
+  Column?" first; "Yes" reveals one more column and stays on the same
+  repeatable stage, "No" moves on to coding with however many columns
+  exist so far, so the wizard supports as many description columns as a
+  taxonomy actually needs, not just two. **Coding**: code columns are
+  revealed to exactly the depth actually used, then a Code Restriction
+  choice is asked, defaulting to "Alpha Numeric with Upper Case Alpha
+  Only" (PR #107 — was silently the app-wide default "Alpha Numeric with
+  All Alpha", not a sensible starting point for auto-suggested mnemonic
+  codes drawn from ALL CAPS/Proper Case text), then — a deliberate,
   scoped exception to Section 9's "no automatic code generation" that
   James explicitly asked for ("please ignore previous constraints, we are
   now pushing the boundaries to create an increasingly intelligent
@@ -463,6 +507,123 @@ further rounds of testing feedback. The tool currently supports, in full:
   piece is specifically the *phonetic* judgement of which letter to pick
   when there's a choice. Left for a follow-up conversation rather than
   guessed at.
+
+### Repeatable wizard columns, Proper Case option, restriction default fix, flattened Library, elaborated CSV import (PR #107–#108)
+A five-item round, plus a real client CSV ("GL Analyser" output) James
+attached for the Import CSV elaboration:
+
+1. "On the simple taxonomy, next automatically goes to second description
+   column, at end of first column, next need to prompt 'Another
+   Description Column' and need to do this each next since we now want to
+   be able to go to more than two columns." `GuidanceBanner.tsx`'s
+   `handleHeadingsNext`/`handleSubItemsNext` now route into a shared
+   "Another Description Column?" Y/N prompt instead of calling
+   `advanceToSubItems`/`beginCoding` directly; "Yes" reveals one more
+   column (`advanceToSubItems` fixed to grow `numLevels` by exactly 1 each
+   time — it previously clamped to `Math.max(numLevels, 2)`, which only
+   ever worked for the original single headings→subItems transition and
+   would have silently stopped growing past 2 columns), "No" begins
+   coding. The 'headings'/'subItems' stage names and their own 5-to-9
+   range warnings are unchanged; only what happens after "Next Step"
+   moved.
+2. "Where the code length is chosen as more than 1 char ask if
+   descriptions should be proper case and if yes suppress upper case
+   prompts and actions." A checkbox appears on the Simple Taxonomy setup
+   screen once Column 1 Code Length is raised above 1; checking it sets a
+   new `settings.properCaseOnly`, which `Grid.tsx` checks in the four
+   places ALL CAPS was previously automatic or unconditional for column 1:
+   forced-uppercase-while-typing, the `autoCapitalize` virtual-keyboard
+   hint, the wizard's "gained a first child → auto ALL CAPS" convenience,
+   and the one-time "All headings should be capitalized" tip. Toggle Case
+   stays manually available regardless — only the automatic nudges/actions
+   are suppressed. Defaults false; every other taxonomy is unaffected.
+3. "After second column and delete that column on then selecting Next get
+   pop up 'Alpha Numeric with All Alpha' – not correct, should be 'Alpha
+   Numeric with Uppercase Alpha' I think." The wizard's Code Restriction
+   prompt (`GuidanceBanner.tsx`) preselects whatever `project.settings.
+   codeRestriction` already is, which for a freshly-created Simple
+   Taxonomy was silently `DEFAULT_SETTINGS.codeRestriction` ("Alpha
+   Numeric with All Alpha") — not a sensible starting point for
+   auto-suggested mnemonic codes drawn from ALL CAPS/Proper Case text.
+   `handleCreateSimpleTaxonomy` now sets the new project's
+   `codeRestriction` to "Alpha Numeric with Upper Case Alpha Only" up
+   front — still fully changeable in that same prompt.
+4. "Add to library only offers Cubic Business Model, need to replace that
+   with Divisions, Locations, etc." The nested "Cubic Business Model
+   Related" category + DIVISIONS/LOCATIONS/FUNCTIONS/GL ACCOUNTS
+   sub-category picker (PR #100) hid the real choices behind a step James
+   didn't expect. `library.ts`'s `LIBRARY_CATEGORIES` now lists Division,
+   Location, Function, and Chart of Accounts directly (11 flat headings
+   total, `LibraryEntry.subcategory` removed entirely); `LibrarySidebar.tsx`
+   still groups those four under a shared, non-clickable "Cubic Business
+   Model" heading — the same `isFirstCubicLevel`-style logic
+   `WorkflowMenu.tsx` already used for its own grouping, so the heading
+   sits correctly wherever the four fall in the list without the sidebar
+   needing to know their position. Entries saved under either older
+   category shape (the original "General Ledger Related", and PR #100's
+   "Cubic Business Model Related" + sub-heading) are migrated to the new
+   flat categories automatically on first read.
+5. Deferred from an earlier round, still awaiting James's own reordering:
+   the Code/Description right-click context menus' item order — no change
+   made here either.
+
+Separately, James attached "AP_Trial_Chart_of_Accounts_Mapped_v8_00_Final.csv"
+— real output from a "GL Analyser" tool, the same description-only "Level
+N" shape as PR #94's import but with real-world elaborations: 6 named
+Level columns plus a 7th, differently-named overflow column
+("Account (from client CoA)") used only once items go one level deeper
+than Level 6; an existing/old GL code column ("Account Code", 5-6 digits —
+his own ask allows up to 10); a "Confidence" (High/Medium/Low) rating; a
+"Reason / Notes" column; and 12 rows that are really explanatory comments
+sitting alone in a description column (long, prose-like text, no code or
+confidence of their own) rather than genuine taxonomy entries. Extended
+`csvImport.ts`'s `tryParseDescriptionOnlyCsv`:
+- After the named "Level N" run, keeps consuming further, arbitrarily-
+  named columns as additional description levels for as long as each one
+  is never populated on the same row as the column immediately before it
+  (a real extra level; a same-row value would mean it's metadata about
+  the same entry, not a deeper one) — stopping the moment a column's own
+  header matches one of the recognised trailing-metadata names below, so
+  a metadata column immediately after the last genuine level never gets
+  mistaken for one more level even in the one-row edge case the
+  structural check alone might miss.
+- Recognises, in order, an optional old-code column (header matching
+  "old acc"/"account code"/"gl code"/etc.), an optional certainty column
+  ("certainty"/"confidence"), and the existing optional notes column
+  (now also matching "reason / notes"/"reason"/"comments" alongside
+  "notes") — each imported as an ordinary suffix column (old code,
+  certainty) or into `row.note` (notes), exactly as if the taxonomy had
+  been built with suffix columns from the start.
+- Raised the general suffix-width cap from 8 to 10 characters (only
+  `csvImport.ts`'s `buildResult` — `NewTaxonomyForm.tsx`'s manual suffix
+  editor still caps at 8, since nothing prompted changing that one) so an
+  imported old-code column isn't truncated.
+- A new `mergeCommentRowsIntoNotesAbove` pass (long, mostly-lowercase text
+  sitting alone in a description column, with no old code or certainty of
+  its own — a real posting-level leaf always has picked up at least one
+  by this point) folds each comment into a note on the row directly above
+  it and drops the row — "move those into the notes column and move up
+  one row against the heading." Verified against all 12 of the real
+  file's comment rows landing on the correct heading, in both cases where
+  two differently-worded comments attach to two different headings.
+The original plain "Level N + Notes" shape (regression-tested against the
+PR #94 file) and the other two import paths are untouched — every new
+column here is independently optional, detected before the existing
+"anything left over means this isn't this shape" check. James's own
+stated end goal — "End result will be autocoding" — needed no new
+feature: the existing general-purpose Auto Code toolbar action (PR #96)
+already runs on any correctly-leveled taxonomy, imported or not, and was
+verified end to end against the imported file (2382 rows: 2394 data rows
+minus the 12 merged comment rows).
+
+Shipped as two PRs (#107 for items 1-4, #108 for the CSV import
+elaboration) rather than one, matching how independently each piece
+could be verified. New Playwright/unit tests: `smoke_round15.mjs` (items
+1-4, end to end through the actual wizard/Library UI) and
+`unit_csv_gl_analyser.mjs` + `smoke_csv_import.mjs` (the CSV elaboration,
+both as a pure parser unit test and end to end through Import CSV plus a
+live Auto Code run). Full existing regression suite re-run clean
+(`npx tsc --noEmit`, `npm run lint`, `npm run build` all clean throughout).
 
 ### Cubic Business Model styling, menu order refinement, Column 1 Code Length relocated (PR #105)
 James's follow-up right after trying PR #102-#104 live — three tweaks, the
