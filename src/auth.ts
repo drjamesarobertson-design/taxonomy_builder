@@ -29,57 +29,64 @@ export interface AuthUser {
 // empty workspace — nothing here shares data between accounts, see storage.ts/Library — this
 // is purely about not having to hand out his own credential). "Email" is really just a login
 // identifier — `verifyLogin` only ever compares it as a plain, case-insensitive string, so a
-// short name works exactly as well as a real address; see Login.tsx's plain-text field.
+// short name works exactly as well as a real address; see Login.tsx's plain-text field. Every
+// password here is that same identifier string, so the password field is *also* compared
+// case-insensitively (both sides lower-cased before hashing, below) — otherwise "the password
+// is your username" silently breaks the moment anyone types either field back in a different
+// case than it happened to be seeded with (James's own report: typed his email address in its
+// normal mixed case into both fields and got rejected). Hashes below were regenerated for this
+// change; re-generate the same way (a fresh random salt, `sha256(salt + identifier.toLowerCase())`)
+// if a login is ever added or changed.
 export const AUTH_USERS: AuthUser[] = [
   {
     email: 'jamesar@jar-and-a.com',
-    salt: '3d9c10bdc6f44dbf9043d887b17004ba',
-    hash: '65801540df9ec652244f2de713fbe70ecaa02010716c34ce48d462c2844e0ba2',
+    salt: 'd71a52016ac7912ffcd9a07d7d366d86',
+    hash: '7a30b82f0d7f64388110624edb0886b72edaa2455b16c8e2cb988ebd83a24adc',
   },
   {
     email: 'Friend_1',
-    salt: 'c5423adbebcd783806909c6cd8e21a52',
-    hash: 'cc7a83a7a8f9812d8b8d504941181c31ad6ae9239feae2832987c1d5ad5baf0b',
+    salt: '0c84433d089456fb66635270701fa05a',
+    hash: '76c2fa2b53632e39816b5ea3407723c895c54d4f68555c76a94ff59b386fd93a',
   },
   {
     email: 'Friend_2',
-    salt: '1bc2ff3af4ea512cb30465beda539696',
-    hash: '37c89322bb6e0e6270047bc3206121443c6ae44fee21ca11b65b6d94234aac94',
+    salt: '2b3bc65a31790bdb7997d44521350871',
+    hash: 'd43b7732f395c3d875b44b0b0fc62cd5dd81beadd52126d46e2416520a1d777b',
   },
   {
     email: 'Friend_3',
-    salt: '83980775f9c0e0e23f9a3db1b8dbe2d5',
-    hash: '87d6c9f1982f805466786d74f161522d479129389a7168f71d91ee881731d31c',
+    salt: '7dc64bef2428d1206dfa7637b60b15b8',
+    hash: 'ded334733888f49354cc5ee9dbc86e1073932b19ab36e7e045274f415844bea2',
   },
   {
     email: 'Friend_4',
-    salt: 'dbd752f47ca9d31291bcd3f6f275bbcc',
-    hash: 'c321b58cb168d130d8b7114e9e625bbdf429613d825fcea3df6d8b666808e348',
+    salt: 'e8553e1018cce49c2691e7d5093aa3c1',
+    hash: '4f7bb9f6a8a67dc2aa2f7fb3edd1ca6e1b592067fd7e7d74bd2d16a3ca655c3f',
   },
   {
     email: 'Friend_5',
-    salt: '3c6f5b8e0309b32d576e8c0f36f067a8',
-    hash: 'af4d51806141aed414b0fba912ab01af880eb38ac4c4ee21bcde30bb2f924401',
+    salt: '2c22a91c9921162bf231f4c0e3499e01',
+    hash: 'c3550db497e91974a1ff039de8ccb362f3b8f0738da537a4df2d097da8dac919',
   },
   {
     email: 'Friend_6',
-    salt: 'ad89211eb1e53726df19a9964fa2a71a',
-    hash: '98f94bc2edf3cfe57b4f8f8ec237bd30193764c56c87c1051ed5a9561034f773',
+    salt: 'fa17b3cb4d3933dd79657eae53fc0258',
+    hash: '7408796da45f6ff9c48aa5916542d257e1e5f2e1282e2f8a3148d6b04a283d8c',
   },
   {
     email: 'Friend_7',
-    salt: '438e2e35bad01f96e506c007b04809ca',
-    hash: 'bb30ea6d9fa980ca6064acba19167b140d8dc541d9757e58acbdbb10d0ec833d',
+    salt: '3787dcae403cd218a26eba36253e391b',
+    hash: '7824f2d120cb8334d3f8ec7d8fa8b9b166a6e233b606697f9f59ccb7d4654f5c',
   },
   {
     email: 'Friend_8',
-    salt: '799fa7e2a7f36b9975e2502bbddcfa49',
-    hash: '42a6175349ab1d9aa15947747a9ce06903367042ac536f1b1dd13cb1c5407a96',
+    salt: '07b3f36a189e8b9f410c666726574e80',
+    hash: 'f1de44e5d7f8a57451d04c80b994bdb1cf6544cbbe422c821148d0ee7605c304',
   },
   {
     email: 'Friend_9',
-    salt: '6302e2386089c6b46ec334ed5c444b82',
-    hash: '8d6bb64bab4da901b0f4ca893f4a96b7e5d3a57f4cd563b8040679c90966fc1c',
+    salt: 'b212aefd8de2c9876b3c2f3387ae9758',
+    hash: 'fc6374f15f58a5ecc38febb483b34f5e2e5738effae5e8815da393d424bd2e02',
   },
 ];
 
@@ -99,7 +106,11 @@ export async function verifyLogin(email: string, password: string): Promise<bool
   const normalizedEmail = email.trim().toLowerCase();
   const user = AUTH_USERS.find((u) => u.email.toLowerCase() === normalizedEmail);
   if (!user) return false;
-  const hash = await sha256Hex(user.salt + password);
+  // Every password here is just the identifier itself (see AUTH_USERS above) — lower-cased the
+  // same way the identifier/username field already is, so typing either field back in a
+  // different case than it was seeded with doesn't fail a comparison that was never meant to be
+  // case-sensitive in the first place.
+  const hash = await sha256Hex(user.salt + password.trim().toLowerCase());
   return hash === user.hash;
 }
 
