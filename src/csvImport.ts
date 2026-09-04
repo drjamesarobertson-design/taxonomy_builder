@@ -84,8 +84,11 @@ function buildResult(
 ): ParsedDiscreteCsv {
   const suffixes: SuffixField[] = suffixValueCols.map((c, i) => {
     const maxLen = dataRows.reduce((m, r) => Math.max(m, (r[c] ?? '').length), 1);
+    // James's ask for an imported old GL code column: "6 char but allow for 10" — a generous
+    // ceiling, not a target width; every suffix here is still sized to the longest value the
+    // file actually has (down to 1), this just raises how far that can stretch.
     return {
-      width: Math.max(1, Math.min(8, maxLen)),
+      width: Math.max(1, Math.min(10, maxLen)),
       delimiter: suffixDelimiterChars[i] || '-',
       mode: 'editable',
       constantValue: '',
@@ -270,10 +273,103 @@ function parseHeaderlessCsv(table: string[][]): ParsedDiscreteCsv | { error: str
   return buildResult(rows, numLevels, codeCols, descCols, delimiterPositions, codeDelimiterChar, suffixValueCols, suffixDelimiterChars);
 }
 
+// James's elaboration on this shape: a GL-mapping tool's export ("GL Analyser") can carry the
+// client's existing GL code, a confidence/certainty rating, and a reason/notes column after the
+// "Level N" run — recognised by header name (case-insensitive), in this fixed order, each
+// independently optional. Widened beyond one literal spelling each since there's no reason to
+// assume every such export names them identically.
+const OLD_CODE_HEADER_NAMES = ['old acc', 'old account', 'old code', 'old gl code', 'account code', 'gl code', 'client account code'];
+const CERTAINTY_HEADER_NAMES = ['certainty', 'confidence'];
+const NOTES_HEADER_NAMES = ['notes', 'note', 'reason / notes', 'reason/notes', 'reason', 'comments', 'comment'];
+
+function matchesHeader(header: string | undefined, candidates: string[]): boolean {
+  return candidates.includes((header ?? '').trim().toLowerCase());
+}
+
+function isKnownTrailingHeader(header: string | undefined): boolean {
+  return (
+    matchesHeader(header, OLD_CODE_HEADER_NAMES) ||
+    matchesHeader(header, CERTAINTY_HEADER_NAMES) ||
+    matchesHeader(header, NOTES_HEADER_NAMES)
+  );
+}
+
+// A file's deepest items sometimes overflow one (or more) columns past the last named "Level N"
+// header — this app has no way to know that column's own name in advance (James's own GL
+// Analyser export reuses "Account (from client CoA)" for exactly this, a column name that
+// otherwise means something else entirely). Recognised structurally instead: a genuine extra
+// level never holds text on the same row as the column immediately before it — it's one row's
+// *next* level down, not a second value for the same entry — while a real trailing metadata
+// column (an old code, say) is populated on the very rows where that last level is used.
+function isOverflowDescriptionColumn(dataRows: string[][], col: number, prevDescCol: number): boolean {
+  let sawBoth = false;
+  let nonBlank = 0;
+  for (const row of dataRows) {
+    const cur = (row[col] ?? '').trim();
+    if (cur) {
+      nonBlank++;
+      if ((row[prevDescCol] ?? '').trim()) {
+        sawBoth = true;
+        break;
+      }
+    }
+  }
+  return !sawBoth && nonBlank > 0;
+}
+
+const COMMENT_MIN_LENGTH = 60;
+const COMMENT_LOWERCASE_RATIO = 0.5;
+
+// James's report: some source files carry an explanatory comment as though it were its own
+// entry — sitting alone in one description column, with no old code or certainty of its own
+// (every real posting-level leaf has picked up at least one by the time a file reaches this
+// stage) — meant to annotate the row immediately above it, not to stand as an entry in its own
+// right. Recognised by long, prose-like text (mostly lower-case, well past a heading's usual
+// length) rather than a short heading or item name.
+function looksLikeCommentText(text: string): boolean {
+  if (text.length <= COMMENT_MIN_LENGTH) return false;
+  const letters = [...text].filter((c) => /[a-zA-Z]/.test(c));
+  if (letters.length === 0) return false;
+  const lower = letters.filter((c) => c === c.toLowerCase()).length;
+  return lower / letters.length > COMMENT_LOWERCASE_RATIO;
+}
+
+// Folds each detected comment row into a Notes entry on the row directly above it (James: "move
+// those into the notes column and move up one row against the heading"), then drops the comment
+// row entirely. A comment row with nothing above it (the very first row in the file) has nowhere
+// to attach to, so it's left as an ordinary row rather than silently discarded.
+function mergeCommentRowsIntoNotesAbove(
+  dataRows: string[][],
+  descCols: number[],
+  oldCodeCol: number | null,
+  certaintyCol: number | null,
+  noteCol: number | null,
+): string[][] {
+  if (noteCol === null) return dataRows;
+  const result: string[][] = [];
+  for (const row of dataRows) {
+    const hasCodeOrCertainty =
+      (oldCodeCol !== null && (row[oldCodeCol] ?? '').trim() !== '') ||
+      (certaintyCol !== null && (row[certaintyCol] ?? '').trim() !== '');
+    const descValues = descCols.map((c) => (row[c] ?? '').trim()).filter((v) => v !== '');
+    const isCommentRow = !hasCodeOrCertainty && descValues.length === 1 && looksLikeCommentText(descValues[0]);
+    if (isCommentRow && result.length > 0) {
+      const previous = result[result.length - 1];
+      const existingNote = (previous[noteCol] ?? '').trim();
+      previous[noteCol] = existingNote ? `${existingNote} ${descValues[0]}` : descValues[0];
+      continue;
+    }
+    result.push([...row]);
+  }
+  return result;
+}
+
 // A taxonomy with no codes at all yet — just a "Level 1", "Level 2", ... run of description
 // columns (as many as the file actually has, in order — James's own ask: "bring in all
-// columns"), optionally followed by a "Notes" column. This is deliberately its own detection
-// path rather than folded into the code-column heuristics above: with zero code columns there's
+// columns"), optionally overflowing into further, arbitrarily-named description columns, then
+// optionally an old GL code / a certainty rating / a reason-notes column, each independently
+// optional (see the header-matching helpers above). This is deliberately its own detection path
+// rather than folded into the code-column heuristics above: with zero code columns there's
 // nothing for that logic to anchor on, and a codeless file is a completely unambiguous shape in
 // its own right once the header names itself this way. Returns null (not an error) on any
 // header mismatch, so parseDiscreteCsv's other two paths still get a turn.
@@ -295,15 +391,45 @@ function tryParseDescriptionOnlyCsv(table: string[][]): ParsedDiscreteCsv | null
   }
   if (descCols.length === 0 || descCols.length > MAX_LEVELS) return null;
 
+  while (descCols.length < MAX_LEVELS && col < header.length && !isKnownTrailingHeader(header[col])) {
+    if (!isOverflowDescriptionColumn(dataRows, col, descCols[descCols.length - 1])) break;
+    descCols.push(col);
+    col++;
+  }
+
+  let oldCodeCol: number | null = null;
+  if (col < header.length && matchesHeader(header[col], OLD_CODE_HEADER_NAMES)) {
+    oldCodeCol = col;
+    col++;
+  }
+
+  let certaintyCol: number | null = null;
+  if (col < header.length && matchesHeader(header[col], CERTAINTY_HEADER_NAMES)) {
+    certaintyCol = col;
+    col++;
+  }
+
   let noteCol: number | null = null;
   if (col < header.length) {
-    if ((header[col] ?? '').trim().toLowerCase() !== 'notes') return null;
+    if (!matchesHeader(header[col], NOTES_HEADER_NAMES)) return null;
     noteCol = col;
     col++;
   }
   if (col < header.length) return null; // anything else left over means this isn't this shape
 
-  return buildResult(dataRows, descCols.length, [], descCols, [], '-', [], [], noteCol);
+  const mergedRows = mergeCommentRowsIntoNotesAbove(dataRows, descCols, oldCodeCol, certaintyCol, noteCol);
+  const suffixValueCols = [oldCodeCol, certaintyCol].filter((c): c is number => c !== null);
+  return buildResult(
+    mergedRows,
+    descCols.length,
+    [],
+    descCols,
+    [],
+    '-',
+    suffixValueCols,
+    suffixValueCols.map(() => '-'),
+    noteCol,
+  );
 }
 
 export function parseDiscreteCsv(text: string): ParsedDiscreteCsv | { error: string } {
