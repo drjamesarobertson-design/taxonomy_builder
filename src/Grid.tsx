@@ -2738,62 +2738,121 @@ export default function Grid({
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(e) => e.stopPropagation()}
         >
+          {/* Sequence per James's spreadsheet ("Taxonomy Builder Right Click Menus v1.2") —
+              groups separated by a `context-menu-separator` border, same convention the
+              "Add Row on Down Arrow" divider already used. Alpha Sort isn't in his sheet (added
+              to the code menu the round before he sent it) — kept, grouped with the other
+              order-related actions at the top, rather than dropped silently. */}
           {contextMenu.kind === 'desc' && (
             <>
               <li onClick={handleToggleCase}>Toggle Case</li>
-              <li onClick={handleOpenNoteEditor}>
-                {rows.find((r) => r.id === contextMenu.rowId)?.note ? 'Edit Note' : 'Add Note'}
-              </li>
-              <li onClick={handleMarkAsDelete}>Mark as Delete</li>
               <li onClick={handleAlphaSort}>Alpha Sort</li>
               <li onClick={() => requestPromoteDemote('promote')}>Promote</li>
               <li onClick={() => requestPromoteDemote('demote')}>Demote</li>
-              <li onClick={handleMoveStart}>Move</li>
+              <li className="context-menu-separator" onClick={handleAddColumnClick}>
+                Add Column
+              </li>
+              <li onClick={handleDeleteColumnClick}>Delete Column</li>
+              <li
+                className="context-menu-separator"
+                onClick={() => {
+                  setAddRowOnDownArrow((v) => !v);
+                  setContextMenu(null);
+                }}
+              >
+                {addRowOnDownArrow ? '✓ ' : ''}Add Row on Down Arrow
+              </li>
               <li onClick={handleCopyStart}>Copy Rows</li>
+              <li onClick={handleMoveStart}>Move</li>
+              <li onClick={() => handleInsertRow('above')}>
+                {pendingInsertCount() > 1 ? `Insert ${pendingInsertCount()} Rows Above` : 'Insert Row Above'}
+              </li>
+              <li onClick={() => handleInsertRow('below')}>
+                {pendingInsertCount() > 1 ? `Insert ${pendingInsertCount()} Rows Below` : 'Insert Row Below'}
+              </li>
+              <li onClick={handleDeleteRowFromMenu}>Delete Row</li>
+              <li onClick={handleMarkAsDelete}>Mark as Delete</li>
+              {selection && selection.rowIds.size > 0 && (
+                <li className="context-menu-separator" onClick={handleExportBlockMenuClick}>
+                  Export Block
+                </li>
+              )}
+              <li className="context-menu-separator" onClick={handleOpenNoteEditor}>
+                {rows.find((r) => r.id === contextMenu.rowId)?.note ? 'Edit Note' : 'Add Note'}
+              </li>
               <li onClick={() => handleGridMenuHelp('gridDescMenuHelp')}>Help</li>
             </>
           )}
           {contextMenu.kind === 'code' && (
             <>
-              <li onClick={handleDeleteCodes}>Delete Codes</li>
-              <li onClick={handleReplicateAbove}>Replicate Codes Above</li>
-              <li onClick={handleReplicateBelow}>Replicate Codes Below</li>
               <li onClick={handleCheckAscendingOrder}>Check Ascending Order</li>
               <li onClick={handleAlphaSortByCode}>Alpha Sort</li>
               <li onClick={handleCopyCodesBlock}>Copy Codes</li>
               {codeClipboard && <li onClick={handlePasteCodesBlock}>Paste Codes</li>}
-              <li onClick={handleImportBlockMenuClick}>Import Block</li>
+              <li onClick={handleDeleteCodes}>Delete Codes</li>
               <li onClick={handleClearAllCodes}>Clear Codes and Start Again</li>
-              <li onClick={() => handleGridMenuHelp('gridCodeMenuHelp')}>Help</li>
+              <li className="context-menu-separator" onClick={handleReplicateAbove}>
+                Replicate Codes Above
+              </li>
+              <li onClick={handleReplicateBelow}>Replicate Codes Below</li>
+              <li className="context-menu-separator" onClick={handleAddColumnClick}>
+                Add Column
+              </li>
+              <li onClick={handleDeleteColumnClick}>Delete Column</li>
+              {selection && selection.rowIds.size > 0 && (
+                <li className="context-menu-separator" onClick={handleExportBlockMenuClick}>
+                  Export Block
+                </li>
+              )}
+              <li
+                className={selection && selection.rowIds.size > 0 ? undefined : 'context-menu-separator'}
+                onClick={handleImportBlockMenuClick}
+              >
+                Import Block
+              </li>
+              <li
+                className="context-menu-separator"
+                onClick={() => {
+                  setAddRowOnDownArrow((v) => !v);
+                  setContextMenu(null);
+                }}
+              >
+                {addRowOnDownArrow ? '✓ ' : ''}Add Row on Down Arrow
+              </li>
+              <li onClick={() => handleInsertRow('above')}>
+                {pendingInsertCount() > 1 ? `Insert ${pendingInsertCount()} Rows Above` : 'Insert Row Above'}
+              </li>
+              <li onClick={() => handleInsertRow('below')}>
+                {pendingInsertCount() > 1 ? `Insert ${pendingInsertCount()} Rows Below` : 'Insert Row Below'}
+              </li>
+              <li onClick={handleDeleteRowFromMenu}>Delete Row</li>
+              <li className="context-menu-separator" onClick={() => handleGridMenuHelp('gridCodeMenuHelp')}>
+                Help
+              </li>
             </>
           )}
           {contextMenu.kind === 'suffix' && (
             <>
               <li onClick={handleDuplicateSuffixToSelection}>Duplicate to Selected Rows</li>
               <li onClick={() => handleGridMenuHelp('gridSuffixMenuHelp')}>Help</li>
+              <li
+                className="context-menu-separator"
+                onClick={() => {
+                  setAddRowOnDownArrow((v) => !v);
+                  setContextMenu(null);
+                }}
+              >
+                {addRowOnDownArrow ? '✓ ' : ''}Add Row on Down Arrow
+              </li>
+              <li onClick={() => handleInsertRow('above')}>
+                {pendingInsertCount() > 1 ? `Insert ${pendingInsertCount()} Rows Above` : 'Insert Row Above'}
+              </li>
+              <li onClick={() => handleInsertRow('below')}>
+                {pendingInsertCount() > 1 ? `Insert ${pendingInsertCount()} Rows Below` : 'Insert Row Below'}
+              </li>
+              <li onClick={handleDeleteRowFromMenu}>Delete Row</li>
             </>
           )}
-          {contextMenu.kind !== 'suffix' && <li onClick={handleAddColumnClick}>Add Column</li>}
-          {contextMenu.kind !== 'suffix' && <li onClick={handleDeleteColumnClick}>Delete Column</li>}
-          {contextMenu.kind !== 'suffix' && selection && selection.rowIds.size > 0 && (
-            <li onClick={handleExportBlockMenuClick}>Export Block</li>
-          )}
-          <li
-            className="context-menu-separator"
-            onClick={() => {
-              setAddRowOnDownArrow((v) => !v);
-              setContextMenu(null);
-            }}
-          >
-            {addRowOnDownArrow ? '✓ ' : ''}Add Row on Down Arrow
-          </li>
-          <li onClick={() => handleInsertRow('above')}>
-            {pendingInsertCount() > 1 ? `Insert ${pendingInsertCount()} Rows Above` : 'Insert Row Above'}
-          </li>
-          <li onClick={() => handleInsertRow('below')}>
-            {pendingInsertCount() > 1 ? `Insert ${pendingInsertCount()} Rows Below` : 'Insert Row Below'}
-          </li>
-          <li onClick={handleDeleteRowFromMenu}>Delete Row</li>
         </ul>
       )}
 
