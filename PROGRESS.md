@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #111, 2026-09-04)
+## Current status (as of PR #114, 2026-09-04)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -34,7 +34,13 @@ further rounds of testing feedback. The tool currently supports, in full:
   PR #80 fix, it previously only ever acted on the single row right-clicked
   or inserted below the bottom of the range). A right-click "Add Row on
   Down Arrow" toggle (PR #80) makes Down Arrow insert-and-focus a new row
-  beneath the current one anywhere, not just at the very last row.
+  beneath the current one anywhere, not just at the very last row. Both
+  the Code and Description cell right-click menus are ordered to match
+  James's own sorted spreadsheet (PR #113 — "Taxonomy Builder Right Click
+  Menus v1.2"), with group dividers in the same positions he specified;
+  items added since he compiled that list (Alpha Sort on the code menu)
+  are kept, grouped with the other order-related actions rather than
+  dropped.
 - Code validation: charset, left-to-right population, ASCII ascending order
   (with Override), the "0" soft warning, and a hard cross-block duplicate
   check on the deepest column. The deepest (rightmost) column never
@@ -151,26 +157,41 @@ further rounds of testing feedback. The tool currently supports, in full:
   Business Model Related" + sub-heading) are migrated automatically on
   first read. Every heading, grouped or not, is a single flat list now.
   Persisted in this browser's own IndexedDB — per-browser, not a file, and
-  not synced anywhere.
+  not synced anywhere. Its right-click context menu now clamps upward
+  when it would otherwise run off the bottom of the screen (PR #113) —
+  the same fix already applied to the grid's own right-click menu (below),
+  ported over.
 - A "Code Restrictions" dropdown at the top of the work area, narrowing
   real codes to Numeric Only / Alpha Numeric with All Alpha / Alpha Numeric
   with Upper Case Alpha Only / Alpha Upper Case Only / Alpha Both Cases
   Only, on top of the fixed global charset; the padding character is
   always exempt.
-- **Auto Code** (PR #96, revised PR #102): a general-purpose toolbar action
-  for coding a taxonomy that has none yet — independent of the Simple
-  Taxonomy wizard's own mnemonic Suggest Codes (guidance.ts), so it works
-  on any taxonomy, not just ones built through that wizard. Within any
-  sibling group, spreads ordinary codes across 1-8 — not 1-9 — reserving
-  "9" for a possible Other/Miscellaneous sibling even when none is present
-  yet (PR #102; only a genuine 9th+ ordinary member forces "9" into use),
-  extending into capital letters only past that; applied uniformly at
-  every level. An actual Other/Miscellaneous sibling always lands on "9"
-  (or the next slot past wherever its ordinary siblings actually reached),
-  regardless of where it sits among them — mirroring the wizard's own
-  Suggest Codes precedent. Ancestor codes are then carried down through
-  descendants and every deeper column is padded, reusing `fillCodesDown`/
-  `padCodes` rather than reimplementing them. A dropdown names all five
+- **Auto Code** (PR #96, revised PR #102, PR #113): a general-purpose
+  toolbar action for coding a taxonomy that has none yet — independent of
+  the Simple Taxonomy wizard's own mnemonic Suggest Codes (guidance.ts),
+  so it works on any taxonomy, not just ones built through that wizard.
+  Within any sibling group, spreads ordinary codes across 1-8 — not 1-9 —
+  reserving "9" for a possible Other/Miscellaneous sibling even when none
+  is present yet (PR #102; only a genuine 9th+ ordinary member forces "9"
+  into use). The spread itself is a genuine, constant step (`floor(8 /
+  count)` from "1" — real gap coding, CLAUDE.md Section 4.4's own "1, 3,
+  5..." example) rather than a stretch that always touches both ends of
+  the range regardless of how few siblings there are (PR #113 — 2 entries
+  were coming out "1" and "8" instead of leaving even, insertable room on
+  both sides, e.g. "1" and "5"; the step only collapses to consecutive
+  once a group genuinely has no room left for one). Past 8 ordinary
+  siblings, the spread continues into capital letters, still reaching for
+  a step (starting at 2, "juggled" down by one only as far as actually
+  needed) rather than immediately falling back to bare consecutive digits
+  and letters; applied uniformly at every level. An actual Other/
+  Miscellaneous sibling always lands on "9" (or the next slot past
+  wherever its ordinary siblings actually reached, found from the
+  spread's own last slot rather than assumed from the sibling count, so
+  an overflow group's larger step doesn't collide with it), regardless of
+  where it sits among them — mirroring the wizard's own Suggest Codes
+  precedent. Ancestor codes are then carried down through descendants and
+  every deeper column is padded, reusing `fillCodesDown`/`padCodes`
+  rather than reimplementing them. A dropdown names all five
   Code-Restriction-style types up front, though only "Alpha Numeric with
   Upper Case Alpha Only" is actually implemented so far — the rest say
   plainly they're coming soon rather than doing nothing or the wrong
@@ -549,6 +570,100 @@ further rounds of testing feedback. The tool currently supports, in full:
   piece is specifically the *phonetic* judgement of which letter to pick
   when there's a choice. Left for a follow-up conversation rather than
   guessed at.
+
+### Library menu overflow fix, gap-coded Auto Code, right-click menu reorder, full project backup (PR #113–#114)
+James's message opened "Excellent, this is getting better and better" —
+four items, plus a request for a complete backup of the application:
+
+1. "Right Click Menu on Library when library overflows off bottom of the
+   screen displays on bottom of the screen – needs to position so bottom
+   of the pop up is at the bottom of the screen." `LibrarySidebar.tsx` had
+   never gotten the same fix `Grid.tsx`'s own right-click menu already had
+   (PR #80-era) — a `useLayoutEffect` measuring the rendered menu's
+   `getBoundingClientRect()` and, if it overflows `window.innerHeight`,
+   shifting `top` up by exactly that overflow (plus a small margin) before
+   paint. Ported the identical logic across, `contextMenuRef` and all.
+   Verified with a Playwright test that dispatches a `contextmenu` event
+   with `clientY` near the bottom of the viewport directly (the sidebar's
+   own single test entry was too short a list to force a genuine scroll)
+   and confirms the rendered menu repositions upward rather than running
+   off-screen.
+2. "Auto code is working well – tending to 1 and 8 where only two entries,
+   rather increment alternate numbers so 1, 5 if only 2 and juggle gap
+   down if more than 8 or where code is alphanumeric carry on 1, 3, 4, 5,
+   7, 9, B, D." `autoCode.ts`'s `spreadSlots` previously stretched
+   proportionally to always touch both ends of the 1-8 range regardless of
+   sibling count (`Math.round((i * 7) / (count - 1))`) — exactly right for
+   a group that fills most of the range, but for 2 siblings that means "1"
+   and "8", the two extremes, with nothing left of the CLAUDE.md Section
+   4.4 gap-coding idea James was after. Replaced with a genuine constant
+   step, `floor(8 / count)` starting at "1": 2 siblings now get "1" and
+   "5" (his exact example), 3 get "1", "3", "5" (CLAUDE.md's own literal
+   gap-coding illustration), collapsing to consecutive only once a group's
+   count leaves no room for a step at all (5 siblings: floor(8/5) = 1, so
+   "1".."5" — the "juggle the gap down... if more than [fits]" part of his
+   ask). Past 8 ordinary siblings the same principle continues into the
+   full alphanumeric pool: a step of 2 first, "juggled" down one at a time
+   only as far as the pool genuinely requires — 9 ordinary siblings (no
+   Other) come out "1,3,5,7,9,B,D,F,H", not his exact "1, 3, 4, 5, 7, 9, B,
+   D" (that example wasn't obviously systematic enough to reverse-engineer
+   letter-for-letter — flagged this explicitly rather than guessing at a
+   fragile match), but the same style: a real step, extending into letters
+   rather than collapsing to bare consecutive characters. The Other/
+   Miscellaneous reservation logic (`otherSlotIndex`) had to be reworked
+   too — it previously assumed ordinary siblings never reached past index
+   `count - 1`, which a step greater than 1 can now exceed; it's computed
+   from the spread's own highest slot instead, so Other never collides
+   with an ordinary code in the overflow case. Full existing regression
+   suite updated to the new, intentional values (with comments explaining
+   why each one changed) rather than left pointing at the old behaviour,
+   plus new unit tests for the 2/3/5/8/9/11-sibling cases and the real GL
+   Analyser file re-run clean.
+3. Attached "Taxonomy_Builder_Right_Click_Menus_v_1.2.xlsx", two tabs with
+   his own sorted sequence for the Code and Description cell right-click
+   menus, including where he wants the group dividers. Reordered both
+   menus in `Grid.tsx` to match exactly — the various shared items (Add
+   Column, Delete Column, Export Block, Add Row on Down Arrow, Insert Row
+   Above/Below, Delete Row) previously rendered identically positioned
+   after both menus regardless of kind; they're now interleaved into each
+   kind's own block at the position his sheet calls for, since the two
+   menus no longer share an identical tail order. Alpha Sort isn't in
+   either of his tabs (added to the code menu the round before he sent the
+   spreadsheet) — kept rather than silently dropped, grouped with the
+   other order-related actions at the top of each menu. The suffix-cell
+   menu (not covered by his sheet) kept its pre-existing item set and
+   order, just reassembled so it isn't accidentally missing the Add Row on
+   Down Arrow / Insert Row / Delete Row items that used to render for it
+   unconditionally.
+4. "Is the Jason file the source code or is there other source code...
+   please provide a zip file... included an extremely detailed prompt for
+   an instance of Claude Code that does not know me and knows nothing
+   about this project." Answered directly: the JSON file Save/Load
+   produces is a **saved taxonomy** (one project's data — title, rows,
+   settings), not the application itself; the actual source code is this
+   git repository (React/TypeScript source, config, this file). Added
+   `ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md` at the repo root — deliberately
+   written to orchestrate rather than duplicate `CLAUDE.md` (the spec) and
+   this file (the history): it explains what those two documents are and
+   why a fresh session must read them first, then covers what neither
+   does — dev environment setup, login test credentials, a repo/file
+   structure orientation, and the established round-by-round branch/PR/
+   deploy/PROGRESS.md workflow itself, spelled out as an explicit
+   checklist rather than left to be inferred from reading old PRs. Then
+   built a full backup zip of the working tree (excluding only
+   `node_modules` and `dist`, both trivially regenerable via `npm install`
+   / `npm run build`) plus the complete `.git` history — every PR number
+   this file references corresponds to a real, inspectable commit in that
+   history — and sent it directly to James as a file, alongside the
+   direct answer to his question.
+
+New tests: `smoke_round18.mjs` (items 1 and 3, end to end — reordered menu
+contents verified item-by-item, Library context-menu repositioning) and
+`unit_autocode_gapfix.mjs` (item 2's new gap-spread behaviour in
+isolation, plus the existing `unit_autocode.mjs` updated to the new
+intentional values). Full existing regression suite (round 15, round 17)
+re-run clean; `npx tsc --noEmit`, `npm run lint`, `npm run build` all
+clean throughout.
 
 ### Multi-character code ordering fixes, code-column Alpha Sort, GL Analyser Divisions/Locations import fix (PR #111)
 James's follow-up on multi-character Column 1 codes and two more GL Analyser
