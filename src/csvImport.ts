@@ -397,6 +397,17 @@ function tryParseDescriptionOnlyCsv(table: string[][]): ParsedDiscreteCsv | null
     col++;
   }
 
+  // James's report: a real GL Analyser export sometimes leaves a single unnamed, always-blank
+  // column between the last "Level N" column and the trailing metadata ("Level 1,Level
+  // 2,Level 3,,Notes") — the same spacer convention the other two CSV import paths already
+  // tolerate. The overflow loop above already declines to consume it as a genuine extra level
+  // (it's never populated, so isOverflowDescriptionColumn's nonBlank check fails), but nothing
+  // was skipping over it before checking for old code/certainty/notes, so a file shaped exactly
+  // like this fell through to "isn't this shape" and then to the headerless parser, which
+  // rejected it outright with a "Could not find any code columns" error that has nothing to do
+  // with the actual problem.
+  while (col < header.length && (header[col] ?? '').trim() === '') col++;
+
   let oldCodeCol: number | null = null;
   if (col < header.length && matchesHeader(header[col], OLD_CODE_HEADER_NAMES)) {
     oldCodeCol = col;
