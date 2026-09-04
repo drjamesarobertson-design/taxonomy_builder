@@ -125,6 +125,21 @@ export default function Grid({
   // firing only once ever.
   const [showCapsNotice, setShowCapsNotice] = useState(false);
   const capsNoticeShownRef = useRef(false);
+  // James's ask: once column 1 holds a multi-character code, descriptions should be entered in
+  // the alphabetical order their codes are meant to sort in — much harder to keep codes
+  // ascending later if the rows themselves aren't already in that order. A one-time reminder
+  // the first time any column-1 description is entered, same pattern as the ALL CAPS notice
+  // above (and mutually exclusive with it on the same blur, so the two never stack).
+  const [showMultiCharOrderNotice, setShowMultiCharOrderNotice] = useState(false);
+  const multiCharOrderNoticeShownRef = useRef(false);
+  // A multi-character column-1 value left deliberately shorter than the maximum gets its
+  // ascending-order check deferred to blur (see updateCode/the code cell's onBlur below), rather
+  // than on every keystroke. Without this, simply refocusing and reblurring that same,
+  // already-accepted value later (nothing about it changed) would re-ask the same Override
+  // question every single time — this remembers which exact rowId+level+value combinations have
+  // already been checked (passed cleanly, or accepted via Override) so a repeat blur of the same
+  // unchanged value is a no-op; a genuine edit to the value checks fresh, since it gets its own key.
+  const multiCharOrderCheckedRef = useRef<Set<string>>(new Set());
   // A one-time notice the first time a code character's case is silently auto-corrected to
   // match the taxonomy's Code Restriction (James's ask: typing continues smoothly either way).
   // Earlier versions of both this and the heading notice above suggested "turn Caps Lock on"
@@ -522,11 +537,29 @@ export default function Grid({
     return updated;
   }
 
+  // James's report: overriding the ascending-order warning on a multi-character column-1 cell
+  // left the field unfocused, forcing the user to click back in and retype from scratch to enter
+  // the remaining characters. The cell types via the input's own native onChange (see the
+  // maxLength/onChange wiring below column1CodeLength requires), so clicking the dialog's
+  // Override button blurs it same as any other click; nothing was refocusing it afterwards. This
+  // puts focus (and the cursor) back at the end of whatever the override just committed, so
+  // typing can continue exactly where it left off — harmless for an ordinary single-character
+  // cell too, where the cursor position doesn't matter.
+  function focusCodeInputAtEnd(rowId: string, level: number) {
+    requestAnimationFrame(() => {
+      const input = document.getElementById(codeInputId(level, rowId)) as HTMLInputElement | null;
+      if (!input) return;
+      input.focus();
+      const end = input.value.length;
+      input.setSelectionRange(end, end);
+    });
+  }
+
   function updateCode(
     rowId: string,
     level: number,
     value: string,
-    options?: { skipOrderCheck?: boolean; skipZeroWarning?: boolean },
+    options?: { skipOrderCheck?: boolean; skipZeroWarning?: boolean; forceOrderCheck?: boolean },
   ) {
     // James's ask: column 1 (level 0) may hold more than the usual single character (Settings,
     // 1 to 5, default 1) — every other column stays exactly 1, unchanged.
@@ -641,7 +674,30 @@ export default function Grid({
       }
     }
 
-    if (char !== '' && !isPadding && char !== oldValue && !options?.skipOrderCheck) {
+    // A multi-character column-1 value types natively, one character at a time (see the
+    // onChange wiring below) — checking order against every incomplete prefix ("A", then "AB",
+    // then "ABC"...) means almost every keystroke of a value that starts low would re-trigger
+    // this same dialog, since a shorter or partial prefix is still "less than" a taller sibling
+    // regardless of what's typed after it (James's report: had to click Override repeatedly and
+    // still couldn't get the remaining letters in). Deferred until the value reaches its full
+    // configured length here — the single-character case (maxCharsHere === 1) is unaffected,
+    // since every value there already IS its own full length. A value the user deliberately
+    // leaves shorter than the maximum is still checked, just on blur (see the code cell's
+    // onBlur below) via `forceOrderCheck` instead of on every keystroke.
+    // The already-checked cache only ever matters for a multi-character column-1 cell (only
+    // that path can call this with an unchanged value via forceOrderCheck) — scoped to
+    // maxCharsHere > 1 so a single-character cell's behaviour is exactly what it always was,
+    // never short-circuited by an earlier pass of the same value.
+    const orderCheckKey = `${rowId}:${level}:${char}`;
+    const alreadyOrderChecked = maxCharsHere > 1 && multiCharOrderCheckedRef.current.has(orderCheckKey);
+    if (
+      char !== '' &&
+      !isPadding &&
+      (char !== oldValue || options?.forceOrderCheck) &&
+      !options?.skipOrderCheck &&
+      !alreadyOrderChecked &&
+      (maxCharsHere === 1 || char.length === maxCharsHere || options?.forceOrderCheck)
+    ) {
       const { upper, lower } = findOrderBounds(editIndex, level, char);
       const tooLow = upper !== null && char <= upper;
       const tooHigh = lower !== null && char >= lower;
@@ -653,10 +709,19 @@ export default function Grid({
         setConfirmDialog({
           message: 'Codes should increase, lesser value is invalid—Override?',
           confirmLabel: 'Override',
-          onConfirm: () => updateCode(rowId, level, value, { ...options, skipOrderCheck: true }),
+          onConfirm: () => {
+            if (maxCharsHere > 1) multiCharOrderCheckedRef.current.add(orderCheckKey);
+            updateCode(rowId, level, value, { ...options, skipOrderCheck: true });
+            focusCodeInputAtEnd(rowId, level);
+          },
         });
         return;
       }
+      if (maxCharsHere > 1) multiCharOrderCheckedRef.current.add(orderCheckKey);
+      // A forced re-check (blur, on a value left intentionally shorter than the maximum) that
+      // passed cleanly, on a value that hasn't actually changed, has nothing left to do — the
+      // cascade/re-apply below would just be a costly no-op re-render and an empty undo step.
+      if (options?.forceOrderCheck && char === oldValue) return;
     }
 
     // "0" reads awkwardly in later analysis (easy to confuse with a genuine zero total, or
@@ -2143,6 +2208,45 @@ export default function Grid({
     setContextMenu(null);
   }
 
+  // Right-click "Alpha Sort" on a code cell (James's ask, multi-character Column 1 codes in
+  // particular): the code-column counterpart to the description column's own Alpha Sort above —
+  // sorts a selected block of sibling entries by their own CODE value (ascending), each carrying
+  // its own descendants along. Useful once Override has let a temporarily out-of-order code
+  // through (Section 4.4/6.7's ascending-order rule is only a soft, overridable check for column
+  // 1 — see updateCode) and the rows themselves now need reordering to match. Sorts by whichever
+  // single column was right-clicked, even if the selection itself spans several code columns.
+  function handleAlphaSortByCode() {
+    if (!contextMenu || contextMenu.kind !== 'code' || !selection || selection.kind !== 'code') return;
+    const level = selection.level;
+    const selectedIndices = rows
+      .map((r, i) => (selection.rowIds.has(r.id) ? i : -1))
+      .filter((i) => i !== -1)
+      .sort((a, b) => a - b);
+    if (selectedIndices.length < 2) {
+      setContextMenu(null);
+      return;
+    }
+    const topIndex = selectedIndices[0];
+    const bottomIndex = selectedIndices[selectedIndices.length - 1];
+    setContextMenu(null);
+    if (blockIfAnyProtected(rows.slice(topIndex, bottomIndex + 1).map((r) => r.id), CORRUPT_ORDER_MESSAGE)) return;
+    const chunks: TaxonomyRow[][] = [];
+    for (let i = topIndex; i <= bottomIndex; ) {
+      const end = getDescendantEndIndex(i);
+      chunks.push(rows.slice(i, end));
+      i = end;
+    }
+    const sorted = [...chunks].sort((a, b) => {
+      const ca = a[0].codes[level] ?? '';
+      const cb = b[0].codes[level] ?? '';
+      return ca < cb ? -1 : ca > cb ? 1 : 0;
+    });
+    const updated = [...rows.slice(0, topIndex), ...sorted.flat(), ...rows.slice(bottomIndex + 1)];
+    onChange(updated);
+    setSelection(null);
+    setContextMenu(null);
+  }
+
   // Right-click "Move" — arms move mode with the selected entry (or entries) and all of
   // their descendants (always the whole hierarchy; unlike promote/demote there's no "just
   // this one" here, since detaching a moved entry from its children mid-move would leave
@@ -2403,6 +2507,27 @@ export default function Grid({
                             onChange={(e) => updateCode(row.id, level, e.target.value)}
                             onKeyDown={(e) => handleCellKeyDown(e, 'code', level, rowIndex)}
                             onFocus={(e) => e.currentTarget.select()}
+                            onBlur={() => {
+                              // A multi-character column-1 value deliberately left shorter than
+                              // the maximum never reached the "full length" point the order
+                              // check above fires at while typing — check it now, once, on the
+                              // way out of the cell. Skipped whenever a dialog (confirmDialog:
+                              // Override, "0" warning, etc.) is already open — that's exactly
+                              // what just blurred this input (its own useEffect steals focus the
+                              // moment it appears), not a genuine "user left the cell" blur, and
+                              // re-checking the stale, not-yet-committed value here would open a
+                              // second dialog for it that clobbers the real one's own Override.
+                              const current = row.codes[level] ?? '';
+                              if (
+                                !confirmDialog &&
+                                level === 0 &&
+                                column1CodeLength > 1 &&
+                                current.length > 0 &&
+                                current.length < column1CodeLength
+                              ) {
+                                updateCode(row.id, level, current, { forceOrderCheck: true });
+                              }
+                            }}
                           />
                         </td>
                         {delimiterPositions.includes(level + 1) && (
@@ -2481,6 +2606,17 @@ export default function Grid({
                         } else if (!isOtherEntryNotLast(rows, row.id)) {
                           otherNotLastWarnedRef.current.delete(row.id);
                         }
+                        const multiCharOrderNoticeFiredThisBlur =
+                          !capsNoticeFiredThisBlur &&
+                          !toWarn &&
+                          column1CodeLength > 1 &&
+                          level === 0 &&
+                          !multiCharOrderNoticeShownRef.current &&
+                          !!(row.descriptions[0] ?? '').trim();
+                        if (multiCharOrderNoticeFiredThisBlur) {
+                          multiCharOrderNoticeShownRef.current = true;
+                          setTimeout(() => setShowMultiCharOrderNotice(true), 0);
+                        }
                         // The earlier, softer nudge — fires the moment this row's own text reads
                         // as Other/Miscellaneous, regardless of position — skipped when the
                         // stronger not-last dialog, or the unrelated caps notice, is already
@@ -2490,7 +2626,12 @@ export default function Grid({
                         const startsOtherOrMisc = isOtherOrMiscellaneousLabel(row.descriptions[level] ?? '');
                         if (!startsOtherOrMisc) {
                           otherEncounteredWarnedRef.current.delete(row.id);
-                        } else if (!otherEncounteredWarnedRef.current.has(row.id) && !toWarn && !capsNoticeFiredThisBlur) {
+                        } else if (
+                          !otherEncounteredWarnedRef.current.has(row.id) &&
+                          !toWarn &&
+                          !capsNoticeFiredThisBlur &&
+                          !multiCharOrderNoticeFiredThisBlur
+                        ) {
                           otherEncounteredWarnedRef.current.add(row.id);
                           setTimeout(() => setOtherEncounteredWarningRowId(row.id), 0);
                         }
@@ -2618,6 +2759,7 @@ export default function Grid({
               <li onClick={handleReplicateAbove}>Replicate Codes Above</li>
               <li onClick={handleReplicateBelow}>Replicate Codes Below</li>
               <li onClick={handleCheckAscendingOrder}>Check Ascending Order</li>
+              <li onClick={handleAlphaSortByCode}>Alpha Sort</li>
               <li onClick={handleCopyCodesBlock}>Copy Codes</li>
               {codeClipboard && <li onClick={handlePasteCodesBlock}>Paste Codes</li>}
               <li onClick={handleImportBlockMenuClick}>Import Block</li>
@@ -2889,6 +3031,21 @@ export default function Grid({
           >
             <p>All headings should be capitalized.</p>
             <button type="button" onClick={() => setShowCapsNotice(false)}>
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showMultiCharOrderNotice && (
+        <div className="validation-overlay" onClick={() => setShowMultiCharOrderNotice(false)}>
+          <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
+            <p>
+              With a multi-character Column 1 code, it helps to enter descriptions in the
+              alphabetical order you'd like their codes to end up in — much easier to keep codes
+              in ascending order that way.
+            </p>
+            <button type="button" onClick={() => setShowMultiCharOrderNotice(false)}>
               OK
             </button>
           </div>
