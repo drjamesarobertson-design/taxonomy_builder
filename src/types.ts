@@ -23,12 +23,12 @@ export type CodeRestriction = (typeof CODE_RESTRICTIONS)[number];
 export const WORKFLOW_LEVELS = [
   'Simple Taxonomy',
   'Advanced Complexity Taxonomy',
+  'Highly Experienced User — No Guidance',
+  'Item Master',
   'Division',
   'Location',
   'Function',
   'Chart of Accounts',
-  'Item Master',
-  'Highly Experienced User — No Guidance',
 ] as const;
 
 export type WorkflowLevel = (typeof WORKFLOW_LEVELS)[number];

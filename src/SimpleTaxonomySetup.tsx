@@ -4,17 +4,27 @@ import HelpIcon from './HelpIcon';
 import type { HelpTextMap } from './helpText';
 
 interface SimpleTaxonomySetupProps {
-  onCreate: (title: string, tableName: string, purpose: string, maxDescriptionLength: number) => void;
+  onCreate: (
+    title: string,
+    tableName: string,
+    purpose: string,
+    maxDescriptionLength: number,
+    column1CodeLength: number,
+  ) => void;
   helpText: HelpTextMap;
 }
 
 // A trimmed setup screen for the Simple Taxonomy guided wizard — just the four things Section
-// 5 step 1 actually asks for up front (title, table name, purpose, max description length).
-// Everything else the full New Taxonomy form collects (code column count, delimiters,
-// suffixes, code delimiter character) is silently defaulted here and only ever surfaces once
-// the wizard's coding stage actually needs it — no reason to ask a first-time user to make
-// five structural decisions before they've typed a single heading. Every other workflow-menu
-// level still uses the full form unchanged.
+// 5 step 1 actually asks for up front (title, table name, purpose, max description length),
+// plus Column 1 Code Length (James's ask, after trying it elsewhere first): deliberately
+// offered ONLY here, not on the full New Taxonomy form and not in the ongoing Settings dialog
+// — "in general multiple characters is a mess", useful mainly for a first-time Simple Taxonomy
+// user who wants a short multi-character prefix on column 1 specifically. Everything else the
+// full New Taxonomy form collects (code column count, delimiters, suffixes, code delimiter
+// character) is silently defaulted here and only ever surfaces once the wizard's coding stage
+// actually needs it — no reason to ask a first-time user to make five structural decisions
+// before they've typed a single heading. Every other workflow-menu level still uses the full
+// form unchanged, with column 1 staying a single character.
 export default function SimpleTaxonomySetup({ onCreate, helpText }: SimpleTaxonomySetupProps) {
   const [title, setTitle] = useState('');
   const [tableName, setTableName] = useState('');
@@ -22,12 +32,14 @@ export default function SimpleTaxonomySetup({ onCreate, helpText }: SimpleTaxono
   const [maxDescriptionLengthText, setMaxDescriptionLengthText] = useState(
     String(DEFAULT_SETTINGS.maxDescriptionLength),
   );
+  const [column1CodeLengthText, setColumn1CodeLengthText] = useState(String(DEFAULT_SETTINGS.column1CodeLength));
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim() || !tableName.trim()) return;
     const maxDescriptionLength = Math.max(1, Number(maxDescriptionLengthText) || DEFAULT_SETTINGS.maxDescriptionLength);
-    onCreate(title.trim(), tableName.trim(), purpose.trim(), maxDescriptionLength);
+    const column1CodeLength = Math.max(1, Math.min(5, Number(column1CodeLengthText) || DEFAULT_SETTINGS.column1CodeLength));
+    onCreate(title.trim(), tableName.trim(), purpose.trim(), maxDescriptionLength, column1CodeLength);
   }
 
   return (
@@ -83,6 +95,17 @@ export default function SimpleTaxonomySetup({ onCreate, helpText }: SimpleTaxono
           }}
           title="This is the description field length limit imposed by the ERP or a lesser length if it is desired to curtail description length, should never exceed the field length in the ERP"
         />
+      </label>
+      <label>
+        Column 1 Code Length
+        <HelpIcon field="column1CodeLength" helpText={helpText} />
+        <select value={column1CodeLengthText} onChange={(e) => setColumn1CodeLengthText(e.target.value)}>
+          {[1, 2, 3, 4, 5].map((n) => (
+            <option key={n} value={n}>
+              {n} character{n === 1 ? '' : 's'}
+            </option>
+          ))}
+        </select>
       </label>
       <div className="form-actions">
         <button type="submit">Start Building</button>

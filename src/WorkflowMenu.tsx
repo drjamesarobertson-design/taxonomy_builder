@@ -39,8 +39,8 @@ export default function WorkflowMenu({ onChooseNew, onChooseExisting, resumeTitl
           <div className="workflow-level-buttons">
             {WORKFLOW_LEVELS.map((level, index) => {
               // The heading sits directly above the first Cubic Business Model item wherever
-              // that falls in WORKFLOW_LEVELS — James's ask to keep the four together but move
-              // the whole group to sit between Advanced Complexity Taxonomy and Item Master.
+              // that falls in WORKFLOW_LEVELS — keeps the four grouped together without this
+              // component needing to know (or care) which position that group is currently in.
               const isFirstCubicLevel =
                 CUBIC_BUSINESS_MODEL_WORKFLOW_LEVELS.includes(level) &&
                 WORKFLOW_LEVELS.slice(0, index).every((l) => !CUBIC_BUSINESS_MODEL_WORKFLOW_LEVELS.includes(l));
