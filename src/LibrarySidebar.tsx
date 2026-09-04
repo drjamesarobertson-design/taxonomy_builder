@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CUBIC_BUSINESS_MODEL_LIBRARY_CATEGORIES, LIBRARY_CATEGORIES } from './library';
 import type { LibraryCategory, LibraryEntry } from './library';
 
@@ -39,6 +39,26 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
   const [moveCategoryTarget, setMoveCategoryTarget] = useState<LibraryEntry | null>(null);
   const [moveCategoryChoice, setMoveCategoryChoice] = useState<LibraryCategory>(LIBRARY_CATEGORIES[0]);
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const contextMenuRef = useRef<HTMLUListElement>(null);
+
+  // James's report: right-clicking an entry near the bottom of a long Library list opened the
+  // menu at the click position with no regard for whether it would actually fit, running off
+  // the bottom of the screen with its lower items unreachable — same fix already applied to the
+  // grid's own right-click menu (Grid.tsx), ported here. Runs before paint so it corrects the
+  // position in place rather than flashing the overflowing menu first.
+  useLayoutEffect(() => {
+    if (!contextMenu || !contextMenuRef.current) return;
+    const el = contextMenuRef.current;
+    const rect = el.getBoundingClientRect();
+    const overflowY = rect.bottom - window.innerHeight;
+    if (overflowY > 0) {
+      el.style.top = `${Math.max(8, contextMenu.y - overflowY - 8)}px`;
+    }
+    const overflowX = rect.right - window.innerWidth;
+    if (overflowX > 0) {
+      el.style.left = `${Math.max(8, contextMenu.x - overflowX - 8)}px`;
+    }
+  }, [contextMenu]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -254,7 +274,12 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
           const isFirst = idx <= 0;
           const isLast = idx === -1 || idx >= list.length - 1;
           return (
-            <ul className="context-menu" style={{ top: contextMenu.y, left: contextMenu.x }} onClick={(e) => e.stopPropagation()}>
+            <ul
+              ref={contextMenuRef}
+              className="context-menu"
+              style={{ top: contextMenu.y, left: contextMenu.x }}
+              onClick={(e) => e.stopPropagation()}
+            >
               <li
                 onClick={() => {
                   setContextMenu(null);

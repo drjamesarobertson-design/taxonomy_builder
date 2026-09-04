@@ -75,28 +75,34 @@ function groupSiblingIndices(rows: TaxonomyRow[], level: number): Map<string, nu
 // this scheme draws from, for both the everyday case (<=9 siblings) and the rare overflow case.
 const CODE_SLOTS = '123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
-// Evenly spreads `count` ORDINARY (non-Other) siblings across the first 8 slots ("1".."8") so
-// the first always lands on index 0 ("1") and the last always lands on index 7 ("8") —
-// proportional rounding in between, not a fixed step, so both ends are reached exactly
-// regardless of how many siblings there are. "9" (index 8) is deliberately left out of this
-// spread — reserved for a possible Other/Miscellaneous sibling in the same group, see
-// assignLevelCodes below — unless there are genuinely 9 or more ordinary siblings, at which
-// point 8 slots can't hold them all and "9" (then letters, with no gaps) is unavoidable.
-function spreadSlots(count: number): string[] {
+// Evenly spreads `count` ORDINARY (non-Other) siblings across the first 8 slots ("1".."8") using
+// a genuine, constant step ("gap coding" — CLAUDE.md Section 4.4's "1, 3, 5..."), not a stretch
+// that always reaches both ends of the range regardless of how few siblings there are — James's
+// report: two entries came out "1" and "8" (the two extremes of the whole range) instead of
+// leaving even, insertable room on both sides, e.g. "1" and "5". The step is
+// `floor(8 / count)`, starting at slot 0 ("1") — for count = 2 that's a step of 4, giving "1"
+// and "5"; for count = 8 (filling every ordinary slot) the step collapses to 1, giving
+// consecutive "1".."8", since a real gap can no longer fit for all of them at once ("juggling
+// the gap down" as the group actually needs it, not a fixed step regardless of count). "9"
+// (index 8) is deliberately left out of this spread — reserved for a possible Other/
+// Miscellaneous sibling in the same group, see assignLevelCodes below — which the maths above
+// guarantees room for as long as count stays at 8 or fewer.
+//
+// Past 8 ordinary siblings — a rare case, well past the taxonomy's own 5-9 guidance — 8 slots
+// can no longer hold them all, so the spread continues into the full alphanumeric pool instead,
+// still reaching for a genuine gap rather than collapsing straight to bare consecutive digits
+// and letters: it starts from a step of 2 and juggles that down by one at a time, only as far as
+// actually needed, until every sibling lands on a distinct, in-range slot.
+function spreadSlots(count: number, availableSlots = 8): string[] {
   if (count <= 0) return [];
   if (count === 1) return [CODE_SLOTS[0]];
-  if (count >= 9) return CODE_SLOTS.slice(0, count);
-  const positions: number[] = [];
-  for (let i = 0; i < count; i++) {
-    positions.push(Math.round((i * 7) / (count - 1)));
+  if (count <= availableSlots) {
+    const gap = Math.max(1, Math.floor(availableSlots / count));
+    return Array.from({ length: count }, (_, i) => CODE_SLOTS[i * gap]);
   }
-  // Guards against a rounding tie collapsing two siblings onto the same slot — shouldn't happen
-  // for count < 9 given the maths above, but cheap insurance against ever handing out a
-  // duplicate.
-  for (let i = 1; i < positions.length; i++) {
-    if (positions[i] <= positions[i - 1]) positions[i] = positions[i - 1] + 1;
-  }
-  return positions.map((p) => CODE_SLOTS[p]);
+  let gap = 2;
+  while (gap > 1 && (count - 1) * gap + 1 >= CODE_SLOTS.length) gap--;
+  return Array.from({ length: count }, (_, i) => CODE_SLOTS[i * gap]);
 }
 
 // Assigns gap-spaced codes to every row whose own code at `level` is still blank, one sibling
@@ -128,10 +134,12 @@ function assignLevelCodes(rows: TaxonomyRow[], level: number): TaxonomyRow[] {
       result[idx] = { ...row, codes: row.codes.map((c, i) => (i === level ? code : c)) };
     }
 
-    // "9" (index 8) whenever the ordinary siblings fit within 1-8; otherwise the next slot
-    // past however far they actually reached (only possible with 9+ ordinary siblings already
-    // forcing letters into play — a rare case well past the taxonomy's own 5-9 recommendation).
-    let otherSlotIndex = Math.max(8, ordinaryIndices.length);
+    // "9" (index 8) whenever the ordinary siblings fit within 1-8; otherwise the next slot past
+    // however far they actually reached — found from the spread's own last slot rather than
+    // assumed from `ordinaryIndices.length`, since a gap greater than 1 (the overflow case,
+    // count > 8) can reach a higher index than the sibling count alone would suggest.
+    const highestOrdinarySlotIndex = slots.length > 0 ? CODE_SLOTS.indexOf(slots[slots.length - 1]) : -1;
+    let otherSlotIndex = Math.max(8, highestOrdinarySlotIndex + 1);
     for (const idx of otherIndices) {
       const row = result[idx];
       if (row.codes[level]) continue;
