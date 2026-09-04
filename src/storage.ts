@@ -75,6 +75,9 @@ export function loadProjectFromFile(file: File): Promise<TaxonomyProject> {
         if (typeof settings.column1CodeLength !== 'number' || settings.column1CodeLength < 1 || settings.column1CodeLength > 5) {
           settings.column1CodeLength = 1;
         }
+        // Older files predate Proper-Case-only mode — default to false, matching every
+        // taxonomy's ALL CAPS structural-entry convention before this existed.
+        if (typeof settings.properCaseOnly !== 'boolean') settings.properCaseOnly = false;
         const project = data as unknown as Record<string, unknown>;
         if (typeof project.fileVersions !== 'object' || project.fileVersions === null) {
           project.fileVersions = {};

@@ -124,6 +124,12 @@ export interface TaxonomySettings {
    * validation apply per character within the value; Lock Taxonomy's insert-gap check is a
    * single-character-only feature and is skipped (never hard-blocks) once this is above 1. */
   column1CodeLength: number;
+  /** James's ask: once column 1 carries a multi-character code, the Simple Taxonomy setup
+   * screen offers to keep every description in Proper Case throughout, skipping the usual
+   * ALL CAPS-for-structural-entries convention (Section 4.3) entirely for this taxonomy. Only
+   * ever set true via that one prompt; defaults false so every other taxonomy (and every
+   * older project file) keeps today's ALL CAPS behaviour unchanged. */
+  properCaseOnly: boolean;
 }
 
 export interface TaxonomyRow {
@@ -174,6 +180,7 @@ export const DEFAULT_SETTINGS: TaxonomySettings = {
   codeRestriction: 'Alpha Numeric with All Alpha',
   locked: false,
   column1CodeLength: 1,
+  properCaseOnly: false,
 };
 
 export function createEmptyRow(numLevels: number, suffixes: SuffixField[] = []): TaxonomyRow {

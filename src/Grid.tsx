@@ -82,6 +82,7 @@ export default function Grid({
     locked,
     guidance,
     column1CodeLength,
+    properCaseOnly,
   } = settings;
   // Simple Taxonomy wizard: no code column is shown at all until the coding stage — the
   // 'headings' and 'subItems' stages are description-only by design. `numLevels` itself grows
@@ -761,8 +762,10 @@ export default function Grid({
 
     // Column 1 entries are the top level of the hierarchy — virtually always structural
     // (Section 4.3) — so force ALL CAPS as the user types, matching the case toggle's own
-    // convention rather than requiring a separate manual toggle for the common case.
-    const value = level === 0 ? rawValue.toUpperCase() : rawValue;
+    // convention rather than requiring a separate manual toggle for the common case. Skipped
+    // entirely when this taxonomy opted into Proper Case throughout (James's ask, offered when
+    // Column 1 Code Length is raised above 1) — Toggle Case remains available manually either way.
+    const value = level === 0 && !properCaseOnly ? rawValue.toUpperCase() : rawValue;
 
     // A row has exactly one populated description column — the one matching its level
     // (Section 4.1). Typing into a second column while another already holds text would
@@ -817,8 +820,9 @@ export default function Grid({
           // Simple Taxonomy wizard convenience (guidance-only, not a general app behaviour —
           // Section 6.2 keeps case toggling manual everywhere else): a heading that just
           // gained its first child is structural now, so switch it to ALL CAPS automatically
-          // rather than leaving that as a Toggle Case the user has to remember.
-          if (guidance) {
+          // rather than leaving that as a Toggle Case the user has to remember. Skipped under
+          // Proper Case throughout, same as the forced-uppercase-while-typing rule above.
+          if (guidance && !properCaseOnly) {
             const descriptions = row.descriptions.map((d, i) => (i === prevDepth ? d.toUpperCase() : d));
             return { ...row, codes, descriptions };
           }
@@ -2443,7 +2447,7 @@ export default function Grid({
                       // Column 1 is forced to ALL CAPS as you type (Section 4.3) — hinting the
                       // same at the virtual-keyboard level, so a mobile/tablet keyboard visibly
                       // shows itself shifted into caps for this field, like a locked Caps Lock.
-                      autoCapitalize={level === 0 ? 'characters' : undefined}
+                      autoCapitalize={level === 0 && !properCaseOnly ? 'characters' : undefined}
                       value={row.descriptions[level] ?? ''}
                       onChange={(e) => updateDescription(row.id, level, e.target.value)}
                       onKeyDown={(e) => handleCellKeyDown(e, 'desc', level, rowIndex)}
@@ -2456,7 +2460,11 @@ export default function Grid({
                         // clicked before its own click finishes — swallowing that click instead
                         // of acting on it.
                         const capsNoticeFiredThisBlur =
-                          rowIndex === 0 && level === 0 && !capsNoticeShownRef.current && !!(row.descriptions[0] ?? '').trim();
+                          !properCaseOnly &&
+                          rowIndex === 0 &&
+                          level === 0 &&
+                          !capsNoticeShownRef.current &&
+                          !!(row.descriptions[0] ?? '').trim();
                         if (capsNoticeFiredThisBlur) {
                           capsNoticeShownRef.current = true;
                           setTimeout(() => setShowCapsNotice(true), 0);
