@@ -438,11 +438,12 @@
    now sit in the middle of the list rather than always at the top. */
 .workflow-level-group-heading {
   display: block;
-  font-size: 0.75rem;
+  font-size: 1.15rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: #667;
-  margin-bottom: 0.2rem;
+  letter-spacing: 0.03em;
+  color: #1660d1;
+  margin: 0.3rem 0 0.35rem;
 }
 
 .workflow-level-buttons button,

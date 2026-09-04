@@ -379,12 +379,20 @@ export default function App() {
   }
 
   // Simple Taxonomy's trimmed setup screen (SimpleTaxonomySetup) only asks for the four fields
-  // Section 5 step 1 actually needs up front — everything structural (delimiters, suffixes,
-  // code restriction) stays at its default until the wizard's coding stage needs it. Starts at
-  // a single description level with no code columns yet; GuidanceBanner drives it from there.
-  function handleCreateSimpleTaxonomy(title: string, tableName: string, purpose: string, maxDescriptionLength: number) {
+  // Section 5 step 1 actually needs up front, plus Column 1 Code Length — everything else
+  // structural (delimiters, suffixes, code restriction) stays at its default until the wizard's
+  // coding stage needs it. Starts at a single description level with no code columns yet;
+  // GuidanceBanner drives it from there.
+  function handleCreateSimpleTaxonomy(
+    title: string,
+    tableName: string,
+    purpose: string,
+    maxDescriptionLength: number,
+    column1CodeLength: number,
+  ) {
     const newProject = createProject(title, tableName, purpose, maxDescriptionLength, [], ' ', 1);
     newProject.settings.guidance = { level: 'Simple Taxonomy', stage: 'headings' };
+    newProject.settings.column1CodeLength = column1CodeLength;
     newProject.rows = [createEmptyRow(1)];
     setProject(newProject);
     setDirty(true);
@@ -746,7 +754,6 @@ export default function App() {
         indentChar: fields.indentChar,
         numLevels: newNumLevels,
         delimiterPositions: fields.delimiterPositions,
-        column1CodeLength: fields.column1CodeLength,
       },
     });
     setDirty(true);
