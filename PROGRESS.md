@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #103, 2026-09-03)
+## Current status (as of PR #105, 2026-09-04)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -84,13 +84,18 @@ further rounds of testing feedback. The tool currently supports, in full:
   default.
 - Settings screen to revisit title/purpose/description-length/padding/
   delimiter/code-column-count after creation; right-click Add/Delete Column.
-  Also sets Column 1 Code Length (PR #102, James's ask): column 1 may hold
-  1 to 5 characters instead of the usual single one, defaulting to 1 so
-  every other column, and every older project file, is unaffected. Every
-  charset, ascending-order, left-to-right, padding, and duplicate check
-  that assumed one character now operates on the full value; Lock
+- Column 1 Code Length (PR #102, James's ask; relocated PR #105): column 1
+  may hold 1 to 5 characters instead of the usual single one, defaulting to
+  1 so every other column, and every older project file, is unaffected.
+  Every charset, ascending-order, left-to-right, padding, and duplicate
+  check that assumed one character now operates on the full value; Lock
   Taxonomy's insert-gap detection is single-character-only and is skipped
   (never a false hard block) once column 1 holds more than one character.
+  Offered ONLY on the Simple Taxonomy setup screen (PR #105) — James tried
+  it on the general Settings dialog and the full New Taxonomy form first,
+  then decided "in general multiple characters is a mess" everywhere else,
+  so it isn't offered there or on the ongoing Settings dialog at all; the
+  underlying Grid.tsx logic is identical regardless of where it's set.
 - Create Block / Import Block for moving content between separate taxonomy
   files.
 - Field-level help icons (New Taxonomy + Settings) and right-click menu help,
@@ -171,17 +176,19 @@ further rounds of testing feedback. The tool currently supports, in full:
   of deleting it; and CSV Import (which replaces the whole table outside
   any per-cell guard) is blocked outright.
 - A post-sign-on landing menu (`WorkflowMenu.tsx`): "Create a New Taxonomy"
-  listing, in order, Simple Taxonomy, Advanced Complexity Taxonomy, then a
-  non-clickable "Cubic Business Model" heading (PR #100 — CLAUDE.md
-  Section 9's Cubic Business Model©) grouping Division / Location /
-  Function / Chart of Accounts, then Item Master and Highly Experienced
-  User — No Guidance (Intermediate Complexity Taxonomy removed, PR #100;
-  exact order corrected in PR #102 after James clarified the Cubic
-  Business Model group belongs in the middle of the list, not at the top);
-  and "Work on an Existing Taxonomy" (Load from File / Import CSV /
-  Library). Every level but Simple Taxonomy still opens today's same
-  taxonomy setup screen with a "Creating a `<level>`" label and no further
-  guidance — their guided workflows remain not-yet-built follow-up work
+  listing, in order, Simple Taxonomy, Advanced Complexity Taxonomy, Highly
+  Experienced User — No Guidance, Item Master, then a non-clickable
+  "Cubic Business Model" heading (PR #100 — CLAUDE.md Section 9's Cubic
+  Business Model©) grouping Division / Location / Function / Chart of
+  Accounts (Intermediate Complexity Taxonomy removed, PR #100; exact order
+  corrected twice more, PR #102 then PR #105, as James refined exactly
+  where the group should sit — settling on last, after Item Master); and
+  "Work on an Existing Taxonomy" (Load from File / Import CSV / Library).
+  The Cubic Business Model heading itself is large, bold, and blue (PR
+  #105) so it doesn't blend into the menu's small grey labels. Every level
+  but Simple Taxonomy still opens today's same taxonomy setup screen with
+  a "Creating a `<level>`" label and no further guidance — their guided
+  workflows remain not-yet-built follow-up work
   (see "Not yet built"). Also: a larger header logo and a "Taxonomy
   Builder by the ERP Doctor James A Robertson and Associates Limited"
   tagline on the sign-on screens.
@@ -456,6 +463,57 @@ further rounds of testing feedback. The tool currently supports, in full:
   piece is specifically the *phonetic* judgement of which letter to pick
   when there's a choice. Left for a follow-up conversation rather than
   guessed at.
+
+### Cubic Business Model styling, menu order refinement, Column 1 Code Length relocated (PR #105)
+James's follow-up right after trying PR #102-#104 live — three tweaks, the
+last a genuine change of mind after seeing the setting in place:
+
+1. **Heading visibility.** "CUBIC BUSINESS MODEL needs to be much larger
+   and bold so it stands out, at present it is lost – maybe blue font."
+   `.workflow-level-group-heading` went from a small, muted grey label
+   (matching every other on-page caption) to 1.15rem, bold, and the app's
+   own blue accent (`#1660d1`, the same blue as its buttons) — genuinely
+   distinct from the rest of the menu now rather than blending in.
+2. **Menu order, refined again.** "Move Highly Experienced up after
+   Advanced. Then Item Master. Then CUBIC BUSINESS MODEL and its
+   children." `WORKFLOW_LEVELS` reordered a second time — Simple Taxonomy,
+   Advanced Complexity Taxonomy, Highly Experienced User, Item Master,
+   then Division / Location / Function / Chart of Accounts last.
+   `WorkflowMenu.tsx`'s own rendering logic needed no change at all for
+   this — it already places the heading above whichever item happens to
+   be first among `CUBIC_BUSINESS_MODEL_WORKFLOW_LEVELS`, wherever that
+   falls in the list.
+3. **Column 1 Code Length relocated, not just left in Settings.** James
+   went looking for it on the general Settings dialog (where PR #102 had
+   put it) after creating an "Advanced Complexity Taxonomy" — the only way
+   he could find to reach "the full setting menu" (the plain New Taxonomy
+   form, correctly so per CLAUDE.md's split between that and Simple
+   Taxonomy's own trimmed one) — and found it on neither that form nor
+   Settings. Having looked, his actual verdict: "it is most important on
+   simple – in fact, probably only there – in general multiple characters
+   is a mess, so yes ONLY on simple and limit to column one only." Removed
+   the field and its validation entirely from `SettingsModal.tsx` (and the
+   `column1CodeLength` pass-through in App.tsx's settings-save handler);
+   added it instead to `SimpleTaxonomySetup.tsx` (1-5, default 1, same
+   `<select>`, same `column1CodeLength` help-text key) with a new
+   `column1CodeLength` parameter threaded through
+   `handleCreateSimpleTaxonomy`. The full New Taxonomy form (Advanced,
+   Highly Experienced, Item Master, and all four Cubic Business Model
+   items) never offered this field and still doesn't — column 1 stays a
+   single character there, unchanged. None of Grid.tsx's multi-character
+   logic itself changed; only where the setting is exposed and set moved.
+
+Also noted for the morning: James is still going to look over the Code
+and Description right-click menu lists posted in chat last round and
+send back his preferred order — no menu-reordering code change yet.
+
+`smoke_round13.mjs` updated for the revised order, the heading's new
+computed style (font-size/weight/colour asserted directly), and Column 1
+Code Length's new home — confirmed absent from both the Settings dialog
+and the full New Taxonomy form, present on the Simple Taxonomy setup
+screen, and threading through to a real multi-character code end to end
+via the wizard's own coding stage. Full existing Playwright suite re-run
+clean.
 
 ### Menu order fix, Auto Code's 9-reservation, Other/Misc nudge, multi-char column 1 (PR #102)
 James's next round, right after the Cubic Business Model restructure. Five
