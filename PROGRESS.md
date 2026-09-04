@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #108, 2026-09-04)
+## Current status (as of PR #111, 2026-09-04)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -103,7 +103,28 @@ further rounds of testing feedback. The tool currently supports, in full:
   auto-capitalize hint, the "gained a child" auto-uppercase, and the
   one-time "All headings should be capitalized" tip) is skipped entirely;
   Toggle Case stays available manually either way. Defaults false/hidden
-  everywhere else, so no other taxonomy is affected.
+  everywhere else, so no other taxonomy is affected. A one-time reminder
+  (PR #111) fires the first time a column-1 description is entered once
+  Column 1 Code Length is above 1 — descriptions should be entered in the
+  alphabetical order their codes are meant to sort in, since that's much
+  harder to fix up after the fact. The ascending-order Override check
+  itself (Section 4.4/6.7) no longer re-fires on every keystroke of a
+  multi-character value that starts low — every prefix of "ABC" is "less
+  than" a taller sibling regardless of what follows it, so checking on
+  each keystroke meant clicking Override over and over with no way to
+  actually finish typing (James's report) — deferred until the value
+  reaches its full configured length, or blurs while deliberately left
+  shorter (checked exactly once each way, not re-asked on every later
+  reblur of the same unchanged value). Clicking Override also refocuses
+  the cell, cursor at the end, instead of leaving it unfocused (the
+  dialog's own focus-steal was blurring it with nothing to bring focus
+  back) — the remaining characters can be typed straight through instead
+  of clicking back in and starting over. "Alpha Sort" is now available on
+  the code column's own right-click menu too (PR #111), not just the
+  description column's — sorts a selected block of siblings by their own
+  code value ascending, each carrying its descendants along, for
+  reordering rows to match codes once an Override has let one through
+  temporarily out of order.
 - Create Block / Import Block for moving content between separate taxonomy
   files.
 - Field-level help icons (New Taxonomy + Settings) and right-click menu help,
@@ -181,7 +202,23 @@ further rounds of testing feedback. The tool currently supports, in full:
   shape and the other two import paths (headered discrete columns,
   headerless) are unaffected. Once imported, the existing general-purpose
   Auto Code toolbar action (below) runs on the result as-is — no separate
-  import-time autocoding was needed.
+  import-time autocoding was needed. A follow-up fix (PR #111): a "Level
+  N..." file with a single blank, unnamed spacer column before old-code/
+  certainty/Notes ("Level 1,Level 2,Level 3,,Notes" — another real GL
+  Analyser export shape, this time for Divisions/Locations) was falling
+  through to the headerless parser and failing with a "Could not find any
+  code columns" error unrelated to the actual problem; that spacer is now
+  skipped, matching the convention the other two import paths already
+  followed. James asked whether GL Analyser import should be its own
+  distinct function from ordinary Import CSV, given it never has codes and
+  its description-column count varies by client/table (Chart of Accounts,
+  Divisions, Locations, Functions, etc.) — kept as one "Import CSV" button
+  with the existing three-shape auto-detection instead of adding a second
+  entry point: the codeless "Level N..." shape this section already
+  describes is precisely that distinct case, detected automatically
+  rather than requiring the user to pick an importer up front, and it
+  independently accepts or omits old code/certainty per file (blank is
+  fine either way) already.
 - Grid's own right-click "Export Block" on a selected row range (alongside
   the toolbar's whole-table Create Block), with an "Include Suffix? Y/N"
   choice.
@@ -339,7 +376,12 @@ further rounds of testing feedback. The tool currently supports, in full:
   without sharing his own credential; each still just gates entry, it
   doesn't partition Library/autosave storage per login (see that PR's own
   note, and the "sharing the URL" answer in the History below, for what
-  that does and doesn't mean for data isolation).
+  that does and doesn't mean for data isolation). The password is
+  compared case-insensitively too, same as the username (PR #110) — every
+  seeded password is just the identifier itself, and typing the same,
+  naturally mixed-case email into both fields used to fail the password
+  check (only the username side was lower-cased before), rejecting a
+  genuinely correct login with "Incorrect username or password."
 - Session autosave (`storage.ts`): the open taxonomy is written to a
   single `localStorage` slot on every change, independent of sign-in
   state. A "Back to Menu" toolbar button returns to the landing menu
@@ -507,6 +549,104 @@ further rounds of testing feedback. The tool currently supports, in full:
   piece is specifically the *phonetic* judgement of which letter to pick
   when there's a choice. Left for a follow-up conversation rather than
   guessed at.
+
+### Multi-character code ordering fixes, code-column Alpha Sort, GL Analyser Divisions/Locations import fix (PR #111)
+James's follow-up on multi-character Column 1 codes and two more GL Analyser
+files he attached (Divisions, Locations):
+
+1. "Where the code is more than 1 letter display a warning, descriptions
+   should be entered in alphabetical order of codes." A one-time reminder
+   (same pattern as the existing ALL CAPS notice, mutually exclusive with
+   it on the same blur) fires the first time a column-1 description is
+   entered once Column 1 Code Length is above 1.
+2. "With multiple letter codes if first letter is out of alphabetical
+   order the warning comes up but override does not release the field to
+   enter remaining letters, have to go back and try again." Two compounding
+   bugs, found via a Playwright repro before fixing either:
+   - The ascending-order Override check ran on every keystroke of the
+     native multi-character input. Since a value's every *prefix* is
+     lexicographically "less than" a taller sibling regardless of what's
+     typed after it (typing "A", then "AB", then "ABC" toward a sibling
+     coded "MMM" — every one of those is "less than 'MMM'"), the dialog
+     kept reappearing on each character, with no way to ever finish typing
+     — matches his report exactly. Fixed by deferring the check in
+     `updateCode` (Grid.tsx) until the value reaches its full configured
+     length while typing, or on blur for a value deliberately left shorter
+     than the max (a new onBlur handler, `forceOrderCheck`).
+   - Separately, clicking "Override" left the cell unfocused — the confirm
+     dialog's own `useEffect` steals focus the instant it renders (to make
+     Escape/Enter work on it), which blurs whatever code cell was mid-typing,
+     and nothing was refocusing it afterwards. Fixed with a
+     `focusCodeInputAtEnd` helper, called after Override commits.
+   - Fixing bug 1 exposed a third, more subtle one: the dialog's own
+     focus-steal blur was itself triggering the new onBlur handler from
+     the first fix, re-checking the stale (not-yet-committed) value and
+     opening a *second* confirm dialog that silently replaced the first —
+     so clicking "Override" was actually confirming the wrong dialog, with
+     the wrong (shorter, stale) value. Fixed by skipping the onBlur check
+     whenever a `confirmDialog` is already open (that's always the dialog's
+     own focus-steal, never a genuine "user left the cell" blur — the
+     overlay blocks clicking anywhere else in the grid regardless). A
+     second fix was needed on top of that for the *repeat*-blur case
+     (leaving and re-entering an already-Override'd short value kept
+     re-asking forever): a `multiCharOrderCheckedRef` cache, keyed by
+     rowId+level+value, scoped to only affect multi-character cells so a
+     single-character cell's behaviour is completely unchanged.
+3. "On multiple letter codes need alpha sort on code as well as
+   description." Added `handleAlphaSortByCode`, the code-column
+   counterpart to the existing description-column "Alpha Sort" — same
+   right-click item, now also on the code context menu, sorting a selected
+   block of siblings by their own code value ascending (whichever single
+   column was right-clicked), each carrying its descendants along.
+4. "The AP import works perfectly and also auto code, excellent, well
+   done, saves hours of work." No action — PR #108's CSV import
+   elaboration and the existing Auto Code action, confirmed working well
+   on his real file.
+5. The Code/Description right-click menu reordering (deferred since an
+   earlier round) — still awaiting his own ordering; no change made.
+6. "Having difficulty with import of GL Analyser Divisions file... get
+   error 'Could not find any code columns'... do we need "Import GL
+   Analyser" as a special function[?]" His Divisions and Locations files
+   are the same codeless "Level N..." shape PR #94/#108 already handle,
+   but with a single blank, unnamed spacer column before Notes
+   ("Level 1,Level 2,Level 3,,Notes") that `tryParseDescriptionOnlyCsv`
+   didn't know to skip — it fell through to the headerless parser, whose
+   error message ("no code columns found") had nothing to do with the
+   actual problem. Fixed by skipping any such blank header column before
+   checking for old-code/certainty/Notes, matching the spacer-skipping
+   convention the other two import paths already had. On his broader
+   question — a separate "Import GL Analyser" function — kept the single
+   "Import CSV" button with its existing three-shape auto-detection
+   instead: the codeless "Level N..." path is already exactly the
+   distinct, no-codes, variable-column-count shape he described, detected
+   automatically rather than needing a second entry point, and old
+   code/certainty are already independently optional per file (his
+   Divisions/Locations files have neither, and imported cleanly with zero
+   suffix columns).
+
+New tests: `smoke_round17.mjs` (items 1-3, full Playwright repro-then-fix
+for the Override bugs, plus the code-column Alpha Sort);
+`unit_csv_gl_divisions_locations.mjs` and
+`smoke_csv_gl_divisions_locations.mjs` (item 6, both files as a pure
+parser unit test and end to end through the actual Import CSV button).
+Full existing regression suite (`smoke_round15.mjs`, the PR #108 CSV
+import tests) re-run clean; `npx tsc --noEmit`, `npm run lint`,
+`npm run build` all clean throughout.
+
+### Login password case-sensitivity fix (PR #110)
+James reported "Incorrect username or password" logging in with
+`JamesAR@JAR-and-A.com` in both fields. Root cause: every seeded
+password is just the login identifier itself (Section on the sign-on
+gate, above), and `verifyLogin` (auth.ts) already compared the
+username/email case-insensitively but hashed the password exact-case —
+so typing the same, naturally mixed-case email into both fields matched
+the username but not the password hash, which was only ever stored
+lower-case. Fixed by lower-casing the password before hashing too, same
+as the identifier; all ten seeded accounts' salts/hashes were
+regenerated to match (verified a genuinely wrong password is still
+rejected). New test: `smoke_login_case.mjs` (his exact repro) plus
+`smoke_login_regression.mjs` (original lowercase login, a Friend login in
+matching and mismatched case, a wrong password).
 
 ### Repeatable wizard columns, Proper Case option, restriction default fix, flattened Library, elaborated CSV import (PR #107–#108)
 A five-item round, plus a real client CSV ("GL Analyser" output) James
