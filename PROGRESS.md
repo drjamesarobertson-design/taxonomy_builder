@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #114, 2026-09-04)
+## Current status (as of PR #117, 2026-09-05)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -40,7 +40,9 @@ further rounds of testing feedback. The tool currently supports, in full:
   Menus v1.2"), with group dividers in the same positions he specified;
   items added since he compiled that list (Alpha Sort on the code menu)
   are kept, grouped with the other order-related actions rather than
-  dropped.
+  dropped. Their group dividers are actually visible now (PR #116) — the
+  border was `#eee` against the menu's own white background, essentially
+  invisible on most screens; darkened to `#999`.
 - Code validation: charset, left-to-right population, ASCII ascending order
   (with Override), the "0" soft warning, and a hard cross-block duplicate
   check on the deepest column. The deepest (rightmost) column never
@@ -239,7 +241,12 @@ further rounds of testing feedback. The tool currently supports, in full:
   describes is precisely that distinct case, detected automatically
   rather than requiring the user to pick an importer up front, and it
   independently accepts or omits old code/certainty per file (blank is
-  fine either way) already.
+  fine either way) already. A second follow-up fix (PR #117): a "Level
+  N..." file whose header abbreviates the first few columns "L1"/"L2"/
+  "L3" then switches to the full "Level 4" spelling for the next one
+  (mixed within the very same header row) wasn't recognised at all —
+  detection only ever matched the spelled-out "Level N" form. Both forms
+  are now accepted independently at each column position.
 - Grid's own right-click "Export Block" on a selected row range (alongside
   the toolbar's whole-table Create Block), with an "Include Suffix? Y/N"
   choice.
@@ -570,6 +577,35 @@ further rounds of testing feedback. The tool currently supports, in full:
   piece is specifically the *phonetic* judgement of which letter to pick
   when there's a choice. Left for a follow-up conversation rather than
   guessed at.
+
+### Menu divider visibility, abbreviated "L1"/"L2" CSV headers (PR #116–#117)
+Two quick follow-ups right after the previous round:
+
+1. "The delimiters are not visible in the right click menus." The group
+   dividers added in PR #113's reorder used `border-top: 1px solid #eee`
+   against the menu's own white background — nearly invisible on a normal
+   screen. Darkened to `#999`, matching the visible contrast of the
+   menu's own outer border. Screenshot-verified both menus before
+   shipping.
+2. "Getting an import error with attached csv file, it is the same as a
+   number of related csv's that have all imported fine." The attached
+   `Function_Master_v1_6.csv` is the same codeless "Level N..." shape as
+   the files that already work, but its header reads
+   `L1,L2,L3,Level 4,Notes` — abbreviated for the first three columns,
+   spelled out in full for the fourth, mixed within one header row.
+   `tryParseDescriptionOnlyCsv` only ever matched the full "Level N"
+   spelling, so it failed at column 0 and fell through to the headerless
+   parser, whose "Could not find any code columns" error had nothing to
+   do with the real problem (this file has no codes at all — same root
+   pattern as PR #111 and #117's predecessor fix, a shape-detection gap
+   surfacing as a misleading downstream error). Both `L{n}` and
+   `Level {n}` are now accepted independently at each column position.
+
+New tests: `unit_csv_function_master.mjs` and
+`smoke_csv_function_master.mjs` (the actual attached file, as a unit test
+and end to end through Import CSV). Full existing CSV-import regression
+suite re-run clean; `npx tsc --noEmit`, `npm run lint`, `npm run build`
+all clean throughout.
 
 ### Library menu overflow fix, gap-coded Auto Code, right-click menu reorder, full project backup (PR #113–#114)
 James's message opened "Excellent, this is getting better and better" —
