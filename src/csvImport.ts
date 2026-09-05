@@ -381,7 +381,12 @@ function tryParseDescriptionOnlyCsv(table: string[][]): ParsedDiscreteCsv | null
   let col = 0;
   let expectLevel = 1;
   while (col < header.length) {
-    if ((header[col] ?? '').trim().toLowerCase() === `level ${expectLevel}`) {
+    // James's report: a real file numbered its first three columns "L1"/"L2"/"L3" then
+    // switched to "Level 4" for the fourth — the abbreviated and spelled-out forms mixed
+    // within the very same header row. Both are accepted at every position independently,
+    // rather than committing to one style for a whole file.
+    const h = (header[col] ?? '').trim().toLowerCase();
+    if (h === `level ${expectLevel}` || h === `l${expectLevel}`) {
       descCols.push(col);
       expectLevel++;
       col++;
