@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #117, 2026-09-05)
+## Current status (as of PR #119, 2026-09-16)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -159,10 +159,17 @@ further rounds of testing feedback. The tool currently supports, in full:
   Business Model Related" + sub-heading) are migrated automatically on
   first read. Every heading, grouped or not, is a single flat list now.
   Persisted in this browser's own IndexedDB — per-browser, not a file, and
-  not synced anywhere. Its right-click context menu now clamps upward
-  when it would otherwise run off the bottom of the screen (PR #113) —
-  the same fix already applied to the grid's own right-click menu (below),
-  ported over.
+  not synced anywhere (which is exactly why it doesn't survive a move to a
+  new machine or browser profile — see PR #119 below). Its right-click
+  context menu now clamps upward when it would otherwise run off the
+  bottom of the screen (PR #113) — the same fix already applied to the
+  grid's own right-click menu (below), ported over. Export…/Import…
+  buttons in its header (PR #119) turn any chosen subset of entries into a
+  single portable JSON file and back — covers backing up/transferring the
+  Library to a new machine, handing a curated demo set to interested
+  parties, and bundling sample files with a sale, all with the one
+  mechanism. Import always adds new entries alongside whatever's already
+  there rather than overwriting anything.
 - A "Code Restrictions" dropdown at the top of the work area, narrowing
   real codes to Numeric Only / Alpha Numeric with All Alpha / Alpha Numeric
   with Upper Case Alpha Only / Alpha Upper Case Only / Alpha Both Cases
@@ -577,6 +584,44 @@ further rounds of testing feedback. The tool currently supports, in full:
   piece is specifically the *phonetic* judgement of which letter to pick
   when there's a choice. Left for a follow-up conversation rather than
   guessed at.
+
+### Export/Import Library (PR #119)
+After moving to a new computer, James reported that every taxonomy in his
+Library was gone — "the same Edge set-up" didn't carry it over. Root cause
+was already on record (see the Library bullet above): it's IndexedDB,
+scoped to one browser profile on one machine, never a file. He asked for a
+way to "wrap files for transfer to a new machine," plus a way to build a
+demo/marketing selection for interested parties, and to bundle sample
+files with a sale — three asks that are really one need: a portable file
+holding a chosen set of Library entries.
+
+Added Export…/Import… buttons to the Library sidebar's own header — already
+visible on the front landing menu, so no second/duplicate control was
+needed to satisfy "maybe on the front menu."
+
+- **Export…** opens a Select-All-by-default checklist of every Library
+  entry, grouped by heading the same way the sidebar itself is, with
+  Select All/Select None. Downloads the chosen subset as one JSON file
+  (`buildLibraryExportBundle`/`downloadBlob`) — export everything for a
+  full backup, or hand-pick a subset for a demo environment or a sample
+  bundle to ship with a sale.
+- **Import…** reads that file back, validates its shape
+  (`parseLibraryExportBundle`), and runs every project inside it through
+  the same backward-compatibility migration chain "Load from File" already
+  applies — pulled out of `loadProjectFromFile` into a shared, exported
+  `migrateProjectData` in `storage.ts` so both paths can't drift apart.
+  Imported entries are always **added** as new Library entries (fresh ids)
+  alongside whatever's already there — never overwritten — matching the
+  existing Add-to-Library overwrite-vs-new-version posture. A plain alert
+  explains anything that isn't a genuine Library export file.
+
+Playwright-verified end to end: seeded two Library entries, exported a
+selected subset (checked the downloaded JSON's shape and that only the
+selected entry was included), re-imported the same file and confirmed it
+landed as a second, separate entry rather than overwriting the first,
+confirmed the untouched entry was unaffected, and confirmed a bad file
+produces a clear rejection rather than silently failing. `npx tsc
+--noEmit`, `npm run lint`, `npm run build` all clean.
 
 ### Menu divider visibility, abbreviated "L1"/"L2" CSV headers (PR #116–#117)
 Two quick follow-ups right after the previous round:
