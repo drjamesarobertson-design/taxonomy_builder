@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #119, 2026-09-16)
+## Current status (as of PR #121, 2026-09-16)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -169,7 +169,25 @@ further rounds of testing feedback. The tool currently supports, in full:
   Library to a new machine, handing a curated demo set to interested
   parties, and bundling sample files with a sale, all with the one
   mechanism. Import always adds new entries alongside whatever's already
-  there rather than overwriting anything.
+  there rather than overwriting anything, and now shows the same
+  Select-All-by-default checklist Export does (PR #121) so specific
+  entries can be left out. Export goes through the same native "Save As"
+  flow (remembering wherever the last save actually went) every other
+  Save/Export action already uses, rather than dropping straight into
+  Downloads (PR #121). A "Load from Library" button on "Work on an
+  Existing Taxonomy" (PR #121) opens a grouped picker of every entry —
+  previously the only way in was right-click "Move to Work Area" on the
+  sidebar itself, which wasn't obvious. The sidebar's context menu and
+  every one of its dialogs are portaled straight to `document.body` (PR
+  #121) rather than nested inside `.library-sidebar` — that sidebar is
+  `position: sticky`, which (like `position: fixed`) always starts its own
+  CSS stacking context, so no z-index set on anything nested inside it
+  could ever out-rank `.app-header`'s z-index:50, a sibling context
+  entirely outside the sidebar; on a short window this let the header
+  swallow clicks on a dialog's own top content, which is what actually
+  caused James's "truncated at the top" report on the Export/Import
+  checklist with his real 21-entry Library, not the checklist itself
+  failing to scroll.
 - A "Code Restrictions" dropdown at the top of the work area, narrowing
   real codes to Numeric Only / Alpha Numeric with All Alpha / Alpha Numeric
   with Upper Case Alpha Only / Alpha Upper Case Only / Alpha Both Cases
@@ -584,6 +602,57 @@ further rounds of testing feedback. The tool currently supports, in full:
   piece is specifically the *phonetic* judgement of which letter to pick
   when there's a choice. Left for a follow-up conversation rather than
   guessed at.
+
+### Export/Import Library follow-ups (PR #121)
+James tested PR #119 against his real Library (21 entries) and reported
+four issues in one message:
+
+1. "The Pop Up selection is truncated at the top... truncates about a
+   third of the way down pop up screen." Root cause wasn't the checklist
+   failing to scroll — it was a stacking-context trap: `LibrarySidebar`'s
+   dialogs and context menu were nested inside `.library-sidebar`, which is
+   `position: sticky`, and `position: sticky` (like `position: fixed`)
+   always starts a brand-new CSS stacking context. That meant no `z-index`
+   set on anything nested inside the sidebar could ever out-rank
+   `.app-header`'s `z-index: 50` — a sibling stacking context entirely
+   outside the sidebar — regardless of how high the dialog's own z-index
+   was set. On a tall window this never showed up (the header's on-screen
+   footprint is small relative to the page), but on a shorter one the
+   header could paint over — and swallow clicks on — the dialog's own top
+   content. Fixed by portaling the context menu and all three
+   `LibrarySidebar` dialogs straight to `document.body` (bypassing the
+   trap entirely) via `createPortal`, and giving `.validation-dialog` a
+   `max-height: 90vh; overflow-y: auto` so any dialog that genuinely does
+   grow past the viewport scrolls internally rather than getting clipped.
+   Reproduced directly in Playwright with a deliberately short 900×500
+   viewport before fixing, confirmed fixed after.
+2. "Export drops the file into Downloads – needs to drop into File
+   Explorer defaulting to the previously used folder." Export was using
+   `downloadBlob` directly instead of `exportFolder.ts`'s `saveExportFile`
+   — every other Save/Export action in the app (project file, CSV, XLSX,
+   block transfer) already goes through that shared function, which shows
+   the browser's native "Save As" dialog and remembers wherever the last
+   save actually went. Export now shares it too.
+3. "Import imports the full contents of the export file, be useful to
+   present the same sort of selection as the export." Added the identical
+   Select-All-by-default checklist Export already has to the import
+   confirmation dialog — grouped by heading, with Select All/Select None
+   — so specific entries can be left out before anything is added.
+4. "The import works on the main menu screen but when one selects 'Work
+   on an Existing Taxonomy' it is not intuitive to select a taxonomy off
+   the library... need a further button 'Load from Library'." Added
+   exactly that: a button on the Existing-Taxonomy screen that opens a
+   grouped picker of every Library entry; clicking one opens it directly
+   in the work area (reusing the existing `handleMoveToWorkArea`).
+
+Playwright-verified end to end in the same short 900×500 viewport that
+reproduced item 1: dialog scrolls internally rather than clipping, Select
+All/Select None both work, a deselected export entry is excluded from the
+downloaded file, an unchecked import entry is correctly skipped, and the
+new Load from Library button opens the picked entry in the work area.
+Full prior Export/Import Library regression suite re-run clean against
+these changes. `npx tsc --noEmit`, `npm run lint`, `npm run build` all
+clean throughout.
 
 ### Export/Import Library (PR #119)
 After moving to a new computer, James reported that every taxonomy in his
