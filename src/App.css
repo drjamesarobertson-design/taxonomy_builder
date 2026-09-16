@@ -68,6 +68,81 @@
   margin: 0.5rem 0;
 }
 
+/* Export/Import Library (James's request): kept small and unobtrusive, in keeping with the
+   rest of this sidebar, directly under the collapse toggle rather than a second location. */
+.library-transfer-buttons {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+
+.library-transfer-button {
+  flex: 1;
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  color: inherit;
+  border-radius: 4px;
+  padding: 0.25rem 0.4rem;
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.library-transfer-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.library-import-file-input {
+  display: none;
+}
+
+.library-export-dialog {
+  max-width: 30rem;
+}
+
+.library-export-select-all {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.library-export-checklist {
+  max-height: 18rem;
+  overflow-y: auto;
+  text-align: left;
+  border: 1px solid #d8d8d8;
+  border-radius: 4px;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.library-export-checklist-group h4 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #666;
+  margin: 0.6rem 0 0.2rem;
+}
+
+.library-export-checklist-group:first-child h4 {
+  margin-top: 0;
+}
+
+.library-export-checklist-item {
+  display: block;
+  font-size: 0.9rem;
+  padding: 0.15rem 0;
+}
+
+.library-export-checklist-item-preview {
+  text-align: left;
+  max-height: 12rem;
+  overflow-y: auto;
+  font-size: 0.85rem;
+  margin: 0 0 1rem;
+  padding-left: 1.25rem;
+}
+
 .library-category {
   margin-bottom: 0.6rem;
 }

@@ -19,7 +19,7 @@ export async function saveProjectToFile(
   return { project: cancelled ? project : versioned, usedFolder, cancelled };
 }
 
-function isTaxonomyProject(data: unknown): data is TaxonomyProject {
+export function isTaxonomyProject(data: unknown): data is TaxonomyProject {
   if (typeof data !== 'object' || data === null) return false;
   const p = data as Record<string, unknown>;
   return (
@@ -32,6 +32,70 @@ function isTaxonomyProject(data: unknown): data is TaxonomyProject {
   );
 }
 
+/** Backward-compatible defaults for every settings/row field added since a project could first
+ * be saved — shared by both "Load from File" and "Import Library" so a project arriving either
+ * way gets the same treatment. Mutates and returns `data` in place. */
+export function migrateProjectData(data: TaxonomyProject): TaxonomyProject {
+  // Migrate older project files: a single delimiterAfter position becomes an array.
+  const settings = data.settings as unknown as Record<string, unknown>;
+  if (!Array.isArray(settings.delimiterPositions) && typeof settings.delimiterAfter === 'number') {
+    settings.delimiterPositions = [settings.delimiterAfter];
+  }
+  // Older files predate the configurable Concatenated-export indent character — default
+  // to the space that was previously hardcoded.
+  if (typeof settings.indentChar !== 'string' || settings.indentChar.length !== 1) {
+    settings.indentChar = ' ';
+  }
+  // Older files predate suffix columns and per-file version counters.
+  if (!Array.isArray(settings.suffixes)) settings.suffixes = [];
+  // Older files predate the configurable padding and code-delimiter characters —
+  // default to the values that were previously hardcoded everywhere.
+  if (typeof settings.paddingChar !== 'string' || settings.paddingChar.length !== 1) {
+    settings.paddingChar = '.';
+  }
+  if (typeof settings.codeDelimiterChar !== 'string' || settings.codeDelimiterChar.length !== 1) {
+    settings.codeDelimiterChar = '-';
+  }
+  // Older files predate the Code Restrictions dropdown (item 1) — default to the
+  // unrestricted option, matching the full charset every taxonomy used before this.
+  if (!CODE_RESTRICTIONS.includes(settings.codeRestriction as never)) {
+    settings.codeRestriction = 'Alpha Numeric with All Alpha';
+  }
+  // Older files predate Lock Taxonomy — default to unlocked, and no row was ever
+  // marked protected, matching every taxonomy's behaviour before this existed.
+  if (typeof settings.locked !== 'boolean') settings.locked = false;
+  // Older files predate the column-1 multi-character code length setting — default to 1,
+  // matching every taxonomy's single-character column 1 behaviour before this existed.
+  if (typeof settings.column1CodeLength !== 'number' || settings.column1CodeLength < 1 || settings.column1CodeLength > 5) {
+    settings.column1CodeLength = 1;
+  }
+  // Older files predate Proper-Case-only mode — default to false, matching every
+  // taxonomy's ALL CAPS structural-entry convention before this existed.
+  if (typeof settings.properCaseOnly !== 'boolean') settings.properCaseOnly = false;
+  const project = data as unknown as Record<string, unknown>;
+  if (typeof project.fileVersions !== 'object' || project.fileVersions === null) {
+    project.fileVersions = {};
+  }
+  // "Constant" suffixes used to be read-only, always showing settings.constantValue for
+  // every row rather than their own per-row value — now they're editable like any other
+  // suffix, seeded from that same default. Backfill any row whose stored value for a
+  // constant-mode suffix is still blank (never having had a real per-row value to begin
+  // with) so loading an older file doesn't blank out what it used to display.
+  const suffixFields = settings.suffixes as Array<{ mode: string; constantValue: string }>;
+  for (const row of data.rows as unknown as Record<string, unknown>[]) {
+    if (!Array.isArray(row.suffixValues)) {
+      row.suffixValues = suffixFields.map(() => '');
+    }
+    const suffixValues = row.suffixValues as string[];
+    suffixFields.forEach((suffix, i) => {
+      if (suffix.mode === 'constant' && !suffixValues[i]) {
+        suffixValues[i] = suffix.constantValue;
+      }
+    });
+  }
+  return data;
+}
+
 export function loadProjectFromFile(file: File): Promise<TaxonomyProject> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -42,64 +106,7 @@ export function loadProjectFromFile(file: File): Promise<TaxonomyProject> {
           reject(new Error('This file does not look like a valid taxonomy project.'));
           return;
         }
-        // Migrate older project files: a single delimiterAfter position becomes an array.
-        const settings = data.settings as unknown as Record<string, unknown>;
-        if (!Array.isArray(settings.delimiterPositions) && typeof settings.delimiterAfter === 'number') {
-          settings.delimiterPositions = [settings.delimiterAfter];
-        }
-        // Older files predate the configurable Concatenated-export indent character — default
-        // to the space that was previously hardcoded.
-        if (typeof settings.indentChar !== 'string' || settings.indentChar.length !== 1) {
-          settings.indentChar = ' ';
-        }
-        // Older files predate suffix columns and per-file version counters.
-        if (!Array.isArray(settings.suffixes)) settings.suffixes = [];
-        // Older files predate the configurable padding and code-delimiter characters —
-        // default to the values that were previously hardcoded everywhere.
-        if (typeof settings.paddingChar !== 'string' || settings.paddingChar.length !== 1) {
-          settings.paddingChar = '.';
-        }
-        if (typeof settings.codeDelimiterChar !== 'string' || settings.codeDelimiterChar.length !== 1) {
-          settings.codeDelimiterChar = '-';
-        }
-        // Older files predate the Code Restrictions dropdown (item 1) — default to the
-        // unrestricted option, matching the full charset every taxonomy used before this.
-        if (!CODE_RESTRICTIONS.includes(settings.codeRestriction as never)) {
-          settings.codeRestriction = 'Alpha Numeric with All Alpha';
-        }
-        // Older files predate Lock Taxonomy — default to unlocked, and no row was ever
-        // marked protected, matching every taxonomy's behaviour before this existed.
-        if (typeof settings.locked !== 'boolean') settings.locked = false;
-        // Older files predate the column-1 multi-character code length setting — default to 1,
-        // matching every taxonomy's single-character column 1 behaviour before this existed.
-        if (typeof settings.column1CodeLength !== 'number' || settings.column1CodeLength < 1 || settings.column1CodeLength > 5) {
-          settings.column1CodeLength = 1;
-        }
-        // Older files predate Proper-Case-only mode — default to false, matching every
-        // taxonomy's ALL CAPS structural-entry convention before this existed.
-        if (typeof settings.properCaseOnly !== 'boolean') settings.properCaseOnly = false;
-        const project = data as unknown as Record<string, unknown>;
-        if (typeof project.fileVersions !== 'object' || project.fileVersions === null) {
-          project.fileVersions = {};
-        }
-        // "Constant" suffixes used to be read-only, always showing settings.constantValue for
-        // every row rather than their own per-row value — now they're editable like any other
-        // suffix, seeded from that same default. Backfill any row whose stored value for a
-        // constant-mode suffix is still blank (never having had a real per-row value to begin
-        // with) so loading an older file doesn't blank out what it used to display.
-        const suffixFields = settings.suffixes as Array<{ mode: string; constantValue: string }>;
-        for (const row of data.rows as unknown as Record<string, unknown>[]) {
-          if (!Array.isArray(row.suffixValues)) {
-            row.suffixValues = suffixFields.map(() => '');
-          }
-          const suffixValues = row.suffixValues as string[];
-          suffixFields.forEach((suffix, i) => {
-            if (suffix.mode === 'constant' && !suffixValues[i]) {
-              suffixValues[i] = suffix.constantValue;
-            }
-          });
-        }
-        resolve(data);
+        resolve(migrateProjectData(data));
       } catch {
         reject(new Error('Could not parse this file as JSON.'));
       }
