@@ -38,8 +38,9 @@ import {
   renameLibraryEntry,
   setLibraryCategoryOrder,
   deleteLibraryEntry,
+  importLibraryBundle,
 } from './library';
-import type { LibraryCategory, LibraryEntry } from './library';
+import type { LibraryCategory, LibraryEntry, LibraryExportBundle } from './library';
 import { bumpFileVersion } from './fileVersion';
 import './App.css';
 
@@ -288,6 +289,10 @@ export default function App() {
 
   function handleReorderLibrary(category: LibraryCategory, orderedIds: string[]) {
     setLibraryCategoryOrder(category, orderedIds).then(refreshLibrary);
+  }
+
+  function handleImportLibrary(bundle: LibraryExportBundle) {
+    importLibraryBundle(bundle).then(refreshLibrary);
   }
 
   function handleRemoveLibraryEntry() {
@@ -855,6 +860,7 @@ export default function App() {
         onReorder={handleReorderLibrary}
         onMoveToWorkArea={handleMoveToWorkArea}
         onRemove={setLibraryRemoveTarget}
+        onImport={handleImportLibrary}
       />
       <div className="app">
       <header className="app-header">

@@ -1,6 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { CUBIC_BUSINESS_MODEL_LIBRARY_CATEGORIES, LIBRARY_CATEGORIES } from './library';
-import type { LibraryCategory, LibraryEntry } from './library';
+import {
+  buildLibraryExportBundle,
+  CUBIC_BUSINESS_MODEL_LIBRARY_CATEGORIES,
+  LIBRARY_CATEGORIES,
+  parseLibraryExportBundle,
+} from './library';
+import type { LibraryCategory, LibraryEntry, LibraryExportBundle } from './library';
+import { downloadBlob } from './download';
 
 interface LibrarySidebarProps {
   entries: LibraryEntry[];
@@ -8,6 +14,7 @@ interface LibrarySidebarProps {
   onReorder: (category: LibraryCategory, orderedIds: string[]) => void;
   onMoveToWorkArea: (entry: LibraryEntry) => void;
   onRemove: (entry: LibraryEntry) => void;
+  onImport: (bundle: LibraryExportBundle) => void;
 }
 
 interface ContextMenuState {
@@ -28,7 +35,7 @@ interface ContextMenuState {
 // headings), and a right-click "Move to Category" / "Move Up" / "Move Down" for when dragging
 // isn't convenient — plus inline title editing and a right-click "Move to Work Area" to bring an
 // entry back into the grid.
-export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToWorkArea, onRemove }: LibrarySidebarProps) {
+export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToWorkArea, onRemove, onImport }: LibrarySidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -38,8 +45,16 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
   const [moveCategoryTarget, setMoveCategoryTarget] = useState<LibraryEntry | null>(null);
   const [moveCategoryChoice, setMoveCategoryChoice] = useState<LibraryCategory>(LIBRARY_CATEGORIES[0]);
+  // Export/Import Library (James's request — see library.ts): showExportPicker holds a
+  // Select-All-by-default checklist of every entry, grouped the same way the list itself is;
+  // pendingImport holds a parsed-and-validated bundle awaiting the user's confirmation before
+  // anything is actually added.
+  const [showExportPicker, setShowExportPicker] = useState(false);
+  const [exportSelection, setExportSelection] = useState<Set<string>>(new Set());
+  const [pendingImport, setPendingImport] = useState<LibraryExportBundle | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const contextMenuRef = useRef<HTMLUListElement>(null);
+  const importFileInputRef = useRef<HTMLInputElement>(null);
 
   // James's report: right-clicking an entry near the bottom of a long Library list opened the
   // menu at the click position with no regard for whether it would actually fit, running off
@@ -140,6 +155,53 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
     setMoveCategoryTarget(null);
   }
 
+  function openExportPicker() {
+    setExportSelection(new Set(entries.map((e) => e.id)));
+    setShowExportPicker(true);
+  }
+
+  function toggleExportSelection(id: string) {
+    setExportSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function confirmExport() {
+    const selected = entries.filter((e) => exportSelection.has(e.id));
+    const bundle = buildLibraryExportBundle(selected);
+    const json = JSON.stringify(bundle, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const date = new Date().toISOString().slice(0, 10);
+    downloadBlob(blob, `taxonomy-library-export-${date}.json`);
+    setShowExportPicker(false);
+  }
+
+  function handleImportFileChosen(file: File) {
+    file
+      .text()
+      .then((text) => {
+        let data: unknown;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          throw new Error('Could not parse this file as JSON.');
+        }
+        setPendingImport(parseLibraryExportBundle(data));
+      })
+      .catch((err: unknown) => {
+        alert(err instanceof Error ? err.message : 'Could not read this file as a Library export.');
+      });
+  }
+
+  function confirmImport() {
+    if (!pendingImport) return;
+    onImport(pendingImport);
+    setPendingImport(null);
+  }
+
   if (collapsed) {
     return (
       <div className="library-sidebar library-sidebar-collapsed">
@@ -232,6 +294,36 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
         <button type="button" className="library-collapse-toggle" onClick={() => setCollapsed(true)} title="Hide Library">
           ◀
         </button>
+      </div>
+      <div className="library-transfer-buttons">
+        <button
+          type="button"
+          className="library-transfer-button"
+          onClick={openExportPicker}
+          disabled={entries.length === 0}
+          title="Save a selection of Library taxonomies to a file — for backup, moving to a new machine, or sharing a demo/sample set"
+        >
+          Export…
+        </button>
+        <button
+          type="button"
+          className="library-transfer-button"
+          onClick={() => importFileInputRef.current?.click()}
+          title="Add taxonomies from a Library export file into this Library"
+        >
+          Import…
+        </button>
+        <input
+          ref={importFileInputRef}
+          type="file"
+          accept="application/json,.json"
+          className="library-import-file-input"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) handleImportFileChosen(file);
+            e.target.value = '';
+          }}
+        />
       </div>
       {entries.length === 0 && <p className="library-empty">No taxonomies saved yet.</p>}
       {LIBRARY_CATEGORIES.map((category, index) => {
@@ -330,6 +422,74 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
               </button>
               <button type="button" onClick={confirmMoveToCategory}>
                 Move
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showExportPicker && (
+        <div className="validation-overlay" onClick={() => setShowExportPicker(false)}>
+          <div className="validation-dialog library-export-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <p>Choose which taxonomies to include in the export file:</p>
+            <div className="library-export-select-all">
+              <button type="button" onClick={() => setExportSelection(new Set(entries.map((e) => e.id)))}>
+                Select All
+              </button>
+              <button type="button" onClick={() => setExportSelection(new Set())}>
+                Select None
+              </button>
+            </div>
+            <div className="library-export-checklist">
+              {LIBRARY_CATEGORIES.filter((category) => entriesFor(category).length > 0).map((category) => (
+                <div key={category} className="library-export-checklist-group">
+                  <h4>{category}</h4>
+                  {entriesFor(category).map((entry) => (
+                    <label key={entry.id} className="library-export-checklist-item">
+                      <input
+                        type="checkbox"
+                        checked={exportSelection.has(entry.id)}
+                        onChange={() => toggleExportSelection(entry.id)}
+                      />
+                      {entry.project.title || '(untitled)'}
+                    </label>
+                  ))}
+                </div>
+              ))}
+            </div>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setShowExportPicker(false)}>
+                Cancel
+              </button>
+              <button type="button" disabled={exportSelection.size === 0} onClick={confirmExport}>
+                Export {exportSelection.size} {exportSelection.size === 1 ? 'Taxonomy' : 'Taxonomies'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingImport && (
+        <div className="validation-overlay" onClick={() => setPendingImport(null)}>
+          <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <p>
+              Import {pendingImport.entries.length} {pendingImport.entries.length === 1 ? 'taxonomy' : 'taxonomies'} from
+              this file into your Library? Each one is added as a new entry alongside what's already here — nothing
+              existing is overwritten.
+            </p>
+            <ul className="library-export-checklist-item-preview">
+              {pendingImport.entries.map((e, i) => (
+                <li key={i}>
+                  {e.project.title || '(untitled)'} — <em>{e.category}</em>
+                </li>
+              ))}
+            </ul>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setPendingImport(null)}>
+                Cancel
+              </button>
+              <button type="button" onClick={confirmImport}>
+                Import
               </button>
             </div>
           </div>

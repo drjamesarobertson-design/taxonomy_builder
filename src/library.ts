@@ -7,6 +7,7 @@
 // to park a copy, not a replacement for saving to a file.
 
 import type { TaxonomyProject } from './types';
+import { isTaxonomyProject, migrateProjectData } from './storage';
 
 // James's report: "Add to Library only offers Cubic Business Model" — the previous shape had
 // one "Cubic Business Model Related" heading which only revealed its real choices (Division,
@@ -186,4 +187,76 @@ export async function setLibraryCategoryOrder(category: LibraryCategory, ordered
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
+}
+
+// Export/Import Library: James's request for a way to (a) carry his Library to a new machine —
+// it lives only in this browser's own IndexedDB (see the file-level comment above) and is lost
+// outright on a machine/browser change — and (b) hand a curated subset to interested parties as
+// a demo, or bundle sample files with a sale. Both are the same underlying need: a portable file
+// holding one or more Library entries, built from a user-chosen selection (LibrarySidebar.tsx),
+// downloaded via download.ts's existing downloadBlob helper. Import always merges into whatever
+// Library is already open — a fresh id per entry — never replacing or overwriting, matching the
+// app's established "never silently overwrite" convention (see confirmAddToLibrary's own
+// overwrite-vs-new-version prompt in App.tsx).
+const LIBRARY_EXPORT_BUNDLE_TYPE = 'taxonomy-builder-library-export';
+
+export interface LibraryExportBundle {
+  type: typeof LIBRARY_EXPORT_BUNDLE_TYPE;
+  version: 1;
+  exportedAt: string;
+  entries: Array<{ category: LibraryCategory; project: TaxonomyProject }>;
+}
+
+/** Builds a portable bundle from a chosen set of Library entries, ready to hand to downloadBlob. */
+export function buildLibraryExportBundle(entries: LibraryEntry[]): LibraryExportBundle {
+  return {
+    type: LIBRARY_EXPORT_BUNDLE_TYPE,
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    entries: entries.map((e) => ({ category: e.category, project: e.project })),
+  };
+}
+
+/** Parses and validates a Library export file's contents, running every entry's project through
+ * the same backward-compatibility migrations a plain "Load from File" project gets — so a bundle
+ * exported by an older build still imports cleanly. Throws with a user-facing message on
+ * anything that doesn't look like a genuine Library export. */
+export function parseLibraryExportBundle(data: unknown): LibraryExportBundle {
+  if (typeof data !== 'object' || data === null) {
+    throw new Error('This file does not look like a Library export.');
+  }
+  const bundle = data as Record<string, unknown>;
+  if (bundle.type !== LIBRARY_EXPORT_BUNDLE_TYPE || !Array.isArray(bundle.entries)) {
+    throw new Error('This file does not look like a Library export.');
+  }
+  const categoryNames: readonly string[] = LIBRARY_CATEGORIES;
+  const entries = bundle.entries.map((raw, index) => {
+    if (typeof raw !== 'object' || raw === null) {
+      throw new Error(`Entry ${index + 1} in this file is not valid.`);
+    }
+    const r = raw as Record<string, unknown>;
+    if (!isTaxonomyProject(r.project)) {
+      throw new Error(`Entry ${index + 1} in this file does not contain a valid taxonomy.`);
+    }
+    const category = typeof r.category === 'string' && categoryNames.includes(r.category)
+      ? (r.category as LibraryCategory)
+      : 'General / Other';
+    return { category, project: migrateProjectData(r.project) };
+  });
+  return {
+    type: LIBRARY_EXPORT_BUNDLE_TYPE,
+    version: 1,
+    exportedAt: typeof bundle.exportedAt === 'string' ? bundle.exportedAt : new Date().toISOString(),
+    entries,
+  };
+}
+
+/** Adds every entry in `bundle` to the Library as a brand-new entry (fresh id, appended to its
+ * category) — always merges into what's already there, never replaces or overwrites an existing
+ * entry. Returns how many entries were added. */
+export async function importLibraryBundle(bundle: LibraryExportBundle): Promise<number> {
+  for (const { category, project } of bundle.entries) {
+    await addLibraryEntry(project, category);
+  }
+  return bundle.entries.length;
 }
