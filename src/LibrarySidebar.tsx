@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   buildLibraryExportBundle,
   CUBIC_BUSINESS_MODEL_LIBRARY_CATEGORIES,
@@ -6,7 +7,7 @@ import {
   parseLibraryExportBundle,
 } from './library';
 import type { LibraryCategory, LibraryEntry, LibraryExportBundle } from './library';
-import { downloadBlob } from './download';
+import { saveExportFile } from './exportFolder';
 
 interface LibrarySidebarProps {
   entries: LibraryEntry[];
@@ -52,6 +53,9 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
   const [showExportPicker, setShowExportPicker] = useState(false);
   const [exportSelection, setExportSelection] = useState<Set<string>>(new Set());
   const [pendingImport, setPendingImport] = useState<LibraryExportBundle | null>(null);
+  // Which entries (by index into pendingImport.entries) are ticked in the import checklist —
+  // James's ask: let him check the contents before committing, same as Export's own picker.
+  const [importSelection, setImportSelection] = useState<Set<number>>(new Set());
   const renameInputRef = useRef<HTMLInputElement>(null);
   const contextMenuRef = useRef<HTMLUListElement>(null);
   const importFileInputRef = useRef<HTMLInputElement>(null);
@@ -169,14 +173,17 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
     });
   }
 
-  function confirmExport() {
+  // Same native "Save As" dialog (remembering wherever the last Save/Export actually went) as
+  // every other Save/Export action in the app — James's report that Export always dropped
+  // straight into Downloads with no chance to pick a folder or edit the filename first.
+  async function confirmExport() {
     const selected = entries.filter((e) => exportSelection.has(e.id));
     const bundle = buildLibraryExportBundle(selected);
     const json = JSON.stringify(bundle, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const date = new Date().toISOString().slice(0, 10);
-    downloadBlob(blob, `taxonomy-library-export-${date}.json`);
-    setShowExportPicker(false);
+    const { cancelled } = await saveExportFile(blob, `taxonomy-library-export-${date}.json`);
+    if (!cancelled) setShowExportPicker(false);
   }
 
   function handleImportFileChosen(file: File) {
@@ -189,16 +196,28 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
         } catch {
           throw new Error('Could not parse this file as JSON.');
         }
-        setPendingImport(parseLibraryExportBundle(data));
+        const bundle = parseLibraryExportBundle(data);
+        setPendingImport(bundle);
+        setImportSelection(new Set(bundle.entries.map((_, i) => i)));
       })
       .catch((err: unknown) => {
         alert(err instanceof Error ? err.message : 'Could not read this file as a Library export.');
       });
   }
 
+  function toggleImportSelection(index: number) {
+    setImportSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  }
+
   function confirmImport() {
     if (!pendingImport) return;
-    onImport(pendingImport);
+    const entries = pendingImport.entries.filter((_, i) => importSelection.has(i));
+    onImport({ ...pendingImport, entries });
     setPendingImport(null);
   }
 
@@ -287,7 +306,15 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
     );
   }
 
+  // The context menu and every dialog below are portaled straight to document.body: nested
+  // inside .library-sidebar (position: sticky — which, like position: fixed, always starts a
+  // new stacking context) they'd be trapped in that context, so however high their own z-index
+  // goes, .app-header's z-index:50 (a sibling context outside the sidebar entirely) could still
+  // paint over them — exactly what caused James's Export/Import checklist to be unclickable
+  // behind the header on a short window. Portaling avoids the whole ancestor-stacking-context
+  // problem rather than chasing z-index numbers.
   return (
+    <>
     <div className="library-sidebar">
       <div className="library-header">
         <h2>Library</h2>
@@ -356,8 +383,10 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
           </div>
         );
       })}
+    </div>
 
-      {contextMenu &&
+    {contextMenu &&
+      createPortal(
         (() => {
           const entry = entries.find((e) => e.id === contextMenu.id);
           if (!entry) return null;
@@ -399,9 +428,12 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
               </li>
             </ul>
           );
-        })()}
+        })(),
+        document.body,
+      )}
 
-      {moveCategoryTarget && (
+    {moveCategoryTarget &&
+      createPortal(
         <div className="validation-overlay" onClick={() => setMoveCategoryTarget(null)}>
           <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
             <p>Move "{moveCategoryTarget.project.title || '(untitled)'}" to which heading?</p>
@@ -425,10 +457,12 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
-      {showExportPicker && (
+    {showExportPicker &&
+      createPortal(
         <div className="validation-overlay" onClick={() => setShowExportPicker(false)}>
           <div className="validation-dialog library-export-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
             <p>Choose which taxonomies to include in the export file:</p>
@@ -466,35 +500,70 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
-      {pendingImport && (
-        <div className="validation-overlay" onClick={() => setPendingImport(null)}>
-          <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
-            <p>
-              Import {pendingImport.entries.length} {pendingImport.entries.length === 1 ? 'taxonomy' : 'taxonomies'} from
-              this file into your Library? Each one is added as a new entry alongside what's already here — nothing
-              existing is overwritten.
-            </p>
-            <ul className="library-export-checklist-item-preview">
-              {pendingImport.entries.map((e, i) => (
-                <li key={i}>
-                  {e.project.title || '(untitled)'} — <em>{e.category}</em>
-                </li>
-              ))}
-            </ul>
-            <div className="confirm-dialog-actions">
-              <button type="button" onClick={() => setPendingImport(null)}>
-                Cancel
-              </button>
-              <button type="button" onClick={confirmImport}>
-                Import
-              </button>
+    {pendingImport &&
+      createPortal(
+        (() => {
+          const byCategory = new Map<LibraryCategory, number[]>();
+          pendingImport.entries.forEach((e, i) => {
+            const list = byCategory.get(e.category) ?? [];
+            list.push(i);
+            byCategory.set(e.category, list);
+          });
+          return (
+            <div className="validation-overlay" onClick={() => setPendingImport(null)}>
+              <div className="validation-dialog library-export-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+                <p>
+                  Choose which taxonomies to import. Each one is added as a new entry alongside what's already in your
+                  Library — nothing existing is overwritten.
+                </p>
+                <div className="library-export-select-all">
+                  <button
+                    type="button"
+                    onClick={() => setImportSelection(new Set(pendingImport.entries.map((_, i) => i)))}
+                  >
+                    Select All
+                  </button>
+                  <button type="button" onClick={() => setImportSelection(new Set())}>
+                    Select None
+                  </button>
+                </div>
+                <div className="library-export-checklist">
+                  {LIBRARY_CATEGORIES.filter((category) => (byCategory.get(category)?.length ?? 0) > 0).map(
+                    (category) => (
+                      <div key={category} className="library-export-checklist-group">
+                        <h4>{category}</h4>
+                        {byCategory.get(category)!.map((i) => (
+                          <label key={i} className="library-export-checklist-item">
+                            <input
+                              type="checkbox"
+                              checked={importSelection.has(i)}
+                              onChange={() => toggleImportSelection(i)}
+                            />
+                            {pendingImport.entries[i].project.title || '(untitled)'}
+                          </label>
+                        ))}
+                      </div>
+                    ),
+                  )}
+                </div>
+                <div className="confirm-dialog-actions">
+                  <button type="button" onClick={() => setPendingImport(null)}>
+                    Cancel
+                  </button>
+                  <button type="button" disabled={importSelection.size === 0} onClick={confirmImport}>
+                    Import {importSelection.size} {importSelection.size === 1 ? 'Taxonomy' : 'Taxonomies'}
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          );
+        })(),
+        document.body,
       )}
-    </div>
+    </>
   );
 }
