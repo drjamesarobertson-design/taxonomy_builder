@@ -32,6 +32,7 @@ import Login from './Login';
 import { getStoredAuthEmail, clearAuthEmail } from './auth';
 import {
   LIBRARY_CATEGORIES,
+  CUBIC_BUSINESS_MODEL_LIBRARY_CATEGORIES,
   listLibraryEntries,
   addLibraryEntry,
   updateLibraryEntryProject,
@@ -196,6 +197,10 @@ export default function App() {
   const [libraryCategoryPrompt, setLibraryCategoryPrompt] = useState<LibraryCategory>(LIBRARY_CATEGORIES[0]);
   const [showLibraryCategoryPrompt, setShowLibraryCategoryPrompt] = useState(false);
   const [libraryRemoveTarget, setLibraryRemoveTarget] = useState<LibraryEntry | null>(null);
+  // James's report: with the Library sidebar sitting off to the side, picking a taxonomy from
+  // it wasn't obvious from "Work on an Existing Taxonomy" — right-click "Move to Work Area" got
+  // it done, but nothing here pointed at that. This dialog is a direct, discoverable way in.
+  const [showLoadFromLibrary, setShowLoadFromLibrary] = useState(false);
   const [showLibraryOverwritePrompt, setShowLibraryOverwritePrompt] = useState(false);
   const [justAddedToLibrary, setJustAddedToLibrary] = useState(false);
   const libraryAddedFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1038,7 +1043,14 @@ export default function App() {
             <button type="button" onClick={handleImportCsvClick} title="Import a taxonomy from a Discrete Columns CSV">
               Import CSV
             </button>
-            <p>Or pick one from your Library on the left.</p>
+            <button
+              type="button"
+              onClick={() => setShowLoadFromLibrary(true)}
+              disabled={libraryEntries.length === 0}
+              title={libraryEntries.length === 0 ? 'Your Library is empty' : 'Open a taxonomy already saved in your Library'}
+            >
+              Load from Library
+            </button>
           </section>
           <footer className="app-footer">
             The ERP Doctor Taxonomy Builder is the Intellectual Property of the ERP Doctor and
@@ -1419,6 +1431,50 @@ export default function App() {
               </button>
               <button type="button" onClick={handleRemoveLibraryEntry}>
                 Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showLoadFromLibrary && (
+        <div className="validation-overlay" onClick={() => setShowLoadFromLibrary(false)}>
+          <div className="validation-dialog library-export-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <p>Choose a taxonomy to open from your Library:</p>
+            <div className="library-export-checklist">
+              {LIBRARY_CATEGORIES.filter((category) => libraryEntries.some((e) => e.category === category)).map(
+                (category, index, visibleCategories) => {
+                  const isFirstCubicCategory =
+                    CUBIC_BUSINESS_MODEL_LIBRARY_CATEGORIES.includes(category) &&
+                    visibleCategories.slice(0, index).every((c) => !CUBIC_BUSINESS_MODEL_LIBRARY_CATEGORIES.includes(c));
+                  return (
+                    <div key={category} className="library-export-checklist-group">
+                      {isFirstCubicCategory && <h4 className="library-load-picker-group-heading">Cubic Business Model</h4>}
+                      <h4>{category}</h4>
+                      {libraryEntries
+                        .filter((e) => e.category === category)
+                        .sort((a, b) => a.order - b.order)
+                        .map((entry) => (
+                          <button
+                            type="button"
+                            key={entry.id}
+                            className="library-load-picker-item"
+                            onClick={() => {
+                              handleMoveToWorkArea(entry);
+                              setShowLoadFromLibrary(false);
+                            }}
+                          >
+                            {entry.project.title || '(untitled)'}
+                          </button>
+                        ))}
+                    </div>
+                  );
+                },
+              )}
+            </div>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setShowLoadFromLibrary(false)}>
+                Cancel
               </button>
             </div>
           </div>

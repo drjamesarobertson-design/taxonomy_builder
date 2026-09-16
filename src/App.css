@@ -143,6 +143,38 @@
   padding-left: 1.25rem;
 }
 
+/* "Load from Library" picker (James's ask — a direct, discoverable way to open a saved
+   taxonomy, alongside the sidebar's own right-click "Move to Work Area"): each entry is a
+   full-width button rather than a checkbox, since choosing one opens it immediately. */
+.library-load-picker-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0.3rem 0.4rem;
+  margin: 0;
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.library-load-picker-item:hover {
+  background: #eef3fc;
+}
+
+/* Same grouping idea as the sidebar's own "Cubic Business Model" heading, but styled for this
+   dialog's light background rather than the sidebar's dark one. */
+.library-load-picker-group-heading {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #3a6fc4;
+  margin: 0.6rem 0 0.1rem;
+}
+
 .library-category {
   margin-bottom: 0.6rem;
 }
@@ -1232,6 +1264,14 @@ body.app-dark-theme .taxonomy-meta .purpose {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
   padding: 1.25rem;
   max-width: 26rem;
+  /* James's report: with a long checklist (e.g. Export/Import Library's, 21+ entries) the
+     dialog could grow taller than the viewport while still vertically centered by
+     .validation-overlay, pushing its top portion off-screen with no way to reach it. Capping
+     height here and scrolling the dialog itself as a whole keeps every dialog's content
+     reachable regardless of how tall it gets. */
+  max-height: 90vh;
+  overflow-y: auto;
+  box-sizing: border-box;
   text-align: center;
 }
 
