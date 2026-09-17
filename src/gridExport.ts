@@ -376,8 +376,11 @@ export async function exportIncrementCsv(
 ): Promise<{ project: TaxonomyProject; usedFolder: boolean; cancelled: boolean }> {
   const { project: versioned, versionLabel } = bumpFileVersion(project, 'increment-csv');
   const incrementRows = project.rows.filter((row) => !row.protected);
-  const { header, rows } = buildDiscreteGrid({ ...project, rows: incrementRows });
-  const csv = [header, ...rows].map((line) => line.map(csvEscape).join(',')).join('\r\n');
+  // James's report: this is meant for a direct ERP upload of just the new rows — no header row
+  // of column numbers (every other discrete export's header, "1", "2", "3"...) belongs in a
+  // file like that.
+  const { rows } = buildDiscreteGrid({ ...project, rows: incrementRows });
+  const csv = rows.map((line) => line.map(csvEscape).join(',')).join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const { usedFolder, cancelled } = await saveExportFile(blob, exportFilename(project, 'Increment', 'csv', versionLabel));
   return { project: cancelled ? project : versioned, usedFolder, cancelled };

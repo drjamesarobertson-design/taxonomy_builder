@@ -28,6 +28,84 @@ export function hasBlankCodeGaps(rows: TaxonomyRow[]): boolean {
   });
 }
 
+// Lock Taxonomy integrity check (James's ask — locking with no codes at all, or an incomplete
+// structure, defeats the whole point of Lock: guaranteeing long-term integrity for data an ERP
+// may already be posting against). Three checks, each returning a plain description of what it
+// found so the caller can list every problem at once rather than making the user fix one,
+// re-click Lock, and discover the next.
+
+/** Rows with no description at any level — a genuinely empty placeholder row, most often left
+ * over from an Insert Row that was never followed through on. */
+export function findEmptyRows(rows: TaxonomyRow[]): number[] {
+  return rows.map((row, i) => (levelOf(row) === -1 ? i : -1)).filter((i) => i !== -1);
+}
+
+function immediateParentIndex(rows: TaxonomyRow[], idx: number): number {
+  const level = levelOf(rows[idx]);
+  for (let i = idx - 1; i >= 0; i--) {
+    const l = levelOf(rows[i]);
+    if (l !== -1 && l < level) return i;
+  }
+  return -1;
+}
+
+/** The hard ascending-order rule (Section 4.4/6.7) is enforced continuously as codes are
+ * typed, but its own "Override" escape hatch (a deliberate mid-restructure exception — Grid.tsx)
+ * means a taxonomy can still end up with a genuine violation in it. Re-audits the whole thing
+ * one last time before Lock makes it permanent: within each level, siblings sharing the same
+ * immediate parent (not the whole column — a later heading's children legitimately restart
+ * their own numbering) must strictly ascend. Returns the first violation found, or null. */
+export function findAscendingOrderViolation(
+  rows: TaxonomyRow[],
+): { rowIndex: number; level: number; value: string; prevRowIndex: number; prevValue: string } | null {
+  const numLevels = rows.reduce((max, row) => Math.max(max, row.codes.length), 0);
+  for (let level = 0; level < numLevels; level++) {
+    const lastByParent = new Map<number | null, { value: string; rowIndex: number }>();
+    for (let i = 0; i < rows.length; i++) {
+      if (levelOf(rows[i]) !== level) continue;
+      const parent = level > 0 ? immediateParentIndex(rows, i) : null;
+      const value = rows[i].codes[level] ?? '';
+      if (!value) continue;
+      const prev = lastByParent.get(parent);
+      if (prev && value < prev.value) {
+        return { rowIndex: i, level, value, prevRowIndex: prev.rowIndex, prevValue: prev.value };
+      }
+      lastByParent.set(parent, { value, rowIndex: i });
+    }
+  }
+  return null;
+}
+
+/** Everything Lock Taxonomy should refuse to proceed past — plain-English, one entry per
+ * distinct problem found, so a single click surfaces the whole list rather than one at a time. */
+export function findLockIntegrityIssues(rows: TaxonomyRow[]): string[] {
+  const issues: string[] = [];
+  if (rows.length === 0) {
+    issues.push('This taxonomy has no rows yet.');
+    return issues;
+  }
+  const emptyRows = findEmptyRows(rows);
+  if (emptyRows.length > 0) {
+    issues.push(
+      `Row${emptyRows.length === 1 ? '' : 's'} ${emptyRows.map((i) => i + 1).join(', ')} ${
+        emptyRows.length === 1 ? 'has' : 'have'
+      } no description yet.`,
+    );
+  }
+  if (hasBlankCodeGaps(rows)) {
+    issues.push('One or more rows have a description but are missing a code.');
+  }
+  const violation = findAscendingOrderViolation(rows);
+  if (violation) {
+    issues.push(
+      `Row ${violation.rowIndex + 1} ("${violation.value}") is out of ascending order after row ${
+        violation.prevRowIndex + 1
+      } ("${violation.prevValue}") in column ${violation.level + 1}.`,
+    );
+  }
+  return issues;
+}
+
 export const CODE_CHARSET = [
   '.',
   ...'0123456789'.split(''),

@@ -12,7 +12,7 @@ import {
 } from './gridExport';
 import { exportBlock } from './blockTransfer';
 import { chooseExportFolder, peekExportFolderName, supportsFileSystemAccess } from './exportFolder';
-import { hasBlankCodeGaps } from './codeValidation';
+import { hasBlankCodeGaps, findLockIntegrityIssues } from './codeValidation';
 import { AUTO_CODE_TYPES, IMPLEMENTED_AUTO_CODE_TYPES, autoCodeAlphaNumeric } from './autoCode';
 import type { AutoCodeType } from './autoCode';
 import { loadHelpText } from './helpText';
@@ -172,6 +172,11 @@ export default function App() {
     window.addEventListener('click', close);
     return () => window.removeEventListener('click', close);
   }, [showLockMenu]);
+
+  // A React-rendered confirm for Lock/Lock updates, in place of window.confirm() — see
+  // handleLockTaxonomy's own comment for why: a native confirm() dialog can consume the click's
+  // user activation before the save afterward gets to call the native Save-As picker.
+  const [lockConfirm, setLockConfirm] = useState<'lock' | 'lockUpdates' | null>(null);
 
   // Auto Code (James's ask): a general-purpose numeric-first gap-coding action, independent of
   // the Simple Taxonomy wizard's own mnemonic Suggest Codes — usable any time, on any taxonomy,
@@ -506,15 +511,33 @@ export default function App() {
   // codes, every row currently in the table gets marked `protected` (Grid.tsx then refuses to
   // edit or delete them, and only allows inserting new rows where a real code gap exists) and
   // the file is saved immediately, so the locked state is captured on disk, not just in memory.
+  //
+  // James's report: the native window.confirm() this used to go through opened the Save dialog
+  // with no prompt for a location — it just fell straight through to a plain download. A native
+  // confirm() dialog can consume the click's own "user activation" before performSave ever gets
+  // to call the File System Access API's showSaveFilePicker(), which silently falls back to a
+  // plain download the moment it's called without one (saveExportFile's own catch-all). Every
+  // other Save/Export button in this app calls performSave/its export function directly from a
+  // React onClick with nothing native in between, which is exactly why only Lock had this bug.
+  // Fixed by asking through the app's own React-rendered confirm dialog instead (lockConfirm
+  // below) — its "Continue" button's own onClick is a fresh, valid user gesture in its own
+  // right, so the picker opens normally from there.
   function handleLockTaxonomy() {
     if (!project) return;
-    if (
-      !confirm(
-        'Lock this taxonomy? Every row currently in the table becomes protected — its code and description can no longer be edited or deleted (Mark as Delete can still retire an entry), and new rows can only be inserted where a code gap already exists. The file will be saved. Continue?',
-      )
-    ) {
+    // James's report: Lock allowed locking a taxonomy with no codes at all. This is a hard
+    // gate, not a dismissible warning — Lock exists specifically to guarantee integrity for
+    // data an ERP may already be posting against, so letting an incomplete taxonomy through
+    // (even with an explicit "yes I know") would undermine the one thing Lock is for.
+    const issues = findLockIntegrityIssues(project.rows);
+    if (issues.length > 0) {
+      setLoadError(`Cannot lock this taxonomy yet — it isn't complete:\n${issues.map((i) => `• ${i}`).join('\n')}`);
       return;
     }
+    setLockConfirm('lock');
+  }
+
+  function performLockTaxonomy() {
+    if (!project) return;
     const lockedProject: TaxonomyProject = {
       ...project,
       settings: { ...project.settings, locked: true },
@@ -527,7 +550,9 @@ export default function App() {
 
   // Unlock: lifts the enforcement only — every row's `protected` flag from the last Lock is
   // left exactly as it is (Grid.tsx keeps greying those rows out), so a later re-lock still
-  // knows what was already historical, and nothing here is silently forgotten.
+  // knows what was already historical, and nothing here is silently forgotten. No file is saved
+  // here, so the native-confirm/Save-picker interaction above doesn't apply — left as a plain
+  // window.confirm().
   function handleUnlockTaxonomy() {
     if (!project) return;
     if (
@@ -547,13 +572,18 @@ export default function App() {
   // time — the taxonomy's own history plus everything added since the last Lock, as one list.
   function handleLockUpdates() {
     if (!project) return;
-    if (
-      !confirm(
-        'Lock these updates? Every row currently in the table — including whatever has been added since the last Lock — becomes protected, and the taxonomy shows the original plus the updates as one locked list. The file will be saved. Continue?',
-      )
-    ) {
+    // Same integrity gate as the initial Lock — the new rows being locked in this time need to
+    // be just as complete as the ones the first Lock already protected.
+    const issues = findLockIntegrityIssues(project.rows);
+    if (issues.length > 0) {
+      setLoadError(`Cannot lock these updates yet — the taxonomy isn't complete:\n${issues.map((i) => `• ${i}`).join('\n')}`);
       return;
     }
+    setLockConfirm('lockUpdates');
+  }
+
+  function performLockUpdates() {
+    if (!project) return;
     const lockedProject: TaxonomyProject = {
       ...project,
       rows: project.rows.map((row) => ({ ...row, protected: true })),
@@ -1622,6 +1652,34 @@ export default function App() {
             <div className="confirm-dialog-actions">
               <button type="button" onClick={() => setShowLoadFromLibrary(false)}>
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {lockConfirm && (
+        <div className="validation-overlay" onClick={() => setLockConfirm(null)}>
+          <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <p>
+              {lockConfirm === 'lock'
+                ? 'Lock this taxonomy? Every row currently in the table becomes protected — its code and description can no longer be edited or deleted (Mark as Delete can still retire an entry), and new rows can only be inserted where a code gap already exists. The file will be saved.'
+                : 'Lock these updates? Every row currently in the table — including whatever has been added since the last Lock — becomes protected, and the taxonomy shows the original plus the updates as one locked list. The file will be saved.'}
+            </p>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setLockConfirm(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const kind = lockConfirm;
+                  setLockConfirm(null);
+                  if (kind === 'lock') performLockTaxonomy();
+                  else performLockUpdates();
+                }}
+              >
+                Continue
               </button>
             </div>
           </div>
