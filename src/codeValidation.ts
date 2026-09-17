@@ -2,6 +2,7 @@
 // codes must sort in ascending ASCII order top to bottom. Only '.', 0-9, a-z, A-Z are valid.
 
 import type { CodeRestriction, TaxonomyRow } from './types';
+import { isAllCaps } from './caseUtils';
 
 // A row's level is the position of its deepest populated description column (Section 4.1);
 // -1 means the row has no description at all yet.
@@ -76,9 +77,37 @@ export function findAscendingOrderViolation(
   return null;
 }
 
+/** Section 4.3's own case convention doubles as a structural marker: an ALL CAPS entry is
+ * supposed to have children (it's never itself a posting-level item), while Proper Case marks
+ * an actual leaf. A heading left in ALL CAPS with nothing deeper underneath it is exactly the
+ * "every description has a child sequence all the way to the posting level" gap James asked
+ * Lock to catch — it reads as structural but the hierarchy under it was never finished. Skipped
+ * entirely for a Proper-Case-throughout taxonomy (James's Simple Taxonomy option, Settings) —
+ * there's no ALL CAPS/Proper Case distinction to check against in that mode. Returns the 0-based
+ * row indices found. */
+export function findChildlessHeadings(rows: TaxonomyRow[], properCaseOnly: boolean): number[] {
+  if (properCaseOnly) return [];
+  const result: number[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const level = levelOf(rows[i]);
+    if (level === -1) continue;
+    const text = rows[i].descriptions[level] ?? '';
+    if (!isAllCaps(text)) continue;
+    let hasChild = false;
+    for (let j = i + 1; j < rows.length; j++) {
+      const l = levelOf(rows[j]);
+      if (l === -1) continue;
+      hasChild = l > level;
+      break;
+    }
+    if (!hasChild) result.push(i);
+  }
+  return result;
+}
+
 /** Everything Lock Taxonomy should refuse to proceed past — plain-English, one entry per
  * distinct problem found, so a single click surfaces the whole list rather than one at a time. */
-export function findLockIntegrityIssues(rows: TaxonomyRow[]): string[] {
+export function findLockIntegrityIssues(rows: TaxonomyRow[], properCaseOnly: boolean = false): string[] {
   const issues: string[] = [];
   if (rows.length === 0) {
     issues.push('This taxonomy has no rows yet.');
@@ -101,6 +130,16 @@ export function findLockIntegrityIssues(rows: TaxonomyRow[]): string[] {
       `Row ${violation.rowIndex + 1} ("${violation.value}") is out of ascending order after row ${
         violation.prevRowIndex + 1
       } ("${violation.prevValue}") in column ${violation.level + 1}.`,
+    );
+  }
+  const childlessHeadings = findChildlessHeadings(rows, properCaseOnly);
+  if (childlessHeadings.length > 0) {
+    issues.push(
+      `Row${childlessHeadings.length === 1 ? '' : 's'} ${childlessHeadings.map((i) => i + 1).join(', ')} ${
+        childlessHeadings.length === 1 ? 'is' : 'are'
+      } left in ALL CAPS (structural) but ${
+        childlessHeadings.length === 1 ? 'has' : 'have'
+      } no child entries underneath — either add its breakdown or change it to Proper Case if it's really a posting-level entry.`,
     );
   }
   return issues;

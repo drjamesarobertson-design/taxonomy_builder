@@ -123,6 +123,28 @@ export function findOtherNotLastInGroup(rows: TaxonomyRow[], rowId: string): str
   return siblingIds.filter((id) => isOtherEntryNotLast(rows, id));
 }
 
+/** James's report: after Insert Row, it's possible to type a description whose immediate
+ * successor (the next row down that actually has one) sits more than one column deeper —
+ * skipping a level of the hierarchy that was never established between them. This is the same
+ * "cascade no more than one column right" invariant already enforced when typing a NEW row
+ * relative to whatever's ABOVE it, just checked the other direction: inserting a shallower row
+ * above pre-existing deeper content doesn't re-validate what's now below it. Only the very next
+ * populated row matters here — anything deeper still is that row's own child, not this one's,
+ * and would have been validated against ITS own immediate ancestor when it was typed. Returns
+ * `rowId` itself (the row whose child is orphaned) if the gap exists, else null. */
+export function findOrphanChildRowId(rows: TaxonomyRow[], rowId: string): string | null {
+  const idx = rows.findIndex((r) => r.id === rowId);
+  if (idx === -1) return null;
+  const level = levelOf(rows[idx]);
+  if (level === -1) return null;
+  for (let i = idx + 1; i < rows.length; i++) {
+    const l = levelOf(rows[i]);
+    if (l === -1) continue;
+    return l > level + 1 ? rowId : null;
+  }
+  return null;
+}
+
 // Small, deliberately short list — grammatical connectors that carry no distinguishing meaning
 // of their own (James's round-2 phrase: "NOT by, and, etcetera"). Removed from a row's word
 // list entirely before the word-1/2/3 rule runs, rather than merely skipped-with-fallback —

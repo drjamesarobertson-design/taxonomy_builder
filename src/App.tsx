@@ -9,6 +9,7 @@ import {
   exportConcatenatedXlsx,
   exportLockedXlsx,
   exportIncrementCsv,
+  isChangedSinceLock,
 } from './gridExport';
 import { exportBlock } from './blockTransfer';
 import { chooseExportFolder, peekExportFolderName, supportsFileSystemAccess } from './exportFolder';
@@ -177,6 +178,12 @@ export default function App() {
   // handleLockTaxonomy's own comment for why: a native confirm() dialog can consume the click's
   // user activation before the save afterward gets to call the native Save-As picker.
   const [lockConfirm, setLockConfirm] = useState<'lock' | 'lockUpdates' | null>(null);
+  // James's report: the integrity-check failure below used to go through the plain-paragraph
+  // `loadError` banner at the top of the page — easy to miss entirely (it reads as if Lock just
+  // silently did nothing), and never cleared itself once the user actually fixed the taxonomy
+  // and re-clicked Lock, so a stale "isn't complete" message could sit there indefinitely. A
+  // proper modal dialog, cleared on every fresh Lock attempt, fixes both.
+  const [lockIntegrityIssues, setLockIntegrityIssues] = useState<string[] | null>(null);
 
   // Auto Code (James's ask): a general-purpose numeric-first gap-coding action, independent of
   // the Simple Taxonomy wizard's own mnemonic Suggest Codes — usable any time, on any taxonomy,
@@ -219,6 +226,10 @@ export default function App() {
   const [currentLibraryEntryId, setCurrentLibraryEntryId] = useState<string | null>(null);
   const [libraryCategoryPrompt, setLibraryCategoryPrompt] = useState<LibraryCategory>(LIBRARY_CATEGORIES[0]);
   const [showLibraryCategoryPrompt, setShowLibraryCategoryPrompt] = useState(false);
+  // James's ask: let the taxonomy's name be adjusted right here, before it's saved to the
+  // Library, rather than only after the fact via a separate rename — initialised from the
+  // taxonomy's own current title each time the dialog opens.
+  const [libraryNamePrompt, setLibraryNamePrompt] = useState('');
   const [libraryRemoveTarget, setLibraryRemoveTarget] = useState<LibraryEntry | null>(null);
   // James's report: with the Library sidebar sitting off to the side, picking a taxonomy from
   // it wasn't obvious from "Work on an Existing Taxonomy" — right-click "Move to Work Area" got
@@ -251,13 +262,17 @@ export default function App() {
       setShowLibraryOverwritePrompt(true);
     } else {
       setLibraryCategoryPrompt(LIBRARY_CATEGORIES[0]);
+      setLibraryNamePrompt(project.title || '');
       setShowLibraryCategoryPrompt(true);
     }
   }
 
   function confirmAddToLibrary() {
     if (!project) return;
-    addLibraryEntry(project, libraryCategoryPrompt).then((entry) => {
+    const title = libraryNamePrompt.trim() || project.title;
+    const namedProject = { ...project, title };
+    addLibraryEntry(namedProject, libraryCategoryPrompt).then((entry) => {
+      setProject(namedProject);
       setCurrentLibraryEntryId(entry.id);
       setShowLibraryCategoryPrompt(false);
       refreshLibrary();
@@ -528,11 +543,12 @@ export default function App() {
     // gate, not a dismissible warning — Lock exists specifically to guarantee integrity for
     // data an ERP may already be posting against, so letting an incomplete taxonomy through
     // (even with an explicit "yes I know") would undermine the one thing Lock is for.
-    const issues = findLockIntegrityIssues(project.rows);
+    const issues = findLockIntegrityIssues(project.rows, project.settings.properCaseOnly);
     if (issues.length > 0) {
-      setLoadError(`Cannot lock this taxonomy yet — it isn't complete:\n${issues.map((i) => `• ${i}`).join('\n')}`);
+      setLockIntegrityIssues(issues);
       return;
     }
+    setLockIntegrityIssues(null);
     setLockConfirm('lock');
   }
 
@@ -574,11 +590,12 @@ export default function App() {
     if (!project) return;
     // Same integrity gate as the initial Lock — the new rows being locked in this time need to
     // be just as complete as the ones the first Lock already protected.
-    const issues = findLockIntegrityIssues(project.rows);
+    const issues = findLockIntegrityIssues(project.rows, project.settings.properCaseOnly);
     if (issues.length > 0) {
-      setLoadError(`Cannot lock these updates yet — the taxonomy isn't complete:\n${issues.map((i) => `• ${i}`).join('\n')}`);
+      setLockIntegrityIssues(issues);
       return;
     }
+    setLockIntegrityIssues(null);
     setLockConfirm('lockUpdates');
   }
 
@@ -615,7 +632,7 @@ export default function App() {
   // Lock Taxonomy menu item (c).
   function handleExportIncrementCsv() {
     if (!project) return;
-    if (!project.rows.some((row) => !row.protected)) {
+    if (!project.rows.some(isChangedSinceLock)) {
       setLoadError('Nothing to export — every row is already locked, there is no increment yet.');
       return;
     }
@@ -1556,6 +1573,15 @@ export default function App() {
         <div className="validation-overlay" onClick={() => setShowLibraryCategoryPrompt(false)}>
           <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
             <p>Save this taxonomy to the Library under which heading?</p>
+            <label className="library-name-label">
+              Name
+              <input
+                type="text"
+                className="library-name-input"
+                value={libraryNamePrompt}
+                onChange={(e) => setLibraryNamePrompt(e.target.value)}
+              />
+            </label>
             <select
               className="library-category-select"
               value={libraryCategoryPrompt}
@@ -1652,6 +1678,24 @@ export default function App() {
             <div className="confirm-dialog-actions">
               <button type="button" onClick={() => setShowLoadFromLibrary(false)}>
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {lockIntegrityIssues && (
+        <div className="validation-overlay" onClick={() => setLockIntegrityIssues(null)}>
+          <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <p>This taxonomy isn't complete yet — Lock can't proceed until:</p>
+            <ul>
+              {lockIntegrityIssues.map((issue, i) => (
+                <li key={i}>{issue}</li>
+              ))}
+            </ul>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setLockIntegrityIssues(null)}>
+                OK
               </button>
             </div>
           </div>
