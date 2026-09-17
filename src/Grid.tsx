@@ -179,6 +179,11 @@ export default function Grid({
     confirmLabel?: string;
     onConfirm: () => void;
   } | null>(null);
+  // Right-click "Width of Col 1…" (James's ask, column 1 only): lets an existing taxonomy's
+  // Column 1 code width be changed after the fact — previously settable only once, at creation,
+  // via the Simple Taxonomy wizard's own 1-5 dropdown. This one runs 1-10 and works on any
+  // taxonomy, matching how Auto Code (also column-1-agnostic) already isn't wizard-only.
+  const [widthOfCol1Dialog, setWidthOfCol1Dialog] = useState<{ value: number } | null>(null);
   const [promoteDemoteChoice, setPromoteDemoteChoice] = useState<{
     direction: 'promote' | 'demote';
   } | null>(null);
@@ -1962,6 +1967,44 @@ export default function Grid({
     });
   }
 
+  // Right-click "Width of Col 1…" — column 1 only, per James's ask: opens a 1-10 picker,
+  // defaulting to the current width. Widening is always safe (existing codes just have room
+  // to spare). Narrowing only warns when it would actually cut something off — if every
+  // Column 1 code already fits the new width, it applies immediately with no prompt.
+  function handleOpenWidthOfCol1() {
+    if (!contextMenu) return;
+    setContextMenu(null);
+    setWidthOfCol1Dialog({ value: column1CodeLength });
+  }
+
+  function applyWidthOfCol1(newWidth: number) {
+    setWidthOfCol1Dialog(null);
+    if (newWidth === column1CodeLength) return;
+    const overflowing = rows.filter((row) => (row.codes[0] ?? '').length > newWidth);
+    const commit = () => {
+      const newRows =
+        overflowing.length === 0
+          ? rows
+          : rows.map((row) =>
+              (row.codes[0] ?? '').length > newWidth
+                ? { ...row, codes: [row.codes[0].slice(0, newWidth), ...row.codes.slice(1)] }
+                : row,
+            );
+      onSettingsAndRowsChange({ ...settings, column1CodeLength: newWidth }, newRows);
+    };
+    if (overflowing.length === 0) {
+      commit();
+      return;
+    }
+    setConfirmDialog({
+      message: `Confirm truncate codes: ${overflowing.length} code${overflowing.length === 1 ? '' : 's'} in Column 1 ${
+        overflowing.length === 1 ? 'is' : 'are'
+      } longer than ${newWidth} character${newWidth === 1 ? '' : 's'} and will be cut down to fit. Truncate codes?`,
+      confirmLabel: 'Truncate',
+      onConfirm: commit,
+    });
+  }
+
   // Right-click "Check Ascending Order" — an on-demand audit distinct from the hard rule
   // enforced as codes are typed (Section 4.4/6.7), since Override, promote/demote, Move, and
   // sort can all rearrange rows without necessarily re-checking every column afterward. On
@@ -2799,6 +2842,7 @@ export default function Grid({
                 Add Column
               </li>
               <li onClick={handleDeleteColumnClick}>Delete Column</li>
+              {contextMenu.level === 0 && <li onClick={handleOpenWidthOfCol1}>Width of Col 1…</li>}
               {selection && selection.rowIds.size > 0 && (
                 <li className="context-menu-separator" onClick={handleExportBlockMenuClick}>
                   Export Block
@@ -2881,6 +2925,33 @@ export default function Grid({
                 }}
               >
                 {confirmDialog.confirmLabel ?? 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {widthOfCol1Dialog && (
+        <div className="validation-overlay" onClick={() => setWidthOfCol1Dialog(null)}>
+          <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <p>Set the width of Column 1 (code characters):</p>
+            <select
+              className="library-category-select"
+              value={widthOfCol1Dialog.value}
+              onChange={(e) => setWidthOfCol1Dialog({ value: Number(e.target.value) })}
+            >
+              {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                <option key={n} value={n}>
+                  {n} character{n === 1 ? '' : 's'}
+                </option>
+              ))}
+            </select>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setWidthOfCol1Dialog(null)}>
+                Cancel
+              </button>
+              <button type="button" onClick={() => applyWidthOfCol1(widthOfCol1Dialog.value)}>
+                Apply
               </button>
             </div>
           </div>

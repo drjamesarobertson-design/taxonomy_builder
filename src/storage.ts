@@ -65,8 +65,10 @@ export function migrateProjectData(data: TaxonomyProject): TaxonomyProject {
   // marked protected, matching every taxonomy's behaviour before this existed.
   if (typeof settings.locked !== 'boolean') settings.locked = false;
   // Older files predate the column-1 multi-character code length setting — default to 1,
-  // matching every taxonomy's single-character column 1 behaviour before this existed.
-  if (typeof settings.column1CodeLength !== 'number' || settings.column1CodeLength < 1 || settings.column1CodeLength > 5) {
+  // matching every taxonomy's single-character column 1 behaviour before this existed. Upper
+  // bound is 10 (Grid.tsx's right-click "Width of Col 1…", column 1 only) — originally 5 when
+  // this was settable only at creation via the Simple Taxonomy wizard's own dropdown.
+  if (typeof settings.column1CodeLength !== 'number' || settings.column1CodeLength < 1 || settings.column1CodeLength > 10) {
     settings.column1CodeLength = 1;
   }
   // Older files predate Proper-Case-only mode — default to false, matching every
