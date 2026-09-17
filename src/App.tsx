@@ -7,6 +7,8 @@ import {
   exportDiscreteXlsx,
   exportConcatenatedCsv,
   exportConcatenatedXlsx,
+  exportLockedXlsx,
+  exportIncrementCsv,
 } from './gridExport';
 import { exportBlock } from './blockTransfer';
 import { chooseExportFolder, peekExportFolderName, supportsFileSystemAccess } from './exportFolder';
@@ -154,6 +156,22 @@ export default function App() {
   // easy to forget to adjust something (e.g. the description length limit) before the grid
   // fills up with rows built against it.
   const [showSettings, setShowSettings] = useState(false);
+
+  // Lock Taxonomy menu (James's ask): the plain "Lock Taxonomy" button becomes a small dropdown
+  // once a taxonomy exists — item (a) is the original lock action unchanged; items (b)-(f) only
+  // make sense once actually locked (there's nothing "since the last Lock" before the first
+  // one), so they're only shown then.
+  const [showLockMenu, setShowLockMenu] = useState(false);
+  const lockMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showLockMenu) return;
+    const close = (e: MouseEvent) => {
+      if (!lockMenuRef.current?.contains(e.target as Node)) setShowLockMenu(false);
+    };
+    window.addEventListener('click', close);
+    return () => window.removeEventListener('click', close);
+  }, [showLockMenu]);
 
   // Auto Code (James's ask): a general-purpose numeric-first gap-coding action, independent of
   // the Simple Taxonomy wizard's own mnemonic Suggest Codes — usable any time, on any taxonomy,
@@ -521,6 +539,75 @@ export default function App() {
     }
     setProject({ ...project, settings: { ...project.settings, locked: false } });
     setDirty(true);
+  }
+
+  // Lock Taxonomy menu item (f) — "Lock updates": re-runs the exact same sweep as the initial
+  // Lock (every row currently in the table, including whatever's been added or marked deleted
+  // since, becomes protected), just with wording that matches what's actually being locked this
+  // time — the taxonomy's own history plus everything added since the last Lock, as one list.
+  function handleLockUpdates() {
+    if (!project) return;
+    if (
+      !confirm(
+        'Lock these updates? Every row currently in the table — including whatever has been added since the last Lock — becomes protected, and the taxonomy shows the original plus the updates as one locked list. The file will be saved. Continue?',
+      )
+    ) {
+      return;
+    }
+    const lockedProject: TaxonomyProject = {
+      ...project,
+      rows: project.rows.map((row) => ({ ...row, protected: true })),
+    };
+    setProject(lockedProject);
+    setDirty(false);
+    performSave(lockedProject);
+  }
+
+  async function performExportLockedXlsx() {
+    if (!project) return;
+    const { project: versioned, usedFolder, cancelled } = await exportLockedXlsx(project);
+    if (cancelled) return;
+    setProject(versioned);
+    if (usedFolder) peekExportFolderName().then(setExportFolderName);
+    else setExportFolderName(null);
+  }
+
+  // Lock Taxonomy menu item (b).
+  function handleExportLockedXlsx() {
+    if (!project) return;
+    if (hasBlankCodeGaps(project.rows)) {
+      setBlankCodeWarning({ action: performExportLockedXlsx });
+      return;
+    }
+    performExportLockedXlsx();
+  }
+
+  // Lock Taxonomy menu item (c).
+  function handleExportIncrementCsv() {
+    if (!project) return;
+    if (!project.rows.some((row) => !row.protected)) {
+      setLoadError('Nothing to export — every row is already locked, there is no increment yet.');
+      return;
+    }
+    exportIncrementCsv(project).then(({ project: versioned, usedFolder, cancelled }) => {
+      if (cancelled) return;
+      setProject(versioned);
+      if (usedFolder) peekExportFolderName().then(setExportFolderName);
+      else setExportFolderName(null);
+    });
+  }
+
+  // Lock Taxonomy menu item (d) — the entire taxonomy (locked history plus any increment),
+  // exactly what "Export to CSV" already produces; this is the same action under a label
+  // that makes sense from the Lock Taxonomy menu specifically.
+  function handleExportEntireLockedCsv() {
+    if (!project) return;
+    exportDiscreteCsv(project).then(({ project: versioned, usedFolder, cancelled }) => {
+      if (cancelled) return;
+      setProject(versioned);
+      if (usedFolder) peekExportFolderName().then(setExportFolderName);
+      else setExportFolderName(null);
+    });
   }
 
   function handleLoadClick() {
@@ -905,15 +992,75 @@ export default function App() {
                 {justSaved ? 'Saved ✓' : 'Save to File'}
               </button>
             )}
-            {project && !project.settings.locked && (
-              <button
-                type="button"
-                className="lock-btn"
-                onClick={handleLockTaxonomy}
-                title="Protect every existing row's code and description once this taxonomy has gone live with real transactions"
-              >
-                🔒 Lock Taxonomy
-              </button>
+            {project && (
+              <div className="lock-menu-wrapper" ref={lockMenuRef}>
+                <button
+                  type="button"
+                  className="lock-btn"
+                  onClick={() => setShowLockMenu((v) => !v)}
+                  title="Protect every existing row's code and description once this taxonomy has gone live with real transactions"
+                >
+                  🔒 Lock Taxonomy ▾
+                </button>
+                {showLockMenu && (
+                  <ul className="context-menu lock-menu">
+                    {!project.settings.locked && (
+                      <li
+                        onClick={() => {
+                          setShowLockMenu(false);
+                          handleLockTaxonomy();
+                        }}
+                      >
+                        Lock Taxonomy
+                      </li>
+                    )}
+                    {project.settings.locked && (
+                      <>
+                        <li
+                          onClick={() => {
+                            setShowLockMenu(false);
+                            handleExportLockedXlsx();
+                          }}
+                        >
+                          Export Locked Taxonomy to Excel
+                        </li>
+                        <li
+                          onClick={() => {
+                            setShowLockMenu(false);
+                            handleExportIncrementCsv();
+                          }}
+                        >
+                          Export increment to CSV
+                        </li>
+                        <li
+                          onClick={() => {
+                            setShowLockMenu(false);
+                            handleExportEntireLockedCsv();
+                          }}
+                        >
+                          Export entire locked Taxonomy as CSV
+                        </li>
+                        <li
+                          onClick={() => {
+                            setShowLockMenu(false);
+                            handleAddToLibraryClick();
+                          }}
+                        >
+                          Update locked Taxonomy in Library
+                        </li>
+                        <li
+                          onClick={() => {
+                            setShowLockMenu(false);
+                            handleLockUpdates();
+                          }}
+                        >
+                          Lock updates
+                        </li>
+                      </>
+                    )}
+                  </ul>
+                )}
+              </div>
             )}
             {project && project.settings.locked && (
               <button
