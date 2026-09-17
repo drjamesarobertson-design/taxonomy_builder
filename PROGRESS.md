@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #123, 2026-09-17)
+## Current status (as of PR #125, 2026-09-17)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -66,11 +66,32 @@ further rounds of testing feedback. The tool currently supports, in full:
   found it firing even with Caps Lock genuinely on; removed that guess
   entirely (PR #84) since both cells force/convert case regardless of the
   physical key anyway, so the suggestion was never functionally necessary.
+- **Live item-count warnings as codes are entered (PR #125)** — Section
+  3's "5 to 9 items", applied at code-entry time itself rather than only
+  at a Simple-Taxonomy-wizard stage transition (below): a code block
+  reaching 7 distinct entries warns "N entries, ideal number of entries
+  is seven plus or minus two, consider splitting this section in two";
+  reaching 9 warns more urgently ("...seriously consider..."); both are
+  Override-able soft warnings, on any taxonomy. Restricted to Numeric
+  Only, reaching 9 instead cautions "Numeric only, no available codes,
+  change to Alpha numeric?" — No blocks the entry, Yes switches Code
+  Restriction to Alpha Numeric with All Alpha and lets the entry through,
+  so the block can keep gap-coding with letters. Counts DISTINCT code
+  values in the segment, not just non-blank cells, and only fires when
+  that distinct count actually grows — needed because typing a code into
+  a blank cell sweeps that same value down through every other
+  still-blank sibling as a placeholder (the existing left-to-right
+  cascade), which would otherwise read as far more entries than have
+  genuinely been decided yet.
 - Undo/redo across all structural and content operations.
 - Section 6.9 notes: an optional free-text note per entry, added/edited via
   right-click "Add Note"/"Edit Note" on the description cell (PR #94) — a
   small on-row indicator appears only once a row actually has one, showing
-  the note's content on hover and opening the editor on click. Not part of
+  the note's content on hover and opening the editor on click. Right above
+  it on that same menu (PR #125), "Find…" runs a plain case-insensitive
+  in-string search across every description cell in the taxonomy, jumping
+  to (and focusing) the first match with a "Match N of M" banner and a
+  Next button to step through the rest. Not part of
   CSV/XLSX export (Section 7's "raw-grid export" scope), just the
   working-grid feature and Save/Load round-trip.
 - Export: CSV and Excel, in both Discrete Columns and Concatenated modes,
@@ -197,7 +218,11 @@ further rounds of testing feedback. The tool currently supports, in full:
   swallow clicks on a dialog's own top content, which is what actually
   caused James's "truncated at the top" report on the Export/Import
   checklist with his real 21-entry Library, not the checklist itself
-  failing to scroll.
+  failing to scroll. A "View locked Taxonomies" checkbox in the sidebar's
+  header (PR #125) narrows every heading's list down to locked entries
+  only — a display-only filter, local to the sidebar, that never touches
+  drag-and-drop reordering (which still reads and writes the real,
+  unfiltered list by each entry's true position, not its filtered one).
 - A "Code Restrictions" dropdown at the top of the work area, narrowing
   real codes to Numeric Only / Alpha Numeric with All Alpha / Alpha Numeric
   with Upper Case Alpha Only / Alpha Upper Case Only / Alpha Both Cases
@@ -307,7 +332,19 @@ further rounds of testing feedback. The tool currently supports, in full:
   the same check; "Mark as Delete" (right-click a description) prefixes
   it with "XXX " as the sanctioned way to retire a protected entry instead
   of deleting it; and CSV Import (which replaces the whole table outside
-  any per-cell guard) is blocked outright.
+  any per-cell guard) is blocked outright. The toolbar button is now a
+  dropdown menu (PR #125): unlocked, it still offers only "Lock Taxonomy"
+  (same action/wording as always); once locked, it instead offers
+  **Export Locked Taxonomy to Excel** (the discrete "Per Column" export,
+  with every row changed since the last Lock — new, or marked deleted —
+  set apart in a larger, bold, differently-coloured font over a shaded
+  background), **Export increment to CSV** (only the rows added since the
+  last Lock, for uploading just the new entries into the ERP),
+  **Export entire locked Taxonomy as CSV** (identical to the existing
+  "Export to CSV"), **Update locked Taxonomy in Library** (the existing
+  Add-to-Library/overwrite flow, reused as-is), and **Lock updates**
+  (re-runs the same protect-everything sweep as the original Lock,
+  covering whatever's been added or marked deleted since).
 - A post-sign-on landing menu (`WorkflowMenu.tsx`): "Create a New Taxonomy"
   listing, in order, Simple Taxonomy, Advanced Complexity Taxonomy, Highly
   Experienced User — No Guidance, Item Master, then a non-clickable
@@ -612,6 +649,84 @@ further rounds of testing feedback. The tool currently supports, in full:
   piece is specifically the *phonetic* judgement of which letter to pick
   when there's a choice. Left for a follow-up conversation rather than
   guessed at.
+
+### Code-block item-count warnings, description Find, Lock Taxonomy menu, locked-only Library filter (PR #125)
+Four asks in one message:
+
+1. **Item-count warnings during code entry.** James's spec: warn at "more
+   than 7" with "7 entries, ideal number of entries is seven plus or
+   minus two, consider splitting this section in two"; warn again at 9
+   with "...seriously consider..."; allow override; but if the taxonomy
+   is Numeric Only, caution "Numeric only, no available codes, change to
+   Alpha numeric?" instead — No blocks the entry, Yes switches the
+   restriction and lets it through, "in this case the default number can
+   be gap coded – 1, 3, 5, 7, 9, B, etcetera." Implemented as a new check
+   in `updateCode` (Grid.tsx), scoped to the same same-level/
+   same-immediate-parent segment `findOrderBounds` already walks.
+   The first implementation counted non-blank code cells and gated on
+   "was this cell blank before typing" — both wrong, caught by testing
+   against a real 9-row segment: typing the very first code into a blank
+   segment sweeps that value down through every other still-blank
+   sibling as a placeholder (the existing left-to-right cascade,
+   `updateCode`'s own "sweeps through blank cells" behaviour), so all 9
+   cells read non-blank — and non-numeric — after just ONE keystroke,
+   firing the Numeric Only exhaustion caution immediately. Fixed by
+   counting DISTINCT code values in the segment instead of non-blank
+   cells, and gating on that distinct count actually growing (compared
+   before vs. after the edit) rather than the edited cell's own prior
+   value — the cascade's placeholder duplicates don't count as new
+   distinct entries, so the warnings now escalate exactly as real,
+   separately-chosen codes accumulate: nothing through the first 6,
+   "7 entries..." at 7, "8 entries..." at 8, the Numeric Only caution at
+   9, and — once switched to Alpha Numeric with All Alpha — a further
+   letter-coded 10th entry warns again with the live count rather than
+   re-triggering the numeric caution.
+2. **"Find…"** — description right-click menu, directly above Add/Edit
+   Note as specified. A case-insensitive in-string search across every
+   description cell, jumping to and focusing the first match with a
+   "Match N of M" banner (same visual pattern as the existing Move/Copy
+   Rows mode banners) and a Next button to cycle through the rest;
+   Escape or "Done" dismisses it. A query with no matches shows a plain
+   "No matches found" message rather than doing nothing silently.
+3. **Lock Taxonomy menu.** James's six-item spec, (a) through (f). The
+   existing toolbar button becomes a small dropdown (click-to-open,
+   closes on an outside click) rather than a right-click context menu,
+   since it's a left-click action on a fixed button, not a grid cell.
+   Unlocked, the dropdown offers only (a) "Lock Taxonomy" — the exact
+   existing action and confirm wording, unchanged. Locked, it swaps to
+   (b)-(f): **Export Locked Taxonomy to Excel** (new `exportLockedXlsx`
+   in gridExport.ts — the same "Per Column" discrete export, with every
+   row changed since the last Lock — `!row.protected`, or a description
+   already marked "XXX " regardless of protected state — set apart in a
+   larger, bold, red-ish font over a shaded yellow background, overriding
+   that row's own column colour-coding); **Export increment to CSV**
+   (new `exportIncrementCsv` — the same discrete CSV, filtered to
+   `!row.protected` rows only, with a plain message rather than an empty
+   file when there's nothing new yet); **Export entire locked Taxonomy as
+   CSV** (identical to the existing "Export to CSV" — no new export
+   logic needed, just a differently-labelled entry point); **Update
+   locked Taxonomy in Library** (calls the exact same
+   `handleAddToLibraryClick` the standalone "Add to Library" button
+   already uses — no new persistence logic); **Lock updates** (re-runs
+   the identical protect-everything sweep `handleLockTaxonomy` already
+   does, just with wording that matches what's actually being locked —
+   the taxonomy's history plus everything added since). "Unlock
+   Taxonomy" stays exactly where it was, untouched, alongside the new
+   dropdown.
+4. **"View locked Taxonomies"** — a checkbox in the Library sidebar's own
+   header. Filters what's rendered per heading down to locked entries
+   only; deliberately does NOT filter the underlying list `entriesFor`
+   returns (used by drag-and-drop reordering, "Move Up"/"Move Down", and
+   "Move to Category…") — each rendered row's drag/drop index is looked
+   up from the real, unfiltered list by matching entry id, so reordering
+   stays correct even while some entries are hidden from view.
+
+Playwright-verified end to end for all four, including the exact
+distinct-count-vs-non-blank-count bug described above (caught by testing
+against a real multi-row segment before it shipped, not left for James to
+find). Full prior regression suite (Export/Import Library, Width of
+Col 1) re-run clean throughout. `npx tsc --noEmit`, `npm run lint`,
+`npm run build` all clean.
 
 ### "Width of Col 1…" right-click control (PR #123)
 James's ask: "in right click menu on code column 1, in the group of 'Add
