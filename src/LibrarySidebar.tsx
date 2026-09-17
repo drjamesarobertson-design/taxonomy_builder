@@ -56,6 +56,10 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
   // Which entries (by index into pendingImport.entries) are ticked in the import checklist —
   // James's ask: let him check the contents before committing, same as Export's own picker.
   const [importSelection, setImportSelection] = useState<Set<number>>(new Set());
+  // "View locked Taxonomies" (James's ask): a plain display filter, local to this component —
+  // narrows every heading's list down to locked entries only, without touching what's actually
+  // stored or how any other Library action works.
+  const [lockedOnly, setLockedOnly] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const contextMenuRef = useRef<HTMLUListElement>(null);
   const importFileInputRef = useRef<HTMLInputElement>(null);
@@ -234,9 +238,15 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
   // Shared entry-list rendering for one category — used for every heading, grouped or not.
   function renderEntryList(category: LibraryCategory) {
     const scopeEntries = entriesFor(category);
+    // "View locked Taxonomies" only narrows what's shown — index still comes from scopeEntries
+    // (the real, full list) so drag-and-drop reordering (which reads/writes that same real
+    // list) keeps working correctly even while some entries are hidden from view.
+    const visibleEntries = lockedOnly ? scopeEntries.filter((e) => e.project.settings.locked) : scopeEntries;
     return (
       <ul className="library-entry-list">
-        {scopeEntries.map((entry, index) => (
+        {visibleEntries.map((entry) => {
+          const index = scopeEntries.findIndex((e) => e.id === entry.id);
+          return (
           <li
             key={entry.id}
             draggable={renamingId !== entry.id}
@@ -301,7 +311,8 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
               <span className="library-entry-title">{entry.project.title || '(untitled)'}</span>
             )}
           </li>
-        ))}
+          );
+        })}
       </ul>
     );
   }
@@ -352,7 +363,14 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
           }}
         />
       </div>
+      <label className="library-locked-only-toggle" title="Show only taxonomies that have been Locked">
+        <input type="checkbox" checked={lockedOnly} onChange={(e) => setLockedOnly(e.target.checked)} />
+        View locked Taxonomies
+      </label>
       {entries.length === 0 && <p className="library-empty">No taxonomies saved yet.</p>}
+      {entries.length > 0 && lockedOnly && !entries.some((e) => e.project.settings.locked) && (
+        <p className="library-empty">No locked taxonomies in the Library yet.</p>
+      )}
       {LIBRARY_CATEGORIES.map((category, index) => {
         // The heading sits directly above the first Cubic Business Model category wherever
         // that falls in LIBRARY_CATEGORIES — same grouping approach as WorkflowMenu's own

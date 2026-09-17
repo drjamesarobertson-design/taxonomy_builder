@@ -177,6 +177,7 @@ export default function Grid({
   const [confirmDialog, setConfirmDialog] = useState<{
     message: string;
     confirmLabel?: string;
+    cancelLabel?: string;
     onConfirm: () => void;
   } | null>(null);
   // Right-click "Width of Col 1…" (James's ask, column 1 only): lets an existing taxonomy's
@@ -206,6 +207,16 @@ export default function Grid({
   // their descendants stay put — a duplicate block is inserted at the chosen target instead.
   const [copyMode, setCopyMode] = useState<{ rowIds: Set<string> } | null>(null);
   const [copyTarget, setCopyTarget] = useState<{ rowId: string } | null>(null);
+  // Description right-click "Find…" (James's ask): a plain in-string search across every
+  // description cell, in every row and level — findResults tracks the current match set and
+  // position so "Next" can step through them without re-running the search each time.
+  const [showFindDialog, setShowFindDialog] = useState(false);
+  const [findQuery, setFindQuery] = useState('');
+  const [findResults, setFindResults] = useState<{
+    query: string;
+    matches: Array<{ rowId: string; level: number }>;
+    index: number;
+  } | null>(null);
   // Item 10's Copy Codes / Paste Codes clipboard: a rectangular block of code values (one
   // array per column, top-to-bottom within each), pasted back in starting wherever the user
   // next right-clicks "Paste Codes" — a plain overtype, independent of row selection.
@@ -382,6 +393,15 @@ export default function Grid({
   }, [moveMode]);
 
   useEffect(() => {
+    if (!findResults) return;
+    const cancelOnEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFindResults(null);
+    };
+    window.addEventListener('keydown', cancelOnEscape);
+    return () => window.removeEventListener('keydown', cancelOnEscape);
+  }, [findResults]);
+
+  useEffect(() => {
     if (!copyMode) return;
     const cancelOnEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -500,6 +520,44 @@ export default function Grid({
     return { upper, lower };
   }
 
+  // James's ask: as codes are entered, keep track of how many siblings now hold a real code
+  // within one code block (bounded by "." padding at either end — CLAUDE.md Section 3's "5 to
+  // 9 items at every level", applied live at code-entry time rather than only as a stage-advance
+  // confirmation, per Section 5). Walks the same same-level/same-immediate-parent segment
+  // findOrderBounds does. Counts DISTINCT real code values, not just non-blank cells — a genuine
+  // code typed into a still-blank cell sweeps down through every blank (or smaller) sibling
+  // below it as a placeholder (see updateCode's own cascade below), so right after typing the
+  // very first code in a 9-row segment every one of those 9 cells already shows that same one
+  // value; counting non-blank cells would read that as "9 entries" instantly, when really only
+  // one distinct code has been decided so far. `codesSource` is whichever row array (pre- or
+  // post-edit) the caller wants counted from.
+  function countSegmentCodes(editIndex: number, level: number, codesSource: TaxonomyRow[]): number {
+    const parent = level > 0 ? immediateParentIndex(editIndex) : null;
+    const indices = [editIndex];
+    for (let i = editIndex - 1; i >= 0; i--) {
+      const li = levelOf(rows[i]);
+      if (li === -1) continue;
+      if (li < level) break;
+      if (li > level) continue;
+      if (parent !== null && immediateParentIndex(i) !== parent) break;
+      indices.push(i);
+    }
+    for (let i = editIndex + 1; i < rows.length; i++) {
+      const li = levelOf(rows[i]);
+      if (li === -1) continue;
+      if (li < level) break;
+      if (li > level) continue;
+      if (parent !== null && immediateParentIndex(i) !== parent) break;
+      indices.push(i);
+    }
+    const values = new Set<string>();
+    for (const i of indices) {
+      const v = codesSource[i]?.codes[level] ?? '';
+      if (v !== '' && v !== padValueForColumn(level)) values.add(v);
+    }
+    return values.size;
+  }
+
   // Fills columns [fromLevel, toLevel] of the row at editIndex with the padding character, then
   // cascades that same padding down through each of those columns independently into every row
   // below within the same parent group, stopping at the first non-blank cell in each column —
@@ -564,7 +622,12 @@ export default function Grid({
     rowId: string,
     level: number,
     value: string,
-    options?: { skipOrderCheck?: boolean; skipZeroWarning?: boolean; forceOrderCheck?: boolean },
+    options?: {
+      skipOrderCheck?: boolean;
+      skipZeroWarning?: boolean;
+      forceOrderCheck?: boolean;
+      skipItemCountWarning?: boolean;
+    },
   ) {
     // James's ask: column 1 (level 0) may hold more than the usual single character (Settings,
     // 1 to 5, default 1) — every other column stays exactly 1, unchanged.
@@ -812,6 +875,43 @@ export default function Grid({
         if (getDescendantEndIndex(idx) > idx + 1) continue; // has children — real codes still needed
         if (level + 1 > maxDescCol) continue; // nothing deeper in use anywhere — nothing to pad
         updated = padFromLevel(updated, idx, level + 1, maxDescCol);
+      }
+    }
+
+    // James's ask: only fire when this edit actually introduced a genuinely NEW distinct code
+    // into the segment — not on every edit of an already-there value. Gating on "was this row's
+    // own old value blank" doesn't work here: the very first code typed into a blank segment
+    // sweeps that value into every other still-blank sibling too (the cascade above), so by the
+    // time the user gets to the second row its "old value" already reads as that placeholder,
+    // not blank, even though they haven't typed anything into it themselves yet. Comparing the
+    // segment's distinct-value count before and after this edit sidesteps that entirely.
+    if (char !== '' && !isPadding && !options?.skipItemCountWarning) {
+      const countBefore = countSegmentCodes(editIndex, level, rows);
+      const count = countSegmentCodes(editIndex, level, updated);
+      // >= rather than === so a segment that already had 9+ entries (imported, or built up
+      // across several earlier Overrides) keeps escalating correctly on every further addition,
+      // not just the one that happens to land exactly on 7 or 9.
+      if (count > countBefore && count >= 9 && codeRestriction === 'Numeric Only') {
+        setConfirmDialog({
+          message: 'Numeric only, no available codes, change to Alpha numeric?',
+          confirmLabel: 'Yes',
+          cancelLabel: 'No',
+          onConfirm: () => {
+            onSettingsAndRowsChange({ ...settings, codeRestriction: 'Alpha Numeric with All Alpha' }, updated);
+          },
+        });
+        return;
+      }
+      if (count > countBefore && count >= 7) {
+        setConfirmDialog({
+          message:
+            count >= 9
+              ? `${count} entries, ideal number of entries is seven plus or minus two, seriously consider splitting this section in two`
+              : `${count} entries, ideal number of entries is seven plus or minus two, consider splitting this section in two`,
+          confirmLabel: 'Override',
+          onConfirm: () => updateCode(rowId, level, value, { ...options, skipItemCountWarning: true }),
+        });
+        return;
       }
     }
 
@@ -1506,6 +1606,56 @@ export default function Grid({
     if (!noteEditRowId) return;
     onChange(rows.map((row) => (row.id === noteEditRowId ? { ...row, note: '' } : row)));
     setNoteEditRowId(null);
+  }
+
+  // Description right-click "Find…" — opens the search box; the actual search runs in
+  // runFind() once a query is submitted.
+  function handleOpenFind() {
+    setContextMenu(null);
+    setFindQuery('');
+    setShowFindDialog(true);
+  }
+
+  function jumpToFindMatch(match: { rowId: string; level: number }) {
+    requestAnimationFrame(() => {
+      const input = document.getElementById(descInputId(match.level, match.rowId)) as HTMLInputElement | null;
+      if (!input) return;
+      input.scrollIntoView({ block: 'center' });
+      input.focus();
+      input.select();
+    });
+  }
+
+  // Plain case-insensitive in-string search across every description cell, every row and
+  // level, in on-screen order — not scoped to the row that was right-clicked, since "find"
+  // means searching the whole taxonomy, not just one entry.
+  function runFind() {
+    const query = findQuery.trim();
+    if (!query) {
+      setShowFindDialog(false);
+      return;
+    }
+    const needle = query.toLowerCase();
+    const matches: Array<{ rowId: string; level: number }> = [];
+    rows.forEach((row) => {
+      row.descriptions.forEach((desc, level) => {
+        if ((desc ?? '').toLowerCase().includes(needle)) matches.push({ rowId: row.id, level });
+      });
+    });
+    setShowFindDialog(false);
+    if (matches.length === 0) {
+      showValidationError(`No matches found for "${query}".`);
+      return;
+    }
+    setFindResults({ query, matches, index: 0 });
+    jumpToFindMatch(matches[0]);
+  }
+
+  function findNext() {
+    if (!findResults) return;
+    const index = (findResults.index + 1) % findResults.matches.length;
+    setFindResults({ ...findResults, index });
+    jumpToFindMatch(findResults.matches[index]);
   }
 
   // Lock Taxonomy: the sanctioned way to retire a protected row, since it can no longer be
@@ -2764,6 +2914,20 @@ export default function Grid({
         </p>
       )}
 
+      {findResults && (
+        <p className="move-mode-banner">
+          Match {findResults.index + 1} of {findResults.matches.length} for "{findResults.query}"
+          {findResults.matches.length > 1 && (
+            <button type="button" className="find-next-btn" onClick={findNext}>
+              Next
+            </button>
+          )}
+          <button type="button" className="find-next-btn" onClick={() => setFindResults(null)}>
+            Done
+          </button>
+        </p>
+      )}
+
       {delimNotice && (
         <ul
           className="context-menu"
@@ -2820,7 +2984,10 @@ export default function Grid({
                   Export Block
                 </li>
               )}
-              <li className="context-menu-separator" onClick={handleOpenNoteEditor}>
+              <li className="context-menu-separator" onClick={handleOpenFind}>
+                Find…
+              </li>
+              <li onClick={handleOpenNoteEditor}>
                 {rows.find((r) => r.id === contextMenu.rowId)?.note ? 'Edit Note' : 'Add Note'}
               </li>
               <li onClick={() => handleGridMenuHelp('gridDescMenuHelp')}>Help</li>
@@ -2915,7 +3082,7 @@ export default function Grid({
             <p>{confirmDialog.message}</p>
             <div className="confirm-dialog-actions">
               <button type="button" onClick={() => setConfirmDialog(null)}>
-                Cancel
+                {confirmDialog.cancelLabel ?? 'Cancel'}
               </button>
               <button
                 type="button"
@@ -3242,6 +3409,34 @@ export default function Grid({
                 Save
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showFindDialog && (
+        <div className="validation-overlay" onClick={() => setShowFindDialog(false)}>
+          <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
+            <p>Find in descriptions:</p>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                runFind();
+              }}
+            >
+              <input
+                type="text"
+                autoFocus
+                value={findQuery}
+                onChange={(e) => setFindQuery(e.target.value)}
+                placeholder="Text to search for"
+              />
+              <div className="confirm-dialog-actions">
+                <button type="button" onClick={() => setShowFindDialog(false)}>
+                  Cancel
+                </button>
+                <button type="submit">Find</button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -68,6 +68,16 @@
   margin: 0.5rem 0;
 }
 
+.library-locked-only-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: #cfdcf5;
+  margin-bottom: 0.5rem;
+  cursor: pointer;
+}
+
 /* Export/Import Library (James's request): kept small and unobtrusive, in keeping with the
    rest of this sidebar, directly under the collapse toggle rather than a second location. */
 .library-transfer-buttons {
@@ -982,6 +992,18 @@ body.app-dark-theme .taxonomy-meta .purpose {
   color: #8a1f1f;
 }
 
+.lock-menu-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.context-menu.lock-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 2px;
+}
+
 .taxonomy-meta .table-name {
   margin: 0 0 0.25rem;
   font-weight: 600;
@@ -1329,6 +1351,13 @@ body.app-dark-theme .taxonomy-meta .purpose {
 
 .row-moving {
   opacity: 0.45;
+}
+
+.find-next-btn {
+  margin-left: 0.6rem;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.8rem;
+  cursor: pointer;
 }
 
 /* Lock Taxonomy: a protected row (present when the taxonomy was last locked) stays visibly

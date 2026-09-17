@@ -281,6 +281,108 @@ export async function exportDiscreteXlsx(
   return { project: cancelled ? project : versioned, usedFolder, cancelled };
 }
 
+// A row counts as "changed" (highlighted in exportLockedXlsx, included in exportIncrementCsv)
+// if it isn't protected by the last Lock, or if it's been marked deleted (the "XXX " prefix —
+// Grid.tsx's handleMarkAsDelete) regardless of protected state, since a deletion recorded after
+// the last Lock is itself a change worth flagging even though the row it retires was already
+// locked.
+function isChangedSinceLock(row: TaxonomyRow): boolean {
+  return !row.protected || row.descriptions.some((d) => (d ?? '').startsWith('XXX '));
+}
+
+// Lock Taxonomy menu item (b): the same "Per Column" export as exportDiscreteXlsx, but every
+// row changed since the last Lock (new rows, or ones since marked deleted) is set apart with a
+// larger, differently-coloured, bold font over a shaded background — overriding that row's own
+// column colour-coding — while every genuinely untouched, historical row keeps the plain
+// styling exportDiscreteXlsx already gives it. Lets James hand a reviewer one file that reads
+// as "here's what's new" without them needing to diff two exports by hand.
+export async function exportLockedXlsx(
+  project: TaxonomyProject,
+): Promise<{ project: TaxonomyProject; usedFolder: boolean; cancelled: boolean }> {
+  const { project: versioned, versionLabel } = bumpFileVersion(project, 'locked-xlsx');
+  const ExcelJS = (await import('exceljs')).default;
+  const { header, rows, columns } = buildDiscreteGrid(project);
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet((project.tableName || 'Taxonomy').slice(0, 31));
+
+  const headerRow = sheet.addRow(header);
+  headerRow.font = { bold: true };
+  headerRow.alignment = { horizontal: 'center' };
+  for (const rowValues of rows) sheet.addRow(rowValues.map((v) => (v === '' ? null : v)));
+
+  const NARROW_WIDTH = 1.5;
+  const lastDescLevel = project.settings.numLevels - 1;
+  columns.forEach((col, colIndex) => {
+    const excelCol = sheet.getColumn(colIndex + 1);
+    if (col.type === 'delimiter') {
+      excelCol.width = 3;
+      excelCol.alignment = { horizontal: 'center' };
+      excelCol.eachCell((cell, rowNumber) => {
+        if (rowNumber > 1) cell.font = { color: { argb: 'FF999999' } };
+      });
+      return;
+    }
+    if (col.type === 'gap') {
+      excelCol.width = 3;
+      return;
+    }
+    if (col.type === 'suffix') {
+      excelCol.width = Math.max(4, project.settings.suffixes[col.index].width + 2);
+      excelCol.alignment = { horizontal: 'left' };
+      return;
+    }
+    const isCode = col.type === 'code';
+    const staysWide = col.type === 'desc' && col.level === lastDescLevel;
+    excelCol.width = staysWide
+      ? autoFitWidth(header[colIndex], rows.map((r) => r[colIndex]), 8, 60)
+      : NARROW_WIDTH;
+    excelCol.alignment = { horizontal: isCode ? 'center' : 'left' };
+    const hex = getLevelColor(col.level);
+    if (!hex) return;
+    const argb = `FF${hex.replace('#', '').toUpperCase()}`;
+    excelCol.eachCell((cell) => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb } };
+    });
+  });
+
+  const changedFont = { size: 13, bold: true, color: { argb: 'FFB00000' } };
+  const changedFill = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFFFF2A8' } };
+  project.rows.forEach((row, index) => {
+    if (!isChangedSinceLock(row)) return;
+    const sheetRow = sheet.getRow(index + 2); // +1 for the header row, +1 for 1-based indexing
+    for (let col = 1; col <= header.length; col++) {
+      const cell = sheetRow.getCell(col);
+      cell.font = changedFont;
+      cell.fill = changedFill;
+    }
+  });
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const { usedFolder, cancelled } = await saveExportFile(
+    blob,
+    exportFilename(project, 'Locked with Changes Highlighted', 'xlsx', versionLabel),
+  );
+  return { project: cancelled ? project : versioned, usedFolder, cancelled };
+}
+
+// Lock Taxonomy menu item (c): only the rows added since the last Lock — "the increment" —
+// as a plain CSV, ready to upload just the new entries into the ERP without re-submitting
+// everything that's already there.
+export async function exportIncrementCsv(
+  project: TaxonomyProject,
+): Promise<{ project: TaxonomyProject; usedFolder: boolean; cancelled: boolean }> {
+  const { project: versioned, versionLabel } = bumpFileVersion(project, 'increment-csv');
+  const incrementRows = project.rows.filter((row) => !row.protected);
+  const { header, rows } = buildDiscreteGrid({ ...project, rows: incrementRows });
+  const csv = [header, ...rows].map((line) => line.map(csvEscape).join(',')).join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const { usedFolder, cancelled } = await saveExportFile(blob, exportFilename(project, 'Increment', 'csv', versionLabel));
+  return { project: cancelled ? project : versioned, usedFolder, cancelled };
+}
+
 export async function exportConcatenatedCsv(
   project: TaxonomyProject,
   options?: { paddingOverride?: string; excludeDelimiters?: boolean; suffixMode?: 'concatenate' | 'rightAlign' },
