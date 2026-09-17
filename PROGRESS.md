@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #125, 2026-09-17)
+## Current status (as of PR #127, 2026-09-17)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -66,23 +66,29 @@ further rounds of testing feedback. The tool currently supports, in full:
   found it firing even with Caps Lock genuinely on; removed that guess
   entirely (PR #84) since both cells force/convert case regardless of the
   physical key anyway, so the suggestion was never functionally necessary.
-- **Live item-count warnings as codes are entered (PR #125)** — Section
-  3's "5 to 9 items", applied at code-entry time itself rather than only
-  at a Simple-Taxonomy-wizard stage transition (below): a code block
-  reaching 7 distinct entries warns "N entries, ideal number of entries
-  is seven plus or minus two, consider splitting this section in two";
-  reaching 9 warns more urgently ("...seriously consider..."); both are
-  Override-able soft warnings, on any taxonomy. Restricted to Numeric
-  Only, reaching 9 instead cautions "Numeric only, no available codes,
-  change to Alpha numeric?" — No blocks the entry, Yes switches Code
-  Restriction to Alpha Numeric with All Alpha and lets the entry through,
-  so the block can keep gap-coding with letters. Counts DISTINCT code
-  values in the segment, not just non-blank cells, and only fires when
-  that distinct count actually grows — needed because typing a code into
-  a blank cell sweeps that same value down through every other
-  still-blank sibling as a placeholder (the existing left-to-right
-  cascade), which would otherwise read as far more entries than have
-  genuinely been decided yet.
+- **Live item-count warnings as codes — and descriptions (PR #127) — are
+  entered (PR #125)** — Section 3's "5 to 9 items", applied at entry time
+  itself rather than only at a Simple-Taxonomy-wizard stage transition
+  (below): a block reaching 7 distinct entries warns "N entries, ideal
+  number of entries is seven plus or minus two, consider splitting this
+  section in two"; reaching 9 warns more urgently ("...seriously
+  consider..."); both are Override-able soft warnings, on any taxonomy.
+  On codes, restricted to Numeric Only, reaching 9 instead cautions
+  "Numeric only, no available codes, change to Alpha numeric?" — No
+  blocks the entry, Yes switches Code Restriction to Alpha Numeric with
+  All Alpha and lets the entry through, so the block can keep gap-coding
+  with letters. Counts DISTINCT code values in the segment, not just
+  non-blank cells, and only fires when that distinct count actually
+  grows — needed because typing a code into a blank cell sweeps that
+  same value down through every other still-blank sibling as a
+  placeholder (the existing left-to-right cascade), which would
+  otherwise read as far more entries than have genuinely been decided
+  yet. Descriptions (PR #127) don't cascade that way, so counting there
+  is simpler (plain non-blank count, fires on a genuine blank-to-filled
+  transition) — added because a Simple Taxonomy spends its entire
+  headings/sub-items stage typing descriptions only, with no code column
+  even rendered yet to have ever triggered the code-only version of this
+  warning.
 - Undo/redo across all structural and content operations.
 - Section 6.9 notes: an optional free-text note per entry, added/edited via
   right-click "Add Note"/"Edit Note" on the description cell (PR #94) — a
@@ -344,7 +350,26 @@ further rounds of testing feedback. The tool currently supports, in full:
   "Export to CSV"), **Update locked Taxonomy in Library** (the existing
   Add-to-Library/overwrite flow, reused as-is), and **Lock updates**
   (re-runs the same protect-everything sweep as the original Lock,
-  covering whatever's been added or marked deleted since).
+  covering whatever's been added or marked deleted since). The increment
+  CSV has no header row (PR #127) — every other discrete export's is a
+  literal column-number row ("1","2","3"...), meaningless for what this
+  one is for, a direct ERP upload of just the new rows. Both "Lock
+  Taxonomy" and "Lock updates" now refuse — with a plain-English list of
+  every problem found, not just the first — a taxonomy that isn't
+  actually ready to lock (PR #127, `codeValidation.ts`'s
+  `findLockIntegrityIssues`): any row with no description at all, any row
+  with a description but no code, or any code genuinely out of ascending
+  order (a fresh whole-taxonomy re-audit, segment-scoped the same way
+  every other order check in this app is — catches a violation only ever
+  forced through via the existing per-edit Override escape hatch). A hard
+  gate, not a dismissible warning — locking an incomplete taxonomy would
+  defeat the entire point of Lock. Both also now confirm through the
+  app's own React-rendered dialog rather than a native `window.confirm()`
+  (PR #127) — the native dialog could consume the click's own user
+  activation before the save afterward got to call the native Save-As
+  picker, which silently falls back to a plain, no-prompt download the
+  moment it's called without one; every other working Save/Export button
+  already avoided this by never having a native dialog in between.
 - A post-sign-on landing menu (`WorkflowMenu.tsx`): "Create a New Taxonomy"
   listing, in order, Simple Taxonomy, Advanced Complexity Taxonomy, Highly
   Experienced User — No Guidance, Item Master, then a non-clickable
@@ -649,6 +674,85 @@ further rounds of testing feedback. The tool currently supports, in full:
   piece is specifically the *phonetic* judgement of which letter to pick
   when there's a choice. Left for a follow-up conversation rather than
   guessed at.
+
+### PR #125 testing follow-ups: description item-count warnings, Lock integrity check, increment CSV headers, Lock save picker (PR #127)
+James's first testing pass on PR #125 turned up four real issues, plus one
+report that traced back to expected (if non-obvious) behaviour rather than
+a bug:
+
+1. "Testing on simple taxonomy on the descriptions in column 1 the item
+   count warning is not working... the warning should also be displayed
+   when there are seven and nine descriptions at the same level without
+   an intermediate heading one column or more left." Root cause: PR
+   #125's item-count check only ran on CODE entry (`updateCode`), but
+   Section 5's own workflow — and the Simple Taxonomy wizard's headings/
+   sub-items stages specifically — writes every description before any
+   code exists at all, so the whole description-only phase had no
+   coverage. Added the identical check to `updateDescription`, scoped
+   to the same same-level/same-immediate-parent segment. Descriptions
+   don't cascade the way codes do (each row's is typed independently, no
+   sweep-down), so counting is simpler here — a plain non-blank count,
+   firing on a genuine blank-to-filled transition — but the segment
+   boundary itself needed a small refactor: `immediateParentIndex`
+   derives its row's level from `rows[idx]`'s own current state, which
+   reads `-1` for a still-blank row about to receive its very first
+   description — exactly the row this check needs to scope correctly.
+   Split out `immediateParentIndexAtLevel(idx, level)`, taking the level
+   explicitly rather than deriving it, with `immediateParentIndex` now a
+   thin wrapper over it for every existing caller.
+2. "I am not seeing the item on the right click menu on code column 1 to
+   change column width... I have refreshed the software several times."
+   Investigated and reproduced deliberately: Simple Taxonomy hides every
+   code column until its own coding stage (`hideAllCodes` in Grid.tsx) —
+   the same reason item 1's warning was invisible in that same testing
+   session. Built a full Playwright run through the wizard's headings →
+   sub-items → coding stages confirming "Width of Col 1…" appears
+   correctly the moment code column 1 actually renders. No code change
+   needed; not a regression.
+3. "Lock taxonomy allows lock when there are no codes, need to do an
+   integrity check and ensure that the taxonomy has a valid description
+   hierarchy, that every description row has a valid code, whatever else
+   you can think of." Added `codeValidation.ts`'s `findLockIntegrityIssues`
+   — a hard, non-dismissible gate (not a "Continue anyway?" warning,
+   since locking an incomplete taxonomy would defeat what Lock is for)
+   checking, in one pass so every problem surfaces at once rather than
+   one click at a time: any row with no description at all; any row
+   with a description but a blank code anywhere from column 1 through
+   its own level (the existing `hasBlankCodeGaps`, previously only ever
+   a soft Save/Export warning); and — the "whatever else" — a fresh
+   whole-taxonomy ascending-order re-audit (`findAscendingOrderViolation`),
+   since the hard ascending-order rule's own Override escape hatch means
+   a genuine violation can still be sitting in an otherwise-complete
+   taxonomy. Wired into both "Lock Taxonomy" and "Lock updates".
+4. "Export Increment includes the column numbers in the export csv,
+   should be NO column numbers." That header row (literal "1","2","3"...)
+   is every other discrete export's own header, but meaningless for a
+   file whose whole purpose is a direct ERP upload of just the new rows
+   — dropped for `exportIncrementCsv` specifically, the other exports
+   left unchanged.
+5. "When lock the Download pane opens without prompting for location to
+   save file." Root cause, found by testing rather than guessing:
+   `handleLockTaxonomy`/`handleLockUpdates` confirmed through a native
+   `window.confirm()` before calling `performSave`, unlike every other
+   working Save/Export button in the app, which call straight through
+   from their own React `onClick` with nothing native in between. A
+   native `confirm()` dialog can consume the click's transient user
+   activation, so by the time `performSave` reached
+   `showSaveFilePicker()`, the browser had nothing left to grant it —
+   `saveExportFile`'s own catch-all silently falls back to a plain
+   download whenever the picker call itself fails for any reason,
+   exactly matching "opens without prompting." Fixed by replacing both
+   confirms with the app's own React-rendered dialog (`lockConfirm`
+   state) — its own "Continue" button click is a fresh, valid gesture in
+   its own right. Verified directly: mocked `showSaveFilePicker` to
+   record whether it was actually invoked, confirmed it now is (and
+   wasn't, on the old code path).
+
+Playwright-verified end to end for all of the above; three pre-existing
+smoke tests needed small updates to match the new, intentional behaviour
+(the React dialog replacing native `confirm()`, and Lock's new integrity
+requirement meaning a test taxonomy needs real content before it can
+lock). `npx tsc --noEmit`, `npm run lint`, `npm run build` all clean.
 
 ### Code-block item-count warnings, description Find, Lock Taxonomy menu, locked-only Library filter (PR #125)
 Four asks in one message:
