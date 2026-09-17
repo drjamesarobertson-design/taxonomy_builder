@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #127, 2026-09-17)
+## Current status (as of PR #129, 2026-09-17)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -674,6 +674,118 @@ further rounds of testing feedback. The tool currently supports, in full:
   piece is specifically the *phonetic* judgement of which letter to pick
   when there's a choice. Left for a follow-up conversation rather than
   guessed at.
+
+### PR #127 testing follow-ups: mid-type interrupts, orphan hierarchy warning, Lock integrity dialog + childless-heading check, Library name field, Caps Lock, focus restoration, export headers, increment deletions (PR #129)
+James's second testing pass, ten issues:
+
+1. "In the Simple wizard changing column width on code column 1 does not
+   increase the display width of the column and only permits input of
+   characters equal to the visible display." Root cause: the code cell's
+   `onFocus` unconditionally called `.select()`, right for the ordinary
+   single-character case (typing is meant to fully replace it) but wrong
+   for a widened, multi-character column-1 cell — clicking back into one
+   that already held content silently selected and then discarded it the
+   instant the first new keystroke landed, capping how much could
+   actually be added. Skipped for `column1CodeLength > 1` cells, which
+   now behave like any other text field.
+2. "On insert row and type in a new description that hits the 7
+   occurrences caution, the correct pop up comes up but the entry of the
+   description is aborted so only the first character is input." The
+   item-count check ran on every keystroke (`wasEmpty && value.trim() !==
+   ''` is true from the very first character of a brand-new row), so the
+   dialog stole focus after one letter. Moved to the description cell's
+   own `onBlur`, same as every other description-side soft warning —
+   `updateDescription` now just marks the row/level as "became non-blank
+   this edit" (`descItemCountPendingRef`), and the actual count (needing
+   the finished text, not the first character) is checked once the user
+   leaves the cell.
+3. "After insert a row, it is possible to type in a description that is
+   an orphan — the row beneath has a description that is not exactly one
+   column right." New check, `guidance.ts`'s `findOrphanChildRowId` — the
+   same "cascade no more than one column right" invariant already
+   enforced when typing relative to what's *above* a row, checked the
+   other direction: inserting a shallower row directly above pre-existing
+   deeper content skips a level nothing bridges. New one-time-per-row
+   warning, "Remember to add child descriptions that respect the
+   hierarchy," in the same blur-driven priority chain as the other
+   description warnings.
+4. "Lock Taxonomy displays the sub-menu item but nothing happens" +
+   "the message about cannot lock taxonomy... remains after that has
+   been acted on" — two symptoms of the same root cause. The integrity
+   failure from PR #127 went through the plain-paragraph `loadError`
+   banner at the top of the page, easy enough to miss that Lock read as
+   silently doing nothing, and nothing ever cleared it once the user
+   fixed the taxonomy and re-clicked Lock. Replaced with a proper modal
+   dialog (`lockIntegrityIssues` state), listing every problem as a
+   bulleted `<li>`, cleared on every fresh Lock attempt. Also added the
+   check James specifically asked for — "every description has a child
+   sequence all the way to the posting level" — `findChildlessHeadings`
+   in `codeValidation.ts`: Section 4.3's own case convention doubles as a
+   structural marker, so an ALL CAPS row with nothing deeper underneath
+   it is a heading that was never actually broken down. Skipped for a
+   Proper-Case-throughout taxonomy, where there's no ALL CAPS/Proper Case
+   distinction to check against.
+5. "Add to Library, present the file name in an editable field before
+   saving." Added a `library-name-input` text field to the category-
+   choice dialog, pre-filled with the taxonomy's current title; saving
+   applies the (possibly edited) name to both the new Library entry and
+   the open taxonomy itself, so the two stay in sync.
+6. "Enter a description in cell 1 of simple taxonomy with caps lock on
+   and still displays warning regarding capitalization, should only
+   display if caps lock is off." The one-time "All headings should be
+   capitalized" tip fired unconditionally on the first description
+   typed, regardless of whether Caps Lock made that redundant. Tracked
+   genuinely from the physical key event (`KeyboardEvent.getModifierState
+   ('CapsLock')`, read on every keydown in `handleCellKeyDown` — the only
+   place this is actually observable) and checked at blur time. Distinct
+   from an earlier, unrelated "turn Caps Lock on" suggestion James had
+   already asked to be dropped (comment still in Grid.tsx) — that one
+   tried to infer a corrective action from the same state and got it
+   backwards; this one only uses it to skip a notice that's already true.
+7. "When this error message displays and click OK, does not return to
+   editing that field so have to use the mouse to add row 2." Every
+   description-side warning dialog left nothing focused once dismissed.
+   Since Enter's own navigation (`focusCell`) already moves focus to the
+   next row *before* the deferred dialog-opening code runs, capturing
+   `document.activeElement` at that same deferred point (not synchronously
+   at blur — the browser's native focus transition hasn't settled yet
+   then) and refocusing it on dismiss (`restoreFocusAfterDescDialog`)
+   picks up exactly where the user was headed. Code cells already had
+   their own equivalent from an earlier round (`focusCodeInputAtEnd`).
+8. "Lock, export to Excel still shows row with column numbers" + "Export
+   entire locked to csv also has column numbers." Same fix already
+   applied to Increment CSV, extended to `exportLockedXlsx` and the
+   shared `exportDiscreteCsv` (also used by the general "Export to CSV"
+   button, and by "Export entire locked Taxonomy as CSV" under a
+   Lock-menu label) — a CSV or a highlighted-changes XLSX headed straight
+   back into an ERP doesn't need a header row of bare column numbers.
+   `exportDiscreteXlsx` (the general "Export to Excel" button, read by a
+   person rather than re-imported) keeps its header.
+9. "Export increment second time round does NOT show a row marked for
+   deletion and still shows the first increment." `exportIncrementCsv`
+   filtered on `!row.protected` alone, which only ever caught genuinely
+   new rows — a row already protected by an earlier Lock and later
+   marked for deletion (`XXX ` prefix; deliberately leaves `protected`
+   untouched, per Grid.tsx's `handleMarkAsDelete`) was silently excluded
+   entirely. Switched to the same `isChangedSinceLock` predicate
+   `exportLockedXlsx` already uses for "what changed since Lock" (now
+   exported), in both the export itself and the "nothing to export yet"
+   gate in `App.tsx`.
+
+Ten targeted Playwright tests written and verified for each fix above;
+full existing regression suite (Lock menu, Lock integrity, Lock order
+violation, locked-only filter, Library export/import/followups, item-
+count/Find, Width of Col 1, description item-count on a Simple Taxonomy)
+re-run clean — one of those (`smoke_desc_item_count_and_simple.mjs`) had
+gone stale from item 2's own fix (its own `.fill()` calls no longer
+triggered the now-blur-based warning without an explicit Tab) and was
+updated to match. Several older, unrelated test failures turned up during
+the sweep (a stale Library-category-count assertion, a removed "turn
+Caps Lock on" suggestion, native-`window.confirm()`-based Lock tests
+predating PR #127's React dialog) — reproduced identically against a
+clean `main` stash, confirming each is a pre-existing leftover from
+earlier rounds rather than a regression from this one. `npx tsc
+--noEmit`, `npm run lint`, `npm run build` all clean.
 
 ### PR #125 testing follow-ups: description item-count warnings, Lock integrity check, increment CSV headers, Lock save picker (PR #127)
 James's first testing pass on PR #125 turned up four real issues, plus one
