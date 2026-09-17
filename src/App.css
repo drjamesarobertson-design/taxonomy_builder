@@ -370,6 +370,9 @@
   padding: 0.5rem 0.9rem;
   margin: 0.5rem 0;
   font-weight: 600;
+  /* A multi-issue message (Lock Taxonomy's integrity check) joins its items with "\n" —
+     preserve those line breaks rather than collapsing them into one run-on line. */
+  white-space: pre-line;
 }
 
 .new-taxonomy-form {

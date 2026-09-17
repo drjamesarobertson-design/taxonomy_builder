@@ -558,6 +558,36 @@ export default function Grid({
     return values.size;
   }
 
+  // Same idea as countSegmentCodes, but for descriptions — James's follow-up: the item-count
+  // warnings need to fire while descriptions are being entered too, not only once codes exist,
+  // since Section 5's own workflow writes every description before any code. Descriptions don't
+  // cascade the way codes do (each row's is typed independently — updateDescription has no
+  // sweep-down), so no distinct-value counting is needed here, just non-blank cells. The row
+  // being edited may not have a resolved level yet (still blank, about to receive its very
+  // first description), so its own segment boundary is computed via `level` — what it's about
+  // to become — rather than derived from its current (possibly unset) state.
+  function countSegmentDescriptions(editIndex: number, level: number, descSource: TaxonomyRow[]): number {
+    const parent = level > 0 ? immediateParentIndexAtLevel(editIndex, level) : null;
+    const indices = [editIndex];
+    for (let i = editIndex - 1; i >= 0; i--) {
+      const li = levelOf(rows[i]);
+      if (li === -1) continue;
+      if (li < level) break;
+      if (li > level) continue;
+      if (parent !== null && immediateParentIndex(i) !== parent) break;
+      indices.push(i);
+    }
+    for (let i = editIndex + 1; i < rows.length; i++) {
+      const li = levelOf(rows[i]);
+      if (li === -1) continue;
+      if (li < level) break;
+      if (li > level) continue;
+      if (parent !== null && immediateParentIndex(i) !== parent) break;
+      indices.push(i);
+    }
+    return indices.filter((i) => (descSource[i]?.descriptions[level] ?? '').trim() !== '').length;
+  }
+
   // Fills columns [fromLevel, toLevel] of the row at editIndex with the padding character, then
   // cascades that same padding down through each of those columns independently into every row
   // below within the same parent group, stopping at the first non-blank cell in each column —
@@ -918,7 +948,12 @@ export default function Grid({
     onChange(updated, `code:${level}:${rowId}`);
   }
 
-  function updateDescription(rowId: string, level: number, rawValue: string) {
+  function updateDescription(
+    rowId: string,
+    level: number,
+    rawValue: string,
+    options?: { skipItemCountWarning?: boolean },
+  ) {
     const editIndex = rows.findIndex((r) => r.id === rowId);
     if (editIndex === -1) return;
 
@@ -979,29 +1014,48 @@ export default function Grid({
     // columns need a real code, not blanket "no further hierarchy" padding.
     const newParentIdx = prevDepth !== null && level === prevDepth + 1 ? prevDepthIdx : -1;
 
-    onChange(
-      rows.map((row, idx) => {
-        if (row.id === rowId) {
-          return { ...row, descriptions: row.descriptions.map((d, i) => (i === level ? value : d)) };
+    const updated = rows.map((row, idx) => {
+      if (row.id === rowId) {
+        return { ...row, descriptions: row.descriptions.map((d, i) => (i === level ? value : d)) };
+      }
+      if (idx === newParentIdx) {
+        const codes = row.codes.map((c, i) => (i > prevDepth! && c === padValueForColumn(i) ? '' : c));
+        const codesChanged = codes.some((c, i) => c !== row.codes[i]);
+        // Simple Taxonomy wizard convenience (guidance-only, not a general app behaviour —
+        // Section 6.2 keeps case toggling manual everywhere else): a heading that just
+        // gained its first child is structural now, so switch it to ALL CAPS automatically
+        // rather than leaving that as a Toggle Case the user has to remember. Skipped under
+        // Proper Case throughout, same as the forced-uppercase-while-typing rule above.
+        if (guidance && !properCaseOnly) {
+          const descriptions = row.descriptions.map((d, i) => (i === prevDepth ? d.toUpperCase() : d));
+          return { ...row, codes, descriptions };
         }
-        if (idx === newParentIdx) {
-          const codes = row.codes.map((c, i) => (i > prevDepth! && c === padValueForColumn(i) ? '' : c));
-          const codesChanged = codes.some((c, i) => c !== row.codes[i]);
-          // Simple Taxonomy wizard convenience (guidance-only, not a general app behaviour —
-          // Section 6.2 keeps case toggling manual everywhere else): a heading that just
-          // gained its first child is structural now, so switch it to ALL CAPS automatically
-          // rather than leaving that as a Toggle Case the user has to remember. Skipped under
-          // Proper Case throughout, same as the forced-uppercase-while-typing rule above.
-          if (guidance && !properCaseOnly) {
-            const descriptions = row.descriptions.map((d, i) => (i === prevDepth ? d.toUpperCase() : d));
-            return { ...row, codes, descriptions };
-          }
-          return codesChanged ? { ...row, codes } : row;
-        }
-        return row;
-      }),
-      `desc:${level}:${rowId}`,
-    );
+        return codesChanged ? { ...row, codes } : row;
+      }
+      return row;
+    });
+
+    // James's follow-up: the item-count warnings need to fire on description entry too, not
+    // only once codes exist — Section 5's own workflow writes every description before any
+    // code, so relying on code entry alone left the whole heading-building stage uncovered.
+    // Only a genuinely new (blank -> non-blank) description changes how many siblings this
+    // segment holds, so this never re-fires from editing text that was already there.
+    if (wasEmpty && value.trim() !== '' && !options?.skipItemCountWarning) {
+      const count = countSegmentDescriptions(editIndex, level, updated);
+      if (count >= 7) {
+        setConfirmDialog({
+          message:
+            count >= 9
+              ? `${count} entries, ideal number of entries is seven plus or minus two, seriously consider splitting this section in two`
+              : `${count} entries, ideal number of entries is seven plus or minus two, consider splitting this section in two`,
+          confirmLabel: 'Override',
+          onConfirm: () => updateDescription(rowId, level, rawValue, { ...options, skipItemCountWarning: true }),
+        });
+        return;
+      }
+    }
+
+    onChange(updated, `desc:${level}:${rowId}`);
   }
 
   // Lock Taxonomy: several bulk operations can alter a protected row just as directly as
@@ -2222,7 +2276,15 @@ export default function Grid({
   // entry outright with no way through until Fill Codes happened to carry the real ancestor
   // codes down and made the code-based grouping accidentally correct again.
   function immediateParentIndex(idx: number): number {
-    const level = levelOf(rows[idx]);
+    return immediateParentIndexAtLevel(idx, levelOf(rows[idx]));
+  }
+
+  // Same walk as immediateParentIndex, but takes the level explicitly instead of reading it off
+  // the row's own current state — needed for a row that doesn't have a resolved level yet (a
+  // still-blank row about to receive its first-ever description at some level), where
+  // levelOf(rows[idx]) reads -1 and immediateParentIndex's own lookup would therefore never
+  // find a parent at all.
+  function immediateParentIndexAtLevel(idx: number, level: number): number {
     for (let i = idx - 1; i >= 0; i--) {
       const l = levelOf(rows[i]);
       if (l !== -1 && l < level) return i;
