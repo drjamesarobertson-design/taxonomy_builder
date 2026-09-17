@@ -277,6 +277,13 @@
   font-size: 0.95rem;
 }
 
+.library-name-label {
+  display: block;
+  font-size: 0.85rem;
+  color: #444;
+  margin-bottom: 0.25rem;
+}
+
 .app-header {
   display: flex;
   align-items: center;

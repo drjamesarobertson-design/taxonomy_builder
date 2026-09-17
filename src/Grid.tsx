@@ -4,7 +4,7 @@ import { createEmptyRow, growRowsToLevels } from './types';
 import { getLevelColor } from './colors';
 import { toggleCase } from './caseUtils';
 import { isValidCodeChar, isAllowedByCodeRestriction, hasCodeGap } from './codeValidation';
-import { findOtherNotLastInGroup, isOtherEntryNotLast, isOtherOrMiscellaneousLabel } from './guidance';
+import { findOtherNotLastInGroup, isOtherEntryNotLast, isOtherOrMiscellaneousLabel, findOrphanChildRowId } from './guidance';
 import { codeInputId, descInputId } from './domIds';
 import type { TaxonomyBlock } from './blockTransfer';
 import { parseBlockFile } from './blockTransfer';
@@ -125,6 +125,42 @@ export default function Grid({
   // firing only once ever.
   const [showCapsNotice, setShowCapsNotice] = useState(false);
   const capsNoticeShownRef = useRef(false);
+  // James's report: the ALL CAPS notice above fired even when Caps Lock was genuinely on — at
+  // that point the user is already typing real capitals themselves, so the app's own forced
+  // uppercase is invisible to them and the notice just reads as if they'd been told to do
+  // something they'd already done. Tracked from the physical key event itself (the only place
+  // Caps Lock state is actually observable — genuinely unlike the earlier, unrelated "turn Caps
+  // Lock on" suggestion removed elsewhere in this file, that one tried to infer a corrective
+  // ACTION from this same state and got it backwards; here it's used only to skip a notice that's
+  // already true), updated on every keystroke in the grid and read at blur time.
+  const capsLockOnRef = useRef(false);
+  // James's report: dismissing a description-side warning (item count, orphan child, ALL CAPS
+  // notice, etc.) left nothing focused, forcing a click back in with the mouse to keep going —
+  // e.g. to start the next row after Insert Row. Every one of these warnings fires from the
+  // description cell's own onBlur below, which runs as part of whatever focus change triggered
+  // it (a Tab key press has already moved focus to the next cell by the time onBlur runs) — so
+  // capturing document.activeElement right there, before the dialog steals it, and refocusing
+  // that element once the dialog closes, picks up exactly where the user was headed. Left as a
+  // targeted fix for this one blur handler's own dialogs rather than every dialog in the app —
+  // code cells already have their own equivalent (focusCodeInputAtEnd above).
+  const focusAfterDescDialogRef = useRef<HTMLElement | null>(null);
+  function restoreFocusAfterDescDialog() {
+    const el = focusAfterDescDialogRef.current;
+    focusAfterDescDialogRef.current = null;
+    if (el && document.contains(el)) requestAnimationFrame(() => el.focus());
+  }
+  // Every one of this blur handler's own dialogs already defers opening by a tick (setTimeout
+  // 0) so an overlay appearing mid-click doesn't swallow the very click that triggered the
+  // blur. Blur fires as focus is LEAVING the old element, not once it's landed on the new one —
+  // document.activeElement briefly reads as document.body in between, so capturing it has to
+  // wait for that same later tick too, once the browser's own native Tab/click focus change has
+  // actually settled onto its real destination.
+  function openDescDialogDeferred(action: () => void) {
+    setTimeout(() => {
+      focusAfterDescDialogRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      action();
+    }, 0);
+  }
   // James's ask: once column 1 holds a multi-character code, descriptions should be entered in
   // the alphabetical order their codes are meant to sort in — much harder to keep codes
   // ascending later if the rows themselves aren't already in that order. A one-time reminder
@@ -163,6 +199,20 @@ export default function Grid({
   // skipped for this blur if the not-last dialog is already firing, so the two never overlap.
   const [otherEncounteredWarningRowId, setOtherEncounteredWarningRowId] = useState<string | null>(null);
   const otherEncounteredWarnedRef = useRef<Set<string>>(new Set());
+  // James's report: after Insert Row, it's possible to type a description that leaves the row
+  // beneath it an "orphan" — more than one column deeper, with no row in between to bridge the
+  // hierarchy (findOrphanChildRowId, guidance.ts). Same warned-once-until-fixed pattern as the
+  // Other/Miscellaneous notices above.
+  const [orphanChildWarningRowId, setOrphanChildWarningRowId] = useState<string | null>(null);
+  const orphanChildWarnedRef = useRef<Set<string>>(new Set());
+  // James's report: the description item-count warning (below, updateDescription) used to pop
+  // up mid-keystroke — the instant a blank->non-blank description pushed its segment to 7+ —
+  // which stole focus after just the first character and forced a click back into the cell to
+  // finish typing. Checked on blur instead, like every other description-side soft warning:
+  // updateDescription just marks the row/level as "became non-blank this edit" here, and the
+  // count itself (which needs the FINAL text, not the first character) is checked once the
+  // user actually leaves the cell.
+  const descItemCountPendingRef = useRef<Set<string>>(new Set());
   // Section 6.9: an optional free-text note per entry, added/edited via right-click "Add
   // Note"/"Edit Note" on the description cell. `noteEditRowId` is the row currently being
   // edited (null when the dialog is closed); `noteEditDraft` is the textarea's own live value,
@@ -948,12 +998,7 @@ export default function Grid({
     onChange(updated, `code:${level}:${rowId}`);
   }
 
-  function updateDescription(
-    rowId: string,
-    level: number,
-    rawValue: string,
-    options?: { skipItemCountWarning?: boolean },
-  ) {
+  function updateDescription(rowId: string, level: number, rawValue: string) {
     const editIndex = rows.findIndex((r) => r.id === rowId);
     if (editIndex === -1) return;
 
@@ -1039,20 +1084,12 @@ export default function Grid({
     // only once codes exist — Section 5's own workflow writes every description before any
     // code, so relying on code entry alone left the whole heading-building stage uncovered.
     // Only a genuinely new (blank -> non-blank) description changes how many siblings this
-    // segment holds, so this never re-fires from editing text that was already there.
-    if (wasEmpty && value.trim() !== '' && !options?.skipItemCountWarning) {
-      const count = countSegmentDescriptions(editIndex, level, updated);
-      if (count >= 7) {
-        setConfirmDialog({
-          message:
-            count >= 9
-              ? `${count} entries, ideal number of entries is seven plus or minus two, seriously consider splitting this section in two`
-              : `${count} entries, ideal number of entries is seven plus or minus two, consider splitting this section in two`,
-          confirmLabel: 'Override',
-          onConfirm: () => updateDescription(rowId, level, rawValue, { ...options, skipItemCountWarning: true }),
-        });
-        return;
-      }
+    // segment holds — marked here for the description cell's own onBlur to actually check
+    // (see descItemCountPendingRef above), not checked immediately: the count that matters is
+    // the segment's count once this entry is a real, finished description, not after its first
+    // character.
+    if (wasEmpty && value.trim() !== '') {
+      descItemCountPendingRef.current.add(`${rowId}:${level}`);
     }
 
     onChange(updated, `desc:${level}:${rowId}`);
@@ -1354,6 +1391,12 @@ export default function Grid({
     level: number,
     rowIndex: number,
   ) {
+    // A real key event is the only place Caps Lock's state can actually be read — captured on
+    // every keystroke here so the ALL CAPS notice's blur handler (far below) can tell whether
+    // the user had it on while typing.
+    if (typeof e.getModifierState === 'function') {
+      capsLockOnRef.current = e.getModifierState('CapsLock');
+    }
     // Code cells handle every printable keystroke here directly, rather than letting the
     // browser insert it natively and relying on onChange: a maxLength=1 field that's
     // already focused (no fresh focus event, so nothing gets selected) silently blocks a
@@ -2761,7 +2804,19 @@ export default function Grid({
                             value={row.codes[level] ?? ''}
                             onChange={(e) => updateCode(row.id, level, e.target.value)}
                             onKeyDown={(e) => handleCellKeyDown(e, 'code', level, rowIndex)}
-                            onFocus={(e) => e.currentTarget.select()}
+                            // Select-all-on-focus is right for the ordinary single-character
+                            // case (the ONLY way to type there is to replace whatever's already
+                            // in the cell), but a widened, multi-character column-1 cell types
+                            // natively and is meant to be clicked into and extended/edited like
+                            // any other text field — selecting everything on focus silently
+                            // discarded the existing value the instant the user clicked back in
+                            // to add more characters (James's report: widening column 1 to 3
+                            // left only room for 2 new characters, because the first keystroke
+                            // replaced the char already there instead of extending it).
+                            onFocus={(e) => {
+                              if (level === 0 && column1CodeLength > 1) return;
+                              e.currentTarget.select();
+                            }}
                             onBlur={() => {
                               // A multi-character column-1 value deliberately left shorter than
                               // the maximum never reached the "full length" point the order
@@ -2839,29 +2894,76 @@ export default function Grid({
                         // within that same synchronous dispatch can cover the very element being
                         // clicked before its own click finishes — swallowing that click instead
                         // of acting on it.
+                        // Highest priority: the item-count warning updateDescription marked as
+                        // pending (a blank -> non-blank edit that may have pushed this segment to
+                        // 7+ siblings). Checked here, once, with the finished text — not mid-
+                        // keystroke, which used to steal focus after just the first character.
+                        const itemCountKey = `${row.id}:${level}`;
+                        let itemCountFiredThisBlur = false;
+                        if (descItemCountPendingRef.current.has(itemCountKey)) {
+                          descItemCountPendingRef.current.delete(itemCountKey);
+                          const count = countSegmentDescriptions(rowIndex, level, rows);
+                          if (count >= 7) {
+                            itemCountFiredThisBlur = true;
+                            openDescDialogDeferred(() =>
+                              setConfirmDialog({
+                                message:
+                                  count >= 9
+                                    ? `${count} entries, ideal number of entries is seven plus or minus two, seriously consider splitting this section in two`
+                                    : `${count} entries, ideal number of entries is seven plus or minus two, consider splitting this section in two`,
+                                confirmLabel: 'Override',
+                                onConfirm: () => {},
+                              }),
+                            );
+                          }
+                        }
+                        // Second priority: this edit may have left the row immediately below as
+                        // an orphan — more than one column deeper with nothing bridging the gap
+                        // (typically from Insert Row placing a new, shallower heading directly
+                        // above pre-existing deeper content). Warned once per row while the
+                        // condition holds, cleared once it's fixed so it can warn again later.
+                        const orphanRowId = findOrphanChildRowId(rows, row.id);
+                        const orphanFiredThisBlur =
+                          !itemCountFiredThisBlur && !!orphanRowId && !orphanChildWarnedRef.current.has(orphanRowId);
+                        if (orphanRowId) {
+                          if (orphanFiredThisBlur) {
+                            orphanChildWarnedRef.current.add(orphanRowId);
+                            openDescDialogDeferred(() => setOrphanChildWarningRowId(orphanRowId));
+                          }
+                        } else {
+                          orphanChildWarnedRef.current.delete(row.id);
+                        }
                         const capsNoticeFiredThisBlur =
+                          !itemCountFiredThisBlur &&
+                          !orphanFiredThisBlur &&
                           !properCaseOnly &&
                           rowIndex === 0 &&
                           level === 0 &&
                           !capsNoticeShownRef.current &&
+                          !capsLockOnRef.current &&
                           !!(row.descriptions[0] ?? '').trim();
                         if (capsNoticeFiredThisBlur) {
                           capsNoticeShownRef.current = true;
-                          setTimeout(() => setShowCapsNotice(true), 0);
+                          openDescDialogDeferred(() => setShowCapsNotice(true));
                         }
                         // A later sibling being typed just now is exactly what can turn an
                         // EARLIER "Other" row into a violation without that earlier cell ever
                         // being touched again, so the whole sibling group is re-checked here,
                         // not just this row.
                         const groupViolators = findOtherNotLastInGroup(rows, row.id);
-                        const toWarn = groupViolators.find((id) => !otherNotLastWarnedRef.current.has(id));
+                        const toWarn =
+                          !itemCountFiredThisBlur &&
+                          !orphanFiredThisBlur &&
+                          groupViolators.find((id) => !otherNotLastWarnedRef.current.has(id));
                         if (toWarn) {
                           otherNotLastWarnedRef.current.add(toWarn);
-                          setTimeout(() => setOtherNotLastWarningRowId(toWarn), 0);
+                          openDescDialogDeferred(() => setOtherNotLastWarningRowId(toWarn));
                         } else if (!isOtherEntryNotLast(rows, row.id)) {
                           otherNotLastWarnedRef.current.delete(row.id);
                         }
                         const multiCharOrderNoticeFiredThisBlur =
+                          !itemCountFiredThisBlur &&
+                          !orphanFiredThisBlur &&
                           !capsNoticeFiredThisBlur &&
                           !toWarn &&
                           column1CodeLength > 1 &&
@@ -2870,7 +2972,7 @@ export default function Grid({
                           !!(row.descriptions[0] ?? '').trim();
                         if (multiCharOrderNoticeFiredThisBlur) {
                           multiCharOrderNoticeShownRef.current = true;
-                          setTimeout(() => setShowMultiCharOrderNotice(true), 0);
+                          openDescDialogDeferred(() => setShowMultiCharOrderNotice(true));
                         }
                         // The earlier, softer nudge — fires the moment this row's own text reads
                         // as Other/Miscellaneous, regardless of position — skipped when the
@@ -2883,12 +2985,14 @@ export default function Grid({
                           otherEncounteredWarnedRef.current.delete(row.id);
                         } else if (
                           !otherEncounteredWarnedRef.current.has(row.id) &&
+                          !itemCountFiredThisBlur &&
+                          !orphanFiredThisBlur &&
                           !toWarn &&
                           !capsNoticeFiredThisBlur &&
                           !multiCharOrderNoticeFiredThisBlur
                         ) {
                           otherEncounteredWarnedRef.current.add(row.id);
-                          setTimeout(() => setOtherEncounteredWarningRowId(row.id), 0);
+                          openDescDialogDeferred(() => setOtherEncounteredWarningRowId(row.id));
                         }
                       }}
                     />
@@ -3130,7 +3234,13 @@ export default function Grid({
       )}
 
       {confirmDialog && (
-        <div className="validation-overlay" onClick={() => setConfirmDialog(null)}>
+        <div
+          className="validation-overlay"
+          onClick={() => {
+            setConfirmDialog(null);
+            restoreFocusAfterDescDialog();
+          }}
+        >
           <div
             ref={confirmDialogRef}
             className="validation-dialog"
@@ -3143,7 +3253,13 @@ export default function Grid({
           >
             <p>{confirmDialog.message}</p>
             <div className="confirm-dialog-actions">
-              <button type="button" onClick={() => setConfirmDialog(null)}>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmDialog(null);
+                  restoreFocusAfterDescDialog();
+                }}
+              >
                 {confirmDialog.cancelLabel ?? 'Cancel'}
               </button>
               <button
@@ -3151,6 +3267,7 @@ export default function Grid({
                 onClick={() => {
                   confirmDialog.onConfirm();
                   setConfirmDialog(null);
+                  restoreFocusAfterDescDialog();
                 }}
               >
                 {confirmDialog.confirmLabel ?? 'Delete'}
@@ -3377,7 +3494,13 @@ export default function Grid({
       )}
 
       {showCapsNotice && (
-        <div className="validation-overlay" onClick={() => setShowCapsNotice(false)}>
+        <div
+          className="validation-overlay"
+          onClick={() => {
+            setShowCapsNotice(false);
+            restoreFocusAfterDescDialog();
+          }}
+        >
           <div
             ref={capsNoticeDialogRef}
             className="validation-dialog"
@@ -3389,7 +3512,13 @@ export default function Grid({
             }}
           >
             <p>All headings should be capitalized.</p>
-            <button type="button" onClick={() => setShowCapsNotice(false)}>
+            <button
+              type="button"
+              onClick={() => {
+                setShowCapsNotice(false);
+                restoreFocusAfterDescDialog();
+              }}
+            >
               OK
             </button>
           </div>
@@ -3397,14 +3526,26 @@ export default function Grid({
       )}
 
       {showMultiCharOrderNotice && (
-        <div className="validation-overlay" onClick={() => setShowMultiCharOrderNotice(false)}>
+        <div
+          className="validation-overlay"
+          onClick={() => {
+            setShowMultiCharOrderNotice(false);
+            restoreFocusAfterDescDialog();
+          }}
+        >
           <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
             <p>
               With a multi-character Column 1 code, it helps to enter descriptions in the
               alphabetical order you'd like their codes to end up in — much easier to keep codes
               in ascending order that way.
             </p>
-            <button type="button" onClick={() => setShowMultiCharOrderNotice(false)}>
+            <button
+              type="button"
+              onClick={() => {
+                setShowMultiCharOrderNotice(false);
+                restoreFocusAfterDescDialog();
+              }}
+            >
               OK
             </button>
           </div>
@@ -3422,11 +3563,46 @@ export default function Grid({
         </div>
       )}
 
+      {orphanChildWarningRowId && (
+        <div
+          className="validation-overlay"
+          onClick={() => {
+            setOrphanChildWarningRowId(null);
+            restoreFocusAfterDescDialog();
+          }}
+        >
+          <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
+            <p>Remember to add child descriptions that respect the hierarchy</p>
+            <button
+              type="button"
+              onClick={() => {
+                setOrphanChildWarningRowId(null);
+                restoreFocusAfterDescDialog();
+              }}
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
       {otherNotLastWarningRowId && (
-        <div className="validation-overlay" onClick={() => setOtherNotLastWarningRowId(null)}>
+        <div
+          className="validation-overlay"
+          onClick={() => {
+            setOtherNotLastWarningRowId(null);
+            restoreFocusAfterDescDialog();
+          }}
+        >
           <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
             <p>Other or Miscellaneous Should be the Last Entry in a Segment</p>
-            <button type="button" onClick={() => setOtherNotLastWarningRowId(null)}>
+            <button
+              type="button"
+              onClick={() => {
+                setOtherNotLastWarningRowId(null);
+                restoreFocusAfterDescDialog();
+              }}
+            >
               OK
             </button>
           </div>
@@ -3434,13 +3610,25 @@ export default function Grid({
       )}
 
       {otherEncounteredWarningRowId && (
-        <div className="validation-overlay" onClick={() => setOtherEncounteredWarningRowId(null)}>
+        <div
+          className="validation-overlay"
+          onClick={() => {
+            setOtherEncounteredWarningRowId(null);
+            restoreFocusAfterDescDialog();
+          }}
+        >
           <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
             <p>
               It is recommended that "Other" and "Miscellaneous" should be at end of the segment and coded 9 / Z / z —
               please confirm
             </p>
-            <button type="button" onClick={() => setOtherEncounteredWarningRowId(null)}>
+            <button
+              type="button"
+              onClick={() => {
+                setOtherEncounteredWarningRowId(null);
+                restoreFocusAfterDescDialog();
+              }}
+            >
               Confirm
             </button>
           </div>

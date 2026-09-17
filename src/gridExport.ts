@@ -197,8 +197,13 @@ export async function exportDiscreteCsv(
   options?: { paddingOverride?: string; excludeDelimiters?: boolean; suffixMode?: 'concatenate' | 'rightAlign' },
 ): Promise<{ project: TaxonomyProject; usedFolder: boolean; cancelled: boolean }> {
   const { project: versioned, versionLabel } = bumpFileVersion(project, 'discrete-csv');
-  const { header, rows } = buildDiscreteGrid(withPaddingSubstitution(project, options?.paddingOverride), options);
-  const csv = [header, ...rows].map((line) => line.map(csvEscape).join(',')).join('\r\n');
+  // James's report: a CSV export is meant for re-import (direct ERP upload, or "Export entire
+  // locked Taxonomy as CSV" below, which is this same export under a Lock-menu label) — a
+  // header row of bare column numbers ("1", "2", "3"...) doesn't belong in one, same reasoning
+  // already applied to Increment CSV. The XLSX equivalent keeps its header — it's read by a
+  // person in Excel, not fed straight back into a system.
+  const { rows } = buildDiscreteGrid(withPaddingSubstitution(project, options?.paddingOverride), options);
+  const csv = rows.map((line) => line.map(csvEscape).join(',')).join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const descriptor = options?.excludeDelimiters ? 'Per Column No Delimiter' : 'Per Column';
   const { usedFolder, cancelled } = await saveExportFile(blob, exportFilename(project, descriptor, 'csv', versionLabel));
@@ -286,7 +291,7 @@ export async function exportDiscreteXlsx(
 // Grid.tsx's handleMarkAsDelete) regardless of protected state, since a deletion recorded after
 // the last Lock is itself a change worth flagging even though the row it retires was already
 // locked.
-function isChangedSinceLock(row: TaxonomyRow): boolean {
+export function isChangedSinceLock(row: TaxonomyRow): boolean {
   return !row.protected || row.descriptions.some((d) => (d ?? '').startsWith('XXX '));
 }
 
@@ -305,9 +310,9 @@ export async function exportLockedXlsx(
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet((project.tableName || 'Taxonomy').slice(0, 31));
 
-  const headerRow = sheet.addRow(header);
-  headerRow.font = { bold: true };
-  headerRow.alignment = { horizontal: 'center' };
+  // James's report: this file goes straight back out as ERP-ready data (that's the whole point
+  // of highlighting what's changed since Lock) — a header row of bare column numbers doesn't
+  // belong in it, same reasoning as the CSV exports above.
   for (const rowValues of rows) sheet.addRow(rowValues.map((v) => (v === '' ? null : v)));
 
   const NARROW_WIDTH = 1.5;
@@ -317,8 +322,8 @@ export async function exportLockedXlsx(
     if (col.type === 'delimiter') {
       excelCol.width = 3;
       excelCol.alignment = { horizontal: 'center' };
-      excelCol.eachCell((cell, rowNumber) => {
-        if (rowNumber > 1) cell.font = { color: { argb: 'FF999999' } };
+      excelCol.eachCell((cell) => {
+        cell.font = { color: { argb: 'FF999999' } };
       });
       return;
     }
@@ -349,7 +354,7 @@ export async function exportLockedXlsx(
   const changedFill = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFFFF2A8' } };
   project.rows.forEach((row, index) => {
     if (!isChangedSinceLock(row)) return;
-    const sheetRow = sheet.getRow(index + 2); // +1 for the header row, +1 for 1-based indexing
+    const sheetRow = sheet.getRow(index + 1); // no header row — 1-based indexing only
     for (let col = 1; col <= header.length; col++) {
       const cell = sheetRow.getCell(col);
       cell.font = changedFont;
@@ -375,7 +380,13 @@ export async function exportIncrementCsv(
   project: TaxonomyProject,
 ): Promise<{ project: TaxonomyProject; usedFolder: boolean; cancelled: boolean }> {
   const { project: versioned, versionLabel } = bumpFileVersion(project, 'increment-csv');
-  const incrementRows = project.rows.filter((row) => !row.protected);
+  // James's report: a row already protected by an earlier Lock, then later marked for deletion
+  // (Grid.tsx's "Mark as Delete" — prefixes the description with "XXX " but deliberately leaves
+  // `protected` alone, so the original historical entry stays intact) was being left out of the
+  // increment entirely — `!row.protected` alone only ever caught genuinely new rows, never a
+  // deletion recorded against old, already-locked history. Same "what changed since Lock"
+  // predicate exportLockedXlsx already uses to decide what to highlight.
+  const incrementRows = project.rows.filter(isChangedSinceLock);
   // James's report: this is meant for a direct ERP upload of just the new rows — no header row
   // of column numbers (every other discrete export's header, "1", "2", "3"...) belongs in a
   // file like that.
