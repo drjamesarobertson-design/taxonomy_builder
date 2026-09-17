@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #121, 2026-09-16)
+## Current status (as of PR #123, 2026-09-17)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -99,11 +99,21 @@ further rounds of testing feedback. The tool currently supports, in full:
   check that assumed one character now operates on the full value; Lock
   Taxonomy's insert-gap detection is single-character-only and is skipped
   (never a false hard block) once column 1 holds more than one character.
-  Offered ONLY on the Simple Taxonomy setup screen (PR #105) — James tried
-  it on the general Settings dialog and the full New Taxonomy form first,
-  then decided "in general multiple characters is a mess" everywhere else,
-  so it isn't offered there or on the ongoing Settings dialog at all; the
-  underlying Grid.tsx logic is identical regardless of where it's set. Once
+  Offered on the Simple Taxonomy setup screen (PR #105, capped there at
+  5) — James tried it on the general Settings dialog and the full New
+  Taxonomy form first, then decided "in general multiple characters is a
+  mess" everywhere else, so it still isn't offered on the ongoing Settings
+  dialog or the full form. It can now also be changed after the fact, on
+  any taxonomy, via "Width of Col 1…" on column 1's own right-click menu
+  (PR #123, grouped with Add Column/Delete Column, column 1 only) — a 1-10
+  picker rather than 1-5, since there's no setup-screen real estate
+  constraint here. Widening always applies immediately (existing codes
+  just have room to spare); narrowing only prompts — "Confirm truncate
+  codes: N code(s) in Column 1 are longer than N characters... Truncate
+  codes?" — when it would actually cut something off, truncating from the
+  end on confirmation; if every code already fits, it applies with no
+  prompt at all. The underlying Grid.tsx logic is identical regardless of
+  where the width is set. Once
   it's raised above 1, that same setup screen offers a Proper Case
   Throughout checkbox (PR #107, `settings.properCaseOnly`) — checked, every
   description stays in Proper Case for that taxonomy and the automatic
@@ -602,6 +612,47 @@ further rounds of testing feedback. The tool currently supports, in full:
   piece is specifically the *phonetic* judgement of which letter to pick
   when there's a choice. Left for a follow-up conversation rather than
   guessed at.
+
+### "Width of Col 1…" right-click control (PR #123)
+James's ask: "in right click menu on code column 1, in the group of 'Add
+Column' 'Delete Column' add 'Width of Col 1' and allow Increase code to
+more than one character maximum 10 char, only allow this on column 1... if
+the width is greater than 1 allow selection of reduced width and if there
+is content greater than the proposed new width ask 'Truncate codes Y/N?'
+... give a warning 'Confirm truncate codes'." Column 1 Code Length
+(PR #102/#105, above) had only ever been settable once, at creation, via
+the Simple Taxonomy wizard's own 1-5 dropdown — no way to change it
+afterward on an existing taxonomy.
+
+Added "Width of Col 1…" to column 1's own code-column right-click menu,
+grouped with Add Column/Delete Column as asked, gated on
+`contextMenu.level === 0` so it never appears on column 2+ or on any
+description-column menu. Opens a 1-10 picker (`column1CodeLength`'s new
+ceiling, up from 5 — no setup-screen space constraint applies here).
+Widening is always safe (existing codes just have room to spare) and
+applies immediately with no prompt; narrowing checks every row's Column 1
+code against the proposed width first — if none exceed it, applies
+immediately the same way; if any would be cut off, shows one dialog
+combining James's two requested pieces ("Confirm truncate codes: N
+code(s)... are longer than N characters and will be cut down to fit.
+Truncate codes?") with Cancel/Truncate — Cancel leaves the width and
+every code exactly as they were, Truncate cuts every over-length code
+down to the new width from the end.
+
+Also bumped `storage.ts`'s own `column1CodeLength` migration bound from 5
+to 10 to match the new ceiling — otherwise a taxonomy widened past 5
+through this control would have been silently reset back to a
+1-character column 1 the next time it was loaded from a saved file, a bug
+this feature would have introduced without that fix.
+
+Playwright-verified end to end: the menu item appears only on column 1's
+code menu (confirmed absent from both column 2's code menu and the
+description menu); widening 1→4 applies immediately with existing codes
+untouched; narrowing back to 1 with an over-length code present triggers
+the confirm dialog; Cancel leaves width and content alone; confirming
+truncates the long code from the end while an unaffected row's shorter
+code stays as-is. `npx tsc --noEmit`, `npm run lint`, `npm run build` all
+clean throughout.
 
 ### Export/Import Library follow-ups (PR #121)
 James tested PR #119 against his real Library (21 entries) and reported
