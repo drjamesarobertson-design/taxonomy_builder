@@ -280,10 +280,19 @@ function parseHeaderlessCsv(table: string[][]): ParsedDiscreteCsv | { error: str
 // assume every such export names them identically.
 const OLD_CODE_HEADER_NAMES = ['old acc', 'old account', 'old code', 'old gl code', 'account code', 'gl code', 'client account code'];
 const CERTAINTY_HEADER_NAMES = ['certainty', 'confidence'];
-const NOTES_HEADER_NAMES = ['notes', 'note', 'reason / notes', 'reason/notes', 'reason', 'comments', 'comment'];
+const NOTES_HEADER_NAMES = ['notes', 'note', 'reason / notes', 'reason', 'comments', 'comment'];
+
+// James's real "GBG Chart of Accounts" export used "G/L Code" — punctuation the fixed candidate
+// list above didn't have a literal entry for. Rather than chase every future spelling one at a
+// time, normalise both sides down to bare letters/digits before comparing, so "G/L Code",
+// "G.L. Code" and "gl code" all read the same.
+function normalizeHeader(header: string): string {
+  return header.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+}
 
 function matchesHeader(header: string | undefined, candidates: string[]): boolean {
-  return candidates.includes((header ?? '').trim().toLowerCase());
+  const normalized = normalizeHeader(header ?? '');
+  return candidates.some((c) => normalizeHeader(c) === normalized);
 }
 
 function isKnownTrailingHeader(header: string | undefined): boolean {
