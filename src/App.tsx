@@ -10,6 +10,7 @@ import {
   exportLockedXlsx,
   exportIncrementCsv,
   isChangedSinceLock,
+  exportDiscreteCsvAs,
 } from './gridExport';
 import { exportBlock } from './blockTransfer';
 import { chooseExportFolder, peekExportFolderName, supportsFileSystemAccess } from './exportFolder';
@@ -238,6 +239,46 @@ export default function App() {
   const [showLibraryOverwritePrompt, setShowLibraryOverwritePrompt] = useState(false);
   const [justAddedToLibrary, setJustAddedToLibrary] = useState(false);
   const libraryAddedFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // James's ask: two more entries under "Work on an Existing Taxonomy". GL Analyser doesn't
+  // exist yet — this is purely a placeholder notice. GL Builder points at a 15-year-old client
+  // product being converted for Taxonomy Builder; in the meantime it offers the one piece of
+  // that workflow that's genuinely useful now — exporting the four Cubic Business Model tables
+  // (Division/Location/Function/Chart of Accounts) as a matched set of standard CSVs, each
+  // picked from the Library and named for direct hand-off to GL Builder once it exists.
+  const [showGLAnalyserNotice, setShowGLAnalyserNotice] = useState(false);
+  const [showGLBuilder, setShowGLBuilder] = useState(false);
+  const [glBuilderSuffix, setGlBuilderSuffix] = useState('');
+  const GL_BUILDER_CATEGORIES: { category: LibraryCategory; prefix: string; label: string }[] = [
+    { category: 'Division', prefix: '1_Division', label: 'Division' },
+    { category: 'Location', prefix: '2_Location', label: 'Location' },
+    { category: 'Function', prefix: '3_Function', label: 'Function' },
+    { category: 'Chart of Accounts', prefix: '4_Accounts', label: 'Chart of Accounts' },
+  ];
+  const [glBuilderSelection, setGlBuilderSelection] = useState<Record<string, string>>({});
+  const [glBuilderExporting, setGlBuilderExporting] = useState(false);
+
+  function openGLBuilder() {
+    setGlBuilderSuffix('');
+    setGlBuilderSelection({});
+    setShowGLBuilder(true);
+  }
+
+  async function handleGLBuilderExport() {
+    const suffix = glBuilderSuffix.trim();
+    if (!suffix) return;
+    setGlBuilderExporting(true);
+    for (const { category, prefix } of GL_BUILDER_CATEGORIES) {
+      const entryId = glBuilderSelection[category];
+      if (!entryId) continue;
+      const entry = libraryEntries.find((e) => e.id === entryId);
+      if (!entry) continue;
+      const { cancelled } = await exportDiscreteCsvAs(entry.project, `${prefix} ${suffix}.csv`);
+      if (cancelled) break; // user backed out of the Save dialog — stop rather than firing the rest unattended
+    }
+    setGlBuilderExporting(false);
+    setShowGLBuilder(false);
+  }
 
   function refreshLibrary() {
     listLibraryEntries().then(setLibraryEntries);
@@ -1217,6 +1258,8 @@ export default function App() {
             onChooseExisting={() => setSignOnStage('existing')}
             resumeTitle={loadAutosave()?.title ?? null}
             onResume={handleResumeWorkInProgress}
+            onLoadGLAnalyser={() => setShowGLAnalyserNotice(true)}
+            onOpenGLBuilder={openGLBuilder}
           />
           <footer className="app-footer">
             The ERP Doctor Taxonomy Builder is the Intellectual Property of the ERP Doctor and
@@ -1678,6 +1721,82 @@ export default function App() {
             <div className="confirm-dialog-actions">
               <button type="button" onClick={() => setShowLoadFromLibrary(false)}>
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showGLAnalyserNotice && (
+        <div className="validation-overlay" onClick={() => setShowGLAnalyserNotice(false)}>
+          <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <p>Under development – ERP Doctor Managed Version Available</p>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setShowGLAnalyserNotice(false)}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showGLBuilder && (
+        <div className="validation-overlay" onClick={() => !glBuilderExporting && setShowGLBuilder(false)}>
+          <div className="validation-dialog gl-builder-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <p>
+              Build Cubic Business Model Chart of Accounts – being upgraded -- facility pending --
+              contact us if interested.
+            </p>
+            <p>
+              In the meantime, export the four Cubic Business Model tables as standard CSVs, ready
+              to hand off once GL Builder is available. Pick which Library entry each file comes
+              from, and a name to tell this set apart from any other.
+            </p>
+            <label>
+              File name suffix
+              <input
+                type="text"
+                value={glBuilderSuffix}
+                onChange={(e) => setGlBuilderSuffix(e.target.value)}
+                placeholder="e.g. Client ABC"
+              />
+            </label>
+            {GL_BUILDER_CATEGORIES.map(({ category, prefix, label }) => {
+              const entriesInCategory = libraryEntries.filter((e) => e.category === category);
+              return (
+                <label key={category}>
+                  {prefix} — {label}
+                  <select
+                    value={glBuilderSelection[category] ?? ''}
+                    onChange={(e) => setGlBuilderSelection({ ...glBuilderSelection, [category]: e.target.value })}
+                    disabled={entriesInCategory.length === 0}
+                  >
+                    <option value="">
+                      {entriesInCategory.length === 0 ? '(none in Library yet — skipped)' : '(skip this file)'}
+                    </option>
+                    {entriesInCategory.map((entry) => (
+                      <option key={entry.id} value={entry.id}>
+                        {entry.project.title || '(untitled)'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              );
+            })}
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setShowGLBuilder(false)} disabled={glBuilderExporting}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleGLBuilderExport}
+                disabled={
+                  glBuilderExporting ||
+                  !glBuilderSuffix.trim() ||
+                  GL_BUILDER_CATEGORIES.every(({ category }) => !glBuilderSelection[category])
+                }
+              >
+                {glBuilderExporting ? 'Exporting…' : 'Export'}
               </button>
             </div>
           </div>
