@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #137, 2026-09-18)
+## Current status (as of PR #139, 2026-09-18)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -740,6 +740,43 @@ stale-test failures (unrelated to this change — one from an earlier
 wizard redesign, one from PR #133's "Highly Experienced User" →
 "Experienced User" rename) reproduced identically, confirming no new
 regression. `npx tsc --noEmit`, `npm run lint`, `npm run build` all clean.
+
+### CSV import silently failed on headers with punctuation, e.g. "G/L Code" (PR #139)
+James's own follow-up in the same message as the banner report: importing
+his real Chart of Accounts CSV appeared to do nothing at all — selecting
+the file just reverted the display to whatever was already open, with no
+visible error message. He wanted it fixed and the import re-tried so he
+could see how the software actually performs at the row counts ("1,500
+on a regular basis") he expects to use day to day.
+
+Root cause: his file's trailing metadata column is headed "G/L Code"
+(with a slash). `tryParseDescriptionOnlyCsv`'s fixed candidate-header
+lists only had a literal `"gl code"` entry, no slash variant, so that one
+column failed to match anything recognised, the whole parse attempt was
+rejected, and it fell through to the headerless parser — which then
+failed outright too, since the file's actual content doesn't fit that
+shape either. The resulting generic "no code columns found" error was
+real (not swallowed), just easy to miss before this round's sticky-banner
+fix put `.load-error` inside the always-visible sticky region.
+
+Rather than hardcode "g/l code" as one more literal spelling, `matchesHeader`
+now strips punctuation from both sides before comparing — "G/L Code",
+"G.L. Code" and "gl code" all normalise to the same string — so future
+header variants don't need a one-by-one fix each time.
+
+Verified against James's actual 1209-row file end to end through the real
+Import CSV button (not just the parser directly): parses cleanly, the
+import summary dialog reports "5 code/description levels, 2 suffix
+columns, 1209 rows" instead of silently reverting, and the old G/L
+code/confidence/notes columns land correctly as suffix values on every
+leaf row (screenshot-checked). All 9 existing CSV-import regression test
+files re-run clean — no regression from the normalisation change.
+
+Performance note flagged back to James rather than acted on in this PR:
+the 1209-row import took roughly 32 seconds end to end, and the grid felt
+heavy to interact with immediately afterward — consistent with the
+virtualization concern already raised in an earlier round. Left as a
+separate, explicit follow-up rather than folded into this bug fix.
 
 ### GL Analyser/Builder menu polish and two workflow-level renames (PR #133)
 James's same-evening follow-up on PR #131's GL Analyser/GL Builder entries,
