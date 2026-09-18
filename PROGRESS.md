@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #135, 2026-09-18)
+## Current status (as of PR #137, 2026-09-18)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -702,6 +702,44 @@ redesign — the same root cause already diagnosed for a couple of other
 stale tests earlier this session), not caused by this change; a test
 that does handle that flow correctly passed in full. `npx tsc --noEmit`,
 `npm run lint`, `npm run build` all clean.
+
+### Guidance banner and header stay pinned to the top while scrolling (PR #137)
+James's report: the Simple Taxonomy wizard's guidance banner (just made
+more prominent in PR #135) disappeared once a taxonomy grew past ~21
+rows, and separately, loading a taxonomy directly from the Library still
+showed what he took to be "the old banner." He asked that this be fully
+fixed — "no matter how long the work area" — before anything else in his
+message was addressed.
+
+Root cause was two related gaps rather than one: `.app-header` was
+already `position: sticky` from an earlier round, but the guidance banner
+itself sat in normal document flow below it, so it scrolled out of view
+underneath an already-fixed header as the grid grew. Separately, every
+non-wizard taxonomy type shows its own equivalent help block — a
+`.worksheet-guidance` section — which had never been given PR #135's
+bright-gold treatment; that unstyled block, not a caching issue, is what
+James saw and took for "the old banner" when loading from the Library.
+
+Fixed both at once: the header, the load-error message, and whichever
+guidance block is currently active (the wizard's own banner, or
+`.worksheet-guidance` for everything else) now live together inside one
+shared sticky wrapper (`.app-sticky-top`), so the browser handles the
+combined height automatically and the whole group scrolls as one pinned
+unit regardless of header height at different viewport widths.
+`.worksheet-guidance` was also restyled to match `.guidance-banner`'s
+bright-gold treatment, so every taxonomy type's own top-of-window
+guidance now reads the same way.
+
+Playwright-verified: built a taxonomy past 25 rows, scrolled to the
+bottom, and confirmed the guidance banner stayed within the top ~200px
+of the viewport (screenshot-checked); repeated the same scroll check
+after exiting guidance to confirm `.worksheet-guidance` behaves
+identically. Existing regression suite (item-count warnings, lock
+integrity, library import/export) re-run clean; two known pre-existing
+stale-test failures (unrelated to this change — one from an earlier
+wizard redesign, one from PR #133's "Highly Experienced User" →
+"Experienced User" rename) reproduced identically, confirming no new
+regression. `npx tsc --noEmit`, `npm run lint`, `npm run build` all clean.
 
 ### GL Analyser/Builder menu polish and two workflow-level renames (PR #133)
 James's same-evening follow-up on PR #131's GL Analyser/GL Builder entries,
