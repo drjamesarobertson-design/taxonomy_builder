@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #133, 2026-09-18)
+## Current status (as of PR #135, 2026-09-18)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -674,6 +674,34 @@ further rounds of testing feedback. The tool currently supports, in full:
   piece is specifically the *phonetic* judgement of which letter to pick
   when there's a choice. Left for a follow-up conversation rather than
   guessed at.
+
+### Guided-wizard banner made more prominent (PR #135)
+James's next-morning feedback round, one item marked for immediate action
+(the rest — his own detailed responses on Advanced Complexity's scaling
+plans, the mnemonic-code correction, and status updates on the Function/
+Chart of Accounts templates being refined externally — was discussion,
+replied to in chat, no code change): the Simple Taxonomy guided wizard's
+own step-by-step instructions at the top of the window (Step 1/2/3,
+heading counts, Next Step/Fill Codes/etc.) were a barely-tinted
+translucent wash on the dark page background, easy to miss entirely.
+
+`.guidance-banner` switched to a solid, bright gold block (`#ffdf6b`)
+with a visible amber border and drop shadow, dark navy text for
+contrast, and every piece of text in it sized up — not just the main
+sentence — main instruction text 14.4px → 18.4px (well over the "+2pt
+minimum" asked for), heading-count sub-text and the action buttons
+bumped proportionally too, so the whole block reads as genuinely more
+prominent rather than partially enlarged.
+
+Playwright-verified: background luminance and font-size increase checked
+programmatically, plus a visual screenshot. Three older wizard-flow
+tests timed out during the regression sweep — reproduced identically
+against a clean `main` stash, confirming they're pre-existing stale
+tests (missing a dialog-handling step from an earlier round's wizard
+redesign — the same root cause already diagnosed for a couple of other
+stale tests earlier this session), not caused by this change; a test
+that does handle that flow correctly passed in full. `npx tsc --noEmit`,
+`npm run lint`, `npm run build` all clean.
 
 ### GL Analyser/Builder menu polish and two workflow-level renames (PR #133)
 James's same-evening follow-up on PR #131's GL Analyser/GL Builder entries,
