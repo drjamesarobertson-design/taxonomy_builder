@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #131, 2026-09-18)
+## Current status (as of PR #133, 2026-09-18)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -674,6 +674,36 @@ further rounds of testing feedback. The tool currently supports, in full:
   piece is specifically the *phonetic* judgement of which letter to pick
   when there's a choice. Left for a follow-up conversation rather than
   guessed at.
+
+### GL Analyser/Builder menu polish and two workflow-level renames (PR #133)
+James's same-evening follow-up on PR #131's GL Analyser/GL Builder entries,
+small detail items called out for immediate action (a separate, larger set
+of wizard/template design ideas from the same message was comment-only —
+not implemented, replied to in chat instead):
+
+- Load GL Analyser and GL Builder now read as two discrete elements — a
+  black-text `<h3>` heading (matching "Work on an Existing Taxonomy"'s own
+  heading), then its description paragraph, then the button, in that
+  order. Previously the button itself sat where the heading should have
+  been, with nothing after the description.
+- GL Builder dialog text trimmed and re-split into paragraphs: dropped
+  "ready to hand off once GL Builder is available" and "a name to tell
+  this set apart from any other"; "Pick which Library entry each file
+  comes from" is now its own sentence; added a new paragraph next to the
+  suffix field explaining what it's actually for ("Unique filename
+  suffix to identify the corporate entity to be analysed in GL
+  Builder").
+- Renamed two `WORKFLOW_LEVELS` entries on the landing menu: "Highly
+  Experienced User — No Guidance" → "Experienced User", "Item Master" →
+  "Item / Product Master".
+
+Playwright-verified: heading→description→button DOM order and black
+text colour for both GL entries; the GL Builder dialog's exact new
+paragraph text and structure; both renamed labels present (old ones
+gone) and still opening the standard setup form. Existing GL Builder
+export-flow and workflow-menu regression tests re-run clean (the latter
+updated for the two renamed labels). `npx tsc --noEmit`, `npm run lint`,
+`npm run build` all clean.
 
 ### GL Analyser and GL Builder landing-menu entries (PR #131)
 James's next task, two new entries under "Work on an Existing Taxonomy" on
