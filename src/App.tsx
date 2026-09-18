@@ -1747,11 +1747,9 @@ export default function App() {
               Build Cubic Business Model Chart of Accounts – being upgraded -- facility pending --
               contact us if interested.
             </p>
-            <p>
-              In the meantime, export the four Cubic Business Model tables as standard CSVs, ready
-              to hand off once GL Builder is available. Pick which Library entry each file comes
-              from, and a name to tell this set apart from any other.
-            </p>
+            <p>In the meantime, export the four Cubic Business Model tables as standard CSVs.</p>
+            <p>Pick which Library entry each file comes from.</p>
+            <p>Unique filename suffix to identify the corporate entity to be analysed in GL Builder.</p>
             <label>
               File name suffix
               <input
