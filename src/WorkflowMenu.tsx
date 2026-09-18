@@ -79,24 +79,26 @@ export default function WorkflowMenu({
           </button>
 
           <div className="workflow-level-item">
-            <button type="button" className="workflow-existing-btn" onClick={onLoadGLAnalyser}>
-              Load GL Analyser
-            </button>
+            <h3>Load GL Analyser</h3>
             <p className="workflow-menu-hint">
               Analyse existing Trial Balance and other files to create first draft precision
               Divisions, Locations, Functions and Chart of Accounts Tables from existing data
               tables
             </p>
+            <button type="button" className="workflow-existing-btn" onClick={onLoadGLAnalyser}>
+              Load GL Analyser
+            </button>
           </div>
 
           <div className="workflow-level-item">
-            <button type="button" className="workflow-existing-btn" onClick={onOpenGLBuilder}>
-              GL Builder
-            </button>
+            <h3>GL Builder</h3>
             <p className="workflow-menu-hint">
               Build Cubic Business Model Chart of Accounts – being upgraded -- facility pending --
               contact us if interested
             </p>
+            <button type="button" className="workflow-existing-btn" onClick={onOpenGLBuilder}>
+              GL Builder
+            </button>
           </div>
         </div>
       </div>

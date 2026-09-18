@@ -23,8 +23,8 @@ export type CodeRestriction = (typeof CODE_RESTRICTIONS)[number];
 export const WORKFLOW_LEVELS = [
   'Simple Taxonomy',
   'Advanced Complexity Taxonomy',
-  'Highly Experienced User — No Guidance',
-  'Item Master',
+  'Experienced User',
+  'Item / Product Master',
   'Division',
   'Location',
   'Function',
@@ -48,7 +48,7 @@ export const CUBIC_BUSINESS_MODEL_WORKFLOW_LEVELS: readonly WorkflowLevel[] = [
 // whichever headings need breaking down (not all of them have to); 'coding' reveals exactly as
 // many code columns as description levels actually got used. `guidance` is cleared (undefined)
 // once the wizard is exited or completed — from then on the taxonomy behaves exactly like any
-// other, same as a taxonomy built via "Highly Experienced User" from the start.
+// other, same as a taxonomy built via "Experienced User" from the start.
 export const GUIDANCE_STAGES = ['headings', 'subItems', 'coding'] as const;
 export type GuidanceStage = (typeof GUIDANCE_STAGES)[number];
 
