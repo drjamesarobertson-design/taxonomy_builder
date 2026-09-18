@@ -192,6 +192,21 @@ function exportFilename(project: TaxonomyProject, descriptor: string, extension:
   return `${base} ${descriptor}${versionLabel}.${extension}`;
 }
 
+// GL Builder (James's ask): exports a Library entry's own Discrete CSV under an explicit,
+// caller-supplied filename rather than the project's own auto-versioned one — these are
+// one-off snapshots handed to another piece of software (the Cubic Business Model's four
+// tables), not part of the taxonomy's own save/export version lineage, so `bumpFileVersion`
+// doesn't apply here.
+export async function exportDiscreteCsvAs(
+  project: TaxonomyProject,
+  filename: string,
+): Promise<{ usedFolder: boolean; cancelled: boolean }> {
+  const { rows } = buildDiscreteGrid(project);
+  const csv = rows.map((line) => line.map(csvEscape).join(',')).join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  return saveExportFile(blob, filename);
+}
+
 export async function exportDiscreteCsv(
   project: TaxonomyProject,
   options?: { paddingOverride?: string; excludeDelimiters?: boolean; suffixMode?: 'concatenate' | 'rightAlign' },

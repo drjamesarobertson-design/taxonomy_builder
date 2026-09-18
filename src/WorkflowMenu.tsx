@@ -18,9 +18,22 @@ interface WorkflowMenuProps {
    * strands an open taxonomy with no way back to it. */
   resumeTitle?: string | null;
   onResume?: () => void;
+  /** James's ask: two more entries under "Work on an Existing Taxonomy" pointing at future,
+   * separate pieces of software — GL Analyser (not built yet, this button just explains that)
+   * and GL Builder (the four-CSV Cubic Business Model export James asked for now, a placeholder
+   * for the eventual full software). */
+  onLoadGLAnalyser: () => void;
+  onOpenGLBuilder: () => void;
 }
 
-export default function WorkflowMenu({ onChooseNew, onChooseExisting, resumeTitle, onResume }: WorkflowMenuProps) {
+export default function WorkflowMenu({
+  onChooseNew,
+  onChooseExisting,
+  resumeTitle,
+  onResume,
+  onLoadGLAnalyser,
+  onOpenGLBuilder,
+}: WorkflowMenuProps) {
   return (
     <section className="workflow-menu">
       <h2>What would you like to do?</h2>
@@ -64,6 +77,27 @@ export default function WorkflowMenu({ onChooseNew, onChooseExisting, resumeTitl
           <button type="button" className="workflow-existing-btn" onClick={onChooseExisting}>
             Work on an Existing Taxonomy
           </button>
+
+          <div className="workflow-level-item">
+            <button type="button" className="workflow-existing-btn" onClick={onLoadGLAnalyser}>
+              Load GL Analyser
+            </button>
+            <p className="workflow-menu-hint">
+              Analyse existing Trial Balance and other files to create first draft precision
+              Divisions, Locations, Functions and Chart of Accounts Tables from existing data
+              tables
+            </p>
+          </div>
+
+          <div className="workflow-level-item">
+            <button type="button" className="workflow-existing-btn" onClick={onOpenGLBuilder}>
+              GL Builder
+            </button>
+            <p className="workflow-menu-hint">
+              Build Cubic Business Model Chart of Accounts – being upgraded -- facility pending --
+              contact us if interested
+            </p>
+          </div>
         </div>
       </div>
     </section>
