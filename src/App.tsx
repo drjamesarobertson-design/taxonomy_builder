@@ -1043,6 +1043,7 @@ export default function App() {
         onImport={handleImportLibrary}
       />
       <div className="app">
+      <div className="app-sticky-top">
       <header className="app-header">
         <div className="app-heading-block">
           <h1 className="app-heading">The ERP Doctor Taxonomy Builder</h1>
@@ -1251,6 +1252,32 @@ export default function App() {
 
       {loadError && <p className="load-error">{loadError}</p>}
 
+      {/* James's report: the guided-wizard banner (and the equivalent "worksheet guidance"
+          help block every other taxonomy type shows) scrolled out of view once the grid grew
+          past ~21 rows — it sat in normal document flow below the header, which is itself
+          sticky, so as the page scrolled the banner slid away underneath it. Moved in here,
+          alongside the header, inside one shared sticky region — keeps whichever one is
+          showing genuinely on screen "no matter how long the work area", for every taxonomy
+          type that can show one, not just the Simple Taxonomy wizard. */}
+      {project && project.settings.guidance && (
+        <GuidanceBanner
+          project={project}
+          onSettingsAndRowsChange={handleSettingsAndRowsChange}
+          onExitGuidance={handleExitGuidance}
+        />
+      )}
+      {project && !project.settings.guidance && (
+        <section className={`worksheet-guidance ${guidanceExpanded ? 'expanded' : 'collapsed'}`}>
+          <div className="worksheet-guidance-text">
+            {helpText.worksheetGuidance?.trim() || 'No worksheet guidance has been added yet.'}
+          </div>
+          <button type="button" className="worksheet-guidance-toggle" onClick={() => setGuidanceExpanded((e) => !e)}>
+            {guidanceExpanded ? 'Show less ▴' : 'Show more ▾'}
+          </button>
+        </section>
+      )}
+      </div>
+
       {!project && signOnStage === 'menu' && (
         <>
           <WorkflowMenu
@@ -1341,26 +1368,6 @@ export default function App() {
                   ))}
                 </select>
               </label>
-            </section>
-          )}
-          {project.settings.guidance ? (
-            <GuidanceBanner
-              project={project}
-              onSettingsAndRowsChange={handleSettingsAndRowsChange}
-              onExitGuidance={handleExitGuidance}
-            />
-          ) : (
-            <section className={`worksheet-guidance ${guidanceExpanded ? 'expanded' : 'collapsed'}`}>
-              <div className="worksheet-guidance-text">
-                {helpText.worksheetGuidance?.trim() || 'No worksheet guidance has been added yet.'}
-              </div>
-              <button
-                type="button"
-                className="worksheet-guidance-toggle"
-                onClick={() => setGuidanceExpanded((e) => !e)}
-              >
-                {guidanceExpanded ? 'Show less ▴' : 'Show more ▾'}
-              </button>
             </section>
           )}
           <Grid
