@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #129, 2026-09-17)
+## Current status (as of PR #131, 2026-09-18)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -674,6 +674,50 @@ further rounds of testing feedback. The tool currently supports, in full:
   piece is specifically the *phonetic* judgement of which letter to pick
   when there's a choice. Left for a follow-up conversation rather than
   guessed at.
+
+### GL Analyser and GL Builder landing-menu entries (PR #131)
+James's next task, two new entries under "Work on an Existing Taxonomy" on
+the landing menu, both pointing at future, separate pieces of software —
+his own GL Analyser (planned as a Claude Chat-guided process analysing a
+client's Trial Balance and other existing tables to draft first-cut
+Division/Location/Function/Chart of Accounts tables, not yet built here)
+and GL Builder (a 15-year-old client product being converted for
+Taxonomy Builder, not yet started):
+
+- **Load GL Analyser** — a pure placeholder for now. Button + note text
+  ("Analyse existing Trial Balance and other files to create first draft
+  precision Divisions, Locations, Functions and Chart of Accounts Tables
+  from existing data tables"); clicking it shows "Under development –
+  ERP Doctor Managed Version Available" and does nothing else.
+- **GL Builder** — same "facility pending -- contact us if interested"
+  placeholder note, but James asked for one real piece of it now: export
+  the four Cubic Business Model tables as a matched, correctly-named set
+  of standard CSVs, ready to hand to GL Builder once it exists. Opens a
+  dialog with a filename-suffix field and one Library picker per
+  category (Division/Location/Function/Chart of Accounts); Export saves
+  each selection as `1_Division {suffix}.csv`, `2_Location {suffix}.csv`,
+  `3_Function {suffix}.csv`, `4_Accounts {suffix}.csv` through the
+  browser's normal Save As picker, one at a time (so each file's
+  location is its own choice, same as every other export in the app). A
+  category with nothing in the Library yet shows as a disabled "(none in
+  Library yet — skipped)" option rather than blocking the other three;
+  Export itself stays disabled until a suffix is typed and at least one
+  category has a selection. New `exportDiscreteCsvAs(project, filename)`
+  in `gridExport.ts` — the same Discrete-CSV content `exportDiscreteCsv`
+  already produces, just under an explicit filename instead of the
+  project's own auto-versioned one, since these are one-off snapshots
+  for another piece of software, not part of a taxonomy's own save
+  lineage.
+
+Playwright-verified: both buttons and their note text present on the
+landing menu; GL Analyser's placeholder dialog; GL Builder's Export
+button disabled/enabled states, all 4 files exported with the right
+names and content (including the no-header-row CSV convention from PR
+#129) from 4 seeded Library entries; empty-category degrade-gracefully
+behaviour with a fresh, empty Library; Cancel closing cleanly. Existing
+regression suite (workflow menu, Library export/import/followups,
+resume-work) re-run clean. `npx tsc --noEmit`, `npm run lint`, `npm run
+build` all clean.
 
 ### PR #127 testing follow-ups: mid-type interrupts, orphan hierarchy warning, Lock integrity dialog + childless-heading check, Library name field, Caps Lock, focus restoration, export headers, increment deletions (PR #129)
 James's second testing pass, ten issues:
