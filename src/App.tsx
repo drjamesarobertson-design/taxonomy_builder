@@ -1277,7 +1277,14 @@ export default function App() {
             <input
               ref={csvImportFileInputRef}
               type="file"
-              accept=".csv,text/csv"
+              // James's report: Windows' native file-picker defaulted to a "Custom Files" type
+              // filter with no separate "CSV" option, forcing a manual switch to "All Files".
+              // Mixing an extension with a MIME type (".csv,text/csv") is what usually causes
+              // that — Chromium/Edge can't always resolve "text/csv" to a friendly OS-registered
+              // label, so it falls back to a generic "Custom Files" bucket. Extension-only is the
+              // standard fix, though the exact label/behaviour is entirely the OS/browser's own
+              // and can't be tested from here — worth confirming after the next deploy.
+              accept=".csv"
               style={{ display: 'none' }}
               onChange={handleCsvFileSelected}
             />

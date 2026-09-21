@@ -110,8 +110,15 @@ function spreadSlots(count: number, availableSlots = 8): string[] {
 // run) is left untouched, and its value is excluded from the slots handed to its still-blank
 // siblings so nothing collides with it. Any Other/Miscellaneous sibling in the group is coded
 // separately from — and after — its ordinary siblings, always landing on the last slot the
-// group actually needs ("9" whenever the rest fits in 1-8), regardless of where in the group
-// that row happens to sit.
+// group actually needs ("9" whenever the rest fits in 1-8) — but ONLY when it's actually the
+// convention Section 5 describes: that row physically sitting last in the group already. James's
+// report on a real imported file: two "Other ..." rows sat in the MIDDLE of an 8-row sibling
+// group, not at the end, and got the reserved-high-slot treatment anyway ("9" and "A") — which
+// left ordinary siblings further down the same group with LOWER values ("6", "7"), breaking
+// Section 4.4's hard ascending-order rule. That rule always wins over the "Other near 9"
+// convention, which is cosmetic by comparison — so a group where any Other row isn't already
+// last falls back to one combined, strictly row-order spread across every sibling, ordinary and
+// Other alike, guaranteeing the codes it produces can never violate ascending order.
 function assignLevelCodes(rows: TaxonomyRow[], level: number): TaxonomyRow[] {
   const groups = groupSiblingIndices(rows, level);
   const result = [...rows];
@@ -120,6 +127,28 @@ function assignLevelCodes(rows: TaxonomyRow[], level: number): TaxonomyRow[] {
     const otherIndexSet = new Set(otherIndices);
     const ordinaryIndices = indices.filter((i) => !otherIndexSet.has(i));
     const used = new Set(indices.map((i) => result[i].codes[level]).filter((c) => c));
+
+    const otherTrails =
+      ordinaryIndices.length === 0 ||
+      otherIndices.every((oi) => oi > ordinaryIndices[ordinaryIndices.length - 1]);
+
+    if (!otherTrails) {
+      // Fallback: every sibling, in row order, sharing one spread — no reserved slot, since a
+      // reservation only makes sense when nothing ordinary follows it.
+      const slots = spreadSlots(indices.length);
+      let slotPos = 0;
+      for (const idx of indices) {
+        const row = result[idx];
+        if (row.codes[level]) continue;
+        while (slotPos < slots.length && used.has(slots[slotPos])) slotPos++;
+        const code = slots[slotPos];
+        if (!code) continue;
+        used.add(code);
+        slotPos++;
+        result[idx] = { ...row, codes: row.codes.map((c, i) => (i === level ? code : c)) };
+      }
+      continue;
+    }
 
     const slots = spreadSlots(ordinaryIndices.length);
     let slotPos = 0;

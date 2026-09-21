@@ -1362,6 +1362,27 @@ body.app-dark-theme .taxonomy-meta .purpose {
   cursor: pointer;
 }
 
+/* James's report: on a popup with several buttons, it isn't obvious at a glance which one is
+   the default response — the same one Enter now activates (see App.tsx's global Enter-key
+   listener), always the last button in the dialog, whether that's a single OK/Continue or the
+   forward action in a Cancel/Confirm, No/Yes or Keep/Fix pair. Highlighted here in solid blue
+   with white text so it reads as "the" answer without needing to read every label. Both
+   selectors cover the two shapes a dialog's buttons come in: grouped together in
+   .confirm-dialog-actions, or (a single-button notice) sitting directly in .validation-dialog. */
+.confirm-dialog-actions button:last-of-type,
+.validation-dialog > button:last-of-type {
+  background: #1a56db;
+  color: #fff;
+  border-color: #1a56db;
+  font-weight: 600;
+}
+
+.confirm-dialog-actions button:last-of-type:hover,
+.validation-dialog > button:last-of-type:hover {
+  background: #12409e;
+  border-color: #12409e;
+}
+
 .validation-dialog input[type='text'] {
   display: block;
   width: 100%;
