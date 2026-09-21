@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #141, 2026-09-21)
+## Current status (as of PR #143, 2026-09-21)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -865,6 +865,80 @@ predating an earlier round's "Another Description Column?" redesign)
 reproduced identically against a clean `main` via `git stash`, confirming
 no new regression. `npx tsc --noEmit`, `npm run lint`, `npm run build`
 all clean.
+
+### Auto Code ascending-order/blank-code bugs, default-button colour, CSV accept fix (PR #143)
+James ran Auto Code on a real, large Chart of Accounts import (the same
+GBG file from the CSV-import round) and sent back the resulting project
+file with two genuine Auto Code bugs found in it, plus two smaller polish
+asks from the same testing pass.
+
+- **Ascending-order bug.** `assignLevelCodes` (autoCode.ts) reserves a
+  high slot ("9", or the next free one past it) for an Other/
+  Miscellaneous row, on the assumption — true for a wizard-built
+  taxonomy, where Section 5's own workflow adds "Other" last — that it's
+  always the physically last row in its sibling group. James's real file
+  broke that assumption: two "Other Byproduct..." rows sat in the middle
+  of an 8-row group, with ordinary siblings still below them. They got
+  "9"/"A"; those later ordinary rows got lower ordinary values like "6"
+  — codes reading 2,3,4,5,9,A,6,7 top to bottom, a direct breach of
+  Section 4.4's hard ascending-order rule (his rows 28/29 in the attached
+  file). Fixed by checking whether every Other/Miscellaneous row in a
+  group actually IS last before applying the reserved-slot treatment; if
+  not, the whole group (ordinary and Other together) falls back to one
+  combined, strictly row-order spread instead, so ascending order can
+  never break — the hard rule wins over the "Other near 9" convention,
+  which was only ever cosmetic.
+- **Blank-code bug.** `padCodes` (guidance.ts) left a column genuinely
+  blank, instead of padded, whenever a branch skipped a level entirely —
+  a heading at level 2 with its only child directly at level 4, no
+  level-3 sub-heading in between (his row 32). `fillCodesDown` owns
+  ancestor columns generally, but has no row's own code to carry down
+  for a level nothing was ever entered at in that branch, so neither
+  step ever touched it. Broadened `padCodes` from `i > level` to
+  `i !== level` — safe, since by the time `padCodes` runs, any column
+  `fillCodesDown` could genuinely fill is already non-blank, so the
+  broader condition only ever reaches columns that truly had nothing to
+  inherit, treating a skipped ancestor level the same as a trailing one:
+  "doesn't apply to this row."
+- **Default button now visually obvious.** The same button Enter
+  activates (last round's fix) is now solid blue with white text —
+  James's ask, explicitly scoped small: two CSS rules covering the app's
+  two button-layout shapes (grouped in `.confirm-dialog-actions`, or a
+  lone button directly in `.validation-dialog`), no JS changes, since
+  it's the identical "last button" rule the Enter-key handler already
+  uses.
+- **CSV import file-picker filter.** `accept` narrowed from
+  `.csv,text/csv` to `.csv` — James's report: Windows' native file
+  picker defaulted to an unlabelled "Custom Files" filter with no
+  distinct "CSV" option, forcing a manual switch to "All Files" to see
+  his files at all. Mixing an extension with a MIME type is a known
+  cause of that fallback in Chromium/Edge when the MIME type isn't
+  OS-registered with a friendly label; extension-only is the standard
+  fix — though, like any native OS dialog behaviour, the exact rendering
+  can't be verified from this environment and needs James's confirmation
+  after deploy.
+
+**Reported back to James, not fixed:** the native file picker not
+refreshing to show a file he'd just saved to the folder, even across a
+full close/reopen of Explorer. This is Windows Explorer's own
+directory-listing behaviour — a web page's `<input type="file">` has no
+API to influence what a native OS dialog shows or when it refreshes, so
+there's no code-side lever here at all. Likely an Explorer caching quirk
+(common with synced/cloud-backed folders); flagged back rather than
+guessed at.
+
+Verified: both Auto Code fixes re-run directly against James's actual
+attached file — every row's codes reset to blank (reproducing the
+state right after CSV import, before Auto Code ever ran) and re-coded
+from scratch with the fixed logic — checked programmatically across
+all 1209 rows for both failure modes: zero ascending-order violations,
+zero blank-mid-row codes. Existing autoCode/guidance unit tests updated
+where they asserted the OLD (buggy) "Other always gets 9 regardless of
+position" behaviour as correct, now asserting the corrected,
+row-order-safe behaviour instead. Full existing regression suite
+re-run clean, including both large real-file CSV imports (~2400 and
+~1200 rows) end to end through Auto Code. `npx tsc --noEmit`,
+`npm run lint`, `npm run build` all clean.
 
 ### GL Analyser/Builder menu polish and two workflow-level renames (PR #133)
 James's same-evening follow-up on PR #131's GL Analyser/GL Builder entries,
