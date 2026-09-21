@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #139, 2026-09-18)
+## Current status (as of PR #141, 2026-09-21)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -777,6 +777,94 @@ the 1209-row import took roughly 32 seconds end to end, and the grid felt
 heavy to interact with immediately afterward — consistent with the
 virtualization concern already raised in an earlier round. Left as a
 separate, explicit follow-up rather than folded into this bug fix.
+
+### Enter-to-confirm dialogs, bigger row numbers, insert-row/case fixes, single-code-column mode (PR #141)
+James's next testing round on the two previous fixes — six items, one of
+them ("Audit Taxonomy", an interactive one-error-at-a-time diagnostic
+walkthrough) explicitly asked for as a written specification to review
+before any code, not built this round.
+
+- **Enter now activates a dialog's own default response, everywhere.**
+  Rather than wiring an `onKeyDown` into each of the dozens of individual
+  popups scattered across App.tsx, Grid.tsx, GuidanceBanner.tsx,
+  SettingsModal.tsx, NewTaxonomyForm.tsx, CsvImportConfirm.tsx and
+  LibrarySidebar.tsx, a single document-level `keydown` listener
+  (App.tsx) covers all of them at once — every such dialog shares the
+  `.validation-dialog` class and lists its primary/forward action last
+  (Cancel-then-Confirm, No-then-Yes, Keep-then-Fix, or a single
+  OK/Continue), so Enter clicks whichever button is last. Led by "is a
+  dialog open" rather than "what currently has focus" — several of the
+  simpler one-off notices never explicitly move focus into themselves
+  when they appear, so checking the event target's own ancestry would
+  have missed them entirely; once a dialog is open, Enter is only left
+  alone for a text INPUT/TEXTAREA genuinely inside that dialog (the Find
+  box, the note editor), which already do the right thing with Enter on
+  their own (a newline, or their own form submission) — verified this
+  doesn't double-fire against the Find dialog's native behaviour, and
+  correctly activates a dialog nested inside a `<form>`
+  (NewTaxonomyForm's confirm-settings popup).
+- **Row numbers bigger.** `.row-number-col` 0.8rem → 1.05rem — James's
+  report: too small to read even on a 32in monitor.
+- **Insert Row's own code-inheritance bug fixed.** `createRowInheritingFrom`
+  was copying the row-above's code all the way through its own leaf level
+  (`i <= prevLevel`) rather than stopping short of it (`i < prevLevel`) —
+  the new row's rightmost code column came through pre-filled with an
+  exact duplicate of the row above's code instead of blank, reading as an
+  unnoticed duplicate rather than a code still needing assignment.
+  Ancestor levels (which genuinely share the same parent) still inherit
+  correctly; only the new row's own level now starts blank, matching
+  what James expected to see and manually recode.
+- **New soft warning: a leaf typed in ALL CAPS next to a Proper Case
+  sibling.** James's report: it was possible to type a currently-childless
+  (leaf, per Section 4.3 — meant to be Proper Case) entry in ALL CAPS even
+  when the nearest established sibling at the same level already read
+  Proper Case, usually an accidental Caps Lock rather than "this one will
+  have children." `findLeafCaseMismatch` (guidance.ts) walks back to the
+  nearest sibling at the same level+parent and flags the mismatch — a
+  dismissible notice offering "Keep as ALL CAPS" or "Fix to Proper Case",
+  same pattern (and priority-chain position) as the app's other soft
+  description-side warnings; skipped entirely under Proper Case
+  throughout, same exemption as the existing column-1 caps notice.
+- **New "Limit to Single Code Column" setting**, Simple Taxonomy setup
+  screen. James's realisation, after using Column 1 Code Length for a
+  while: a multi-character column 1 code only ever makes sense for a
+  genuinely flat, single-column list (e.g. Reason Codes) — never for an
+  ordinary multi-level taxonomy, where every level still needs its own
+  single-character column. Previously Column 1 Code Length (and the
+  Proper-Case-throughout option that goes with it once raised above 1)
+  was offered unconditionally on every Simple Taxonomy; now both are
+  hidden until this new checkbox is ticked, and Proper Case is then
+  forced automatically rather than a separate opt-in (a flat list has no
+  headings, so every entry is a leaf by definition). Threaded through
+  `TaxonomySettings.singleCodeColumn` (new field, default false, with a
+  `storage.ts` migration for older project files) into
+  `handleCreateSimpleTaxonomy` and `GuidanceBanner`'s own headings-stage
+  "Next Step": under this setting it calls `beginCoding()` directly
+  rather than the usual `setAnotherColumnPrompt(true)`, since there's no
+  second level ever offered — `beginCoding()`'s own `maxLevelUsed(rows) +
+  1` already lands on exactly one code column with no further change
+  needed.
+
+James's report that the message-bar/font-size fix from the previous
+round had regressed (item 5 of this round's feedback) turned out, on
+re-verification against his exact scenario (a real taxonomy scrolled to
+the bottom, screenshot-checked), to already be working correctly and
+already deployed — likely a stale/cached page on his end rather than a
+real regression; no code change made, reported back to him directly
+rather than duplicating already-shipped work.
+
+Playwright-verified: Enter-key behaviour across three dialog shapes (one
+nested in a `<form>`, one single-OK-button notice, and confirmed no
+interference with the Find dialog's own native submission); the full
+single-code-column flow end to end (checkbox reveals Column 1 Code
+Length, typed case is preserved with no capitalization notice, "Another
+Description Column?" never appears, lands on a genuine one-column grid
+with no second code column). Full existing regression suite re-run
+clean; five pre-existing stale-test failures (an older wizard-flow shape
+predating an earlier round's "Another Description Column?" redesign)
+reproduced identically against a clean `main` via `git stash`, confirming
+no new regression. `npx tsc --noEmit`, `npm run lint`, `npm run build`
+all clean.
 
 ### GL Analyser/Builder menu polish and two workflow-level renames (PR #133)
 James's same-evening follow-up on PR #131's GL Analyser/GL Builder entries,
