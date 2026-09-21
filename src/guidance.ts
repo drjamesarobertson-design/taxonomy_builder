@@ -463,11 +463,22 @@ export function fillCodesDown(rows: TaxonomyRow[]): TaxonomyRow[] {
 // same as the padding already used everywhere else in the app (Section 4.4) — not be left blank,
 // and not inherit some other branch's code the way a blind fill-down would. Only fills genuinely
 // blank cells; never overwrites a real code or an existing padding character.
+//
+// Also covers a column strictly BETWEEN the row's own level and its nearest actual ancestor —
+// a level a branch simply never used (e.g. a heading at level 2 with a child directly at level
+// 4, no level-3 sub-heading in between). James's report: Auto Code left that column genuinely
+// blank rather than padded on a real imported file, because fillCodesDown (which owns ancestor
+// columns generally) has no row's own code to carry down for a level nothing was ever entered
+// at — there's no "real" ancestor value to inherit there, so it's exactly the same "doesn't
+// apply to this row" case as a trailing column, just on the other side of the row's own level.
+// Broadened from `i > level` to `i !== level` for that reason — safe, since by the time this
+// runs any column fillCodesDown COULD fill is already non-blank, so this only ever reaches
+// columns that genuinely had nothing to inherit.
 export function padCodes(rows: TaxonomyRow[], paddingChar: string): TaxonomyRow[] {
   return rows.map((row) => {
     const level = levelOf(row);
     if (level === -1) return row;
-    const codes = row.codes.map((c, i) => (i > level && !c ? paddingChar : c));
+    const codes = row.codes.map((c, i) => (i !== level && !c ? paddingChar : c));
     return { ...row, codes };
   });
 }
