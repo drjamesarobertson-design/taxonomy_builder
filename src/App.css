@@ -1117,9 +1117,11 @@ body.app-dark-theme .taxonomy-meta .purpose {
   min-width: 2.5ch;
   padding: 0 6px;
   background: #eef0f3;
-  color: #666;
+  color: #555;
   text-align: center;
-  font-size: 0.8rem;
+  /* James: too small to read even on a 32in monitor at the old 0.8rem (12.8px) — bumped well
+     past the "+2pt" minimum asked for. */
+  font-size: 1.05rem;
   border-right: 1px solid #d5d8dd;
   user-select: none;
 }
