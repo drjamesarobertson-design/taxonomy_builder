@@ -130,6 +130,15 @@ export interface TaxonomySettings {
    * ever set true via that one prompt; defaults false so every other taxonomy (and every
    * older project file) keeps today's ALL CAPS behaviour unchanged. */
   properCaseOnly: boolean;
+  /** James's realisation, after using Column 1 Code Length for a while: a multi-character
+   * column 1 code only really makes sense for a genuinely FLAT list — a single code/description
+   * column with no further hierarchy at all (e.g. Reason Codes), never for an ordinary
+   * multi-level taxonomy where each level still needs its own single-character column. Set only
+   * via the Simple Taxonomy setup screen's "Limit to Single Code Column" checkbox, which also
+   * forces `properCaseOnly` true (a flat list has no headings, so every entry is a leaf) and
+   * skips the wizard's "Another Description Column?" step entirely. Defaults false so every
+   * other taxonomy (and every older project file) is unaffected. */
+  singleCodeColumn: boolean;
 }
 
 export interface TaxonomyRow {
@@ -181,6 +190,7 @@ export const DEFAULT_SETTINGS: TaxonomySettings = {
   locked: false,
   column1CodeLength: 1,
   properCaseOnly: false,
+  singleCodeColumn: false,
 };
 
 export function createEmptyRow(numLevels: number, suffixes: SuffixField[] = []): TaxonomyRow {

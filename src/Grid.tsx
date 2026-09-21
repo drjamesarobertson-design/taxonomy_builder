@@ -2,9 +2,15 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { TaxonomyRow, TaxonomySettings } from './types';
 import { createEmptyRow, growRowsToLevels } from './types';
 import { getLevelColor } from './colors';
-import { toggleCase } from './caseUtils';
+import { toggleCase, toProperCase } from './caseUtils';
 import { isValidCodeChar, isAllowedByCodeRestriction, hasCodeGap } from './codeValidation';
-import { findOtherNotLastInGroup, isOtherEntryNotLast, isOtherOrMiscellaneousLabel, findOrphanChildRowId } from './guidance';
+import {
+  findOtherNotLastInGroup,
+  isOtherEntryNotLast,
+  isOtherOrMiscellaneousLabel,
+  findOrphanChildRowId,
+  findLeafCaseMismatch,
+} from './guidance';
 import { codeInputId, descInputId } from './domIds';
 import type { TaxonomyBlock } from './blockTransfer';
 import { parseBlockFile } from './blockTransfer';
@@ -205,6 +211,13 @@ export default function Grid({
   // Other/Miscellaneous notices above.
   const [orphanChildWarningRowId, setOrphanChildWarningRowId] = useState<string | null>(null);
   const orphanChildWarnedRef = useRef<Set<string>>(new Set());
+  // James's report: a brand-new, currently-childless entry (a leaf, per Section 4.3 — meant to
+  // be Proper Case) can be typed in ALL CAPS even while its nearest sibling at the same level is
+  // already Proper Case — usually an accidental Caps Lock, not a deliberate choice. Same
+  // warned-once-until-fixed pattern as the other soft description warnings above
+  // (findLeafCaseMismatch, guidance.ts).
+  const [leafCaseMismatchWarningRowId, setLeafCaseMismatchWarningRowId] = useState<string | null>(null);
+  const leafCaseMismatchWarnedRef = useRef<Set<string>>(new Set());
   // James's report: the description item-count warning (below, updateDescription) used to pop
   // up mid-keystroke — the instant a blank->non-blank description pushed its segment to 7+ —
   // which stole focus after just the first character and forced a click back into the cell to
@@ -1191,12 +1204,14 @@ export default function Grid({
     const newRow = createEmptyRow(numLevels, settings.suffixes);
     if (previous) {
       const prevLevel = levelOf(previous);
-      // Only inherit the ancestor portion of the previous row's codes — up to and including
-      // its own level — not any trailing padding it happens to carry (e.g. as a leaf, per
-      // Section 5's auto-pad). That padding reflected the previous row having no children of
-      // its own at the time; a brand-new row shouldn't start pre-padded before it even has a
-      // description, let alone before anyone knows whether it turns out to be that row's child.
-      newRow.codes = previous.codes.map((c, i) => (prevLevel === -1 || i <= prevLevel ? c : ''));
+      // Only inherit the ANCESTOR portion of the previous row's codes — strictly shallower than
+      // its own level — not the previous row's own leaf code, and not any trailing padding it
+      // happens to carry (e.g. as a leaf, per Section 5's auto-pad). James's report: the new
+      // row's own rightmost code column was coming through pre-filled with a copy of the row
+      // above's code instead of blank, which reads as an unnoticed duplicate rather than a code
+      // that still needs assigning — ancestor levels genuinely share the same parent and are
+      // safe to inherit, but the new row's own level always needs a fresh, distinct code.
+      newRow.codes = previous.codes.map((c, i) => (prevLevel === -1 || i < prevLevel ? c : ''));
     }
     return newRow;
   }
@@ -2946,6 +2961,26 @@ export default function Grid({
                           capsNoticeShownRef.current = true;
                           openDescDialogDeferred(() => setShowCapsNotice(true));
                         }
+                        // James's report: a currently-childless (leaf) entry typed in ALL CAPS
+                        // while its nearest sibling at the same level already reads Proper Case —
+                        // likely an accidental Caps Lock rather than "this one will have
+                        // children". Skipped entirely under Proper Case throughout, same as the
+                        // other case-related notices.
+                        const leafCaseMismatchRowId = properCaseOnly ? null : findLeafCaseMismatch(rows, row.id);
+                        const leafCaseMismatchFiredThisBlur =
+                          !itemCountFiredThisBlur &&
+                          !orphanFiredThisBlur &&
+                          !capsNoticeFiredThisBlur &&
+                          !!leafCaseMismatchRowId &&
+                          !leafCaseMismatchWarnedRef.current.has(leafCaseMismatchRowId);
+                        if (leafCaseMismatchRowId) {
+                          if (leafCaseMismatchFiredThisBlur) {
+                            leafCaseMismatchWarnedRef.current.add(leafCaseMismatchRowId);
+                            openDescDialogDeferred(() => setLeafCaseMismatchWarningRowId(leafCaseMismatchRowId));
+                          }
+                        } else {
+                          leafCaseMismatchWarnedRef.current.delete(row.id);
+                        }
                         // A later sibling being typed just now is exactly what can turn an
                         // EARLIER "Other" row into a violation without that earlier cell ever
                         // being touched again, so the whole sibling group is re-checked here,
@@ -2954,6 +2989,7 @@ export default function Grid({
                         const toWarn =
                           !itemCountFiredThisBlur &&
                           !orphanFiredThisBlur &&
+                          !leafCaseMismatchFiredThisBlur &&
                           groupViolators.find((id) => !otherNotLastWarnedRef.current.has(id));
                         if (toWarn) {
                           otherNotLastWarnedRef.current.add(toWarn);
@@ -2965,6 +3001,7 @@ export default function Grid({
                           !itemCountFiredThisBlur &&
                           !orphanFiredThisBlur &&
                           !capsNoticeFiredThisBlur &&
+                          !leafCaseMismatchFiredThisBlur &&
                           !toWarn &&
                           column1CodeLength > 1 &&
                           level === 0 &&
@@ -2989,6 +3026,7 @@ export default function Grid({
                           !orphanFiredThisBlur &&
                           !toWarn &&
                           !capsNoticeFiredThisBlur &&
+                          !leafCaseMismatchFiredThisBlur &&
                           !multiCharOrderNoticeFiredThisBlur
                         ) {
                           otherEncounteredWarnedRef.current.add(row.id);
@@ -3582,6 +3620,52 @@ export default function Grid({
             >
               OK
             </button>
+          </div>
+        </div>
+      )}
+
+      {leafCaseMismatchWarningRowId && (
+        <div
+          className="validation-overlay"
+          onClick={() => {
+            setLeafCaseMismatchWarningRowId(null);
+            restoreFocusAfterDescDialog();
+          }}
+        >
+          <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
+            <p>
+              This entry is in ALL CAPS, but the entry above it at this level is in Proper Case —
+              entries with no children of their own are normally Proper Case; only entries with
+              children go in ALL CAPS.
+            </p>
+            <div className="confirm-dialog-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setLeafCaseMismatchWarningRowId(null);
+                  restoreFocusAfterDescDialog();
+                }}
+              >
+                Keep as ALL CAPS
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const rowId = leafCaseMismatchWarningRowId;
+                  onChange(
+                    rows.map((row) =>
+                      row.id === rowId
+                        ? { ...row, descriptions: row.descriptions.map((d) => (d ? toProperCase(d) : d)) }
+                        : row,
+                    ),
+                  );
+                  setLeafCaseMismatchWarningRowId(null);
+                  restoreFocusAfterDescDialog();
+                }}
+              >
+                Fix to Proper Case
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -78,6 +78,14 @@ export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExi
     );
   }
 
+  // James's ask: a taxonomy limited to a single code column is a genuinely flat list (Reason
+  // Codes, say) — there's no second level to ever offer, so headings go straight to coding
+  // rather than asking "Another Description Column?" first.
+  function proceedPastHeadings() {
+    if (project.settings.singleCodeColumn) beginCoding();
+    else setAnotherColumnPrompt(true);
+  }
+
   function handleHeadingsNext() {
     const count = countHeadings(rows);
     if (count === 0) return;
@@ -86,12 +94,12 @@ export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExi
         message: `You have ${count} heading${count === 1 ? '' : 's'} — recommended 5 to 9. Continue anyway?`,
         onConfirm: () => {
           setConfirmOverride(null);
-          setAnotherColumnPrompt(true);
+          proceedPastHeadings();
         },
       });
       return;
     }
-    setAnotherColumnPrompt(true);
+    proceedPastHeadings();
   }
 
   function beginCoding() {

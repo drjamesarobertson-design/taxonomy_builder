@@ -68,6 +68,43 @@ export default function App() {
   useEffect(() => {
     if (project) saveAutosave(project);
   }, [project]);
+
+  // James's ask: every popup/dialog in the app (there are dozens, scattered across this file,
+  // Grid.tsx, GuidanceBanner.tsx, SettingsModal.tsx, NewTaxonomyForm.tsx, CsvImportConfirm.tsx
+  // and LibrarySidebar.tsx) should accept Enter for its own default response, not just a mouse
+  // click. Rather than wiring an onKeyDown into each one individually, this single listener
+  // covers all of them at once: every such dialog shares the "validation-dialog" class and lists
+  // its buttons with the primary/forward action last (Cancel-then-Confirm, No-then-Yes,
+  // Keep-then-Fix, or a single OK/Continue), so Enter activates whichever button is last.
+  //
+  // Led by "is a dialog open" rather than "what currently has focus": several of these dialogs
+  // (the simpler one-off notices especially) never explicitly move focus into themselves when
+  // they appear, so focus can easily still be sitting on whatever grid cell or button was active
+  // just before — checking the target's own ancestry for a dialog would miss those entirely.
+  // Once a dialog is open, Enter is only left alone for a text INPUT/TEXTAREA that's genuinely
+  // INSIDE that dialog (the Find box, the note editor) — those already do the right thing with
+  // Enter on their own, whether that's a newline or their own form submission. A dialog that
+  // calls stopPropagation on its own keydown (Add Columns' picker, deliberately, to stop Enter
+  // doing anything while choosing) never reaches this handler at all, same as it never reaches
+  // any other ancestor listener.
+  useEffect(() => {
+    function handleGlobalEnterKey(e: KeyboardEvent) {
+      if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+      const dialog = document.querySelector('.validation-dialog');
+      if (!dialog) return;
+      const target = e.target as HTMLElement | null;
+      if (target && dialog.contains(target) && (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT')) return;
+      const buttons = dialog.querySelectorAll<HTMLButtonElement>('button:not(:disabled)');
+      const defaultButton = buttons[buttons.length - 1];
+      if (defaultButton) {
+        e.preventDefault();
+        defaultButton.click();
+      }
+    }
+    document.addEventListener('keydown', handleGlobalEnterKey);
+    return () => document.removeEventListener('keydown', handleGlobalEnterKey);
+  }, []);
+
   const [loadError, setLoadError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [autoFocusFirstRow, setAutoFocusFirstRow] = useState(false);
@@ -471,11 +508,13 @@ export default function App() {
     maxDescriptionLength: number,
     column1CodeLength: number,
     properCaseOnly: boolean,
+    singleCodeColumn: boolean,
   ) {
     const newProject = createProject(title, tableName, purpose, maxDescriptionLength, [], ' ', 1);
     newProject.settings.guidance = { level: 'Simple Taxonomy', stage: 'headings' };
     newProject.settings.column1CodeLength = column1CodeLength;
     newProject.settings.properCaseOnly = properCaseOnly;
+    newProject.settings.singleCodeColumn = singleCodeColumn;
     // James's report: the wizard's own Code Restriction prompt (GuidanceBanner) preselects
     // whatever the taxonomy already has, which was silently the global default "Alpha Numeric
     // with All Alpha" — not the sensible starting point for auto-suggested mnemonic codes drawn

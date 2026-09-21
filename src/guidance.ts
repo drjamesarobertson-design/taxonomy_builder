@@ -10,6 +10,7 @@
 
 import type { CodeRestriction, TaxonomyRow } from './types';
 import { isAllowedByCodeRestriction } from './codeValidation';
+import { isAllCaps } from './caseUtils';
 
 function levelOf(row: TaxonomyRow): number {
   for (let i = row.descriptions.length - 1; i >= 0; i--) {
@@ -141,6 +142,41 @@ export function findOrphanChildRowId(rows: TaxonomyRow[], rowId: string): string
     const l = levelOf(rows[i]);
     if (l === -1) continue;
     return l > level + 1 ? rowId : null;
+  }
+  return null;
+}
+
+/** James's report: it's possible to type a brand-new, currently-childless entry — a leaf, per
+ * Section 4.3, and so meant to be Proper Case — in ALL CAPS, even when the nearest established
+ * sibling at the same level already reads Proper Case. Likely an accidental Caps Lock rather
+ * than a deliberate "this one will have children" choice, so this is a soft, dismissible warning
+ * (Section 6.7's "inform, never block"), not a hard rule: the row might genuinely grow children
+ * of its own later, at which point ALL CAPS becomes the correct case again. Column 1 is excluded
+ * — it already force-uppercases as the user types, so this can never come up there. Returns the
+ * row's own id when this looks like a mismatch, else null. */
+export function findLeafCaseMismatch(rows: TaxonomyRow[], rowId: string): string | null {
+  const idx = rows.findIndex((r) => r.id === rowId);
+  if (idx === -1) return null;
+  const level = levelOf(rows[idx]);
+  if (level <= 0) return null;
+  const text = (rows[idx].descriptions[level] ?? '').trim();
+  if (!text || !isAllCaps(text)) return null;
+
+  // Only relevant while this row is still a leaf (no children yet) — an ALL CAPS heading that
+  // already has children underneath it is exactly right per Section 4.3, nothing to flag.
+  let end = idx + 1;
+  while (end < rows.length && levelOf(rows[end]) > level) end++;
+  if (end > idx + 1) return null;
+
+  const parent = immediateParentIndex(rows, idx);
+  for (let i = idx - 1; i >= 0; i--) {
+    const l = levelOf(rows[i]);
+    if (l === -1) continue;
+    if (l < level) return null; // walked past this sibling group's own parent — no prior sibling
+    if (l === level && immediateParentIndex(rows, i) === parent) {
+      const siblingText = (rows[i].descriptions[level] ?? '').trim();
+      return siblingText && !isAllCaps(siblingText) ? rowId : null;
+    }
   }
   return null;
 }
