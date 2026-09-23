@@ -35,7 +35,8 @@ import Logo from './Logo';
 import LibrarySidebar from './LibrarySidebar';
 import WorkflowMenu from './WorkflowMenu';
 import Login from './Login';
-import { getStoredAuthEmail, clearAuthEmail } from './auth';
+import ResetPassword from './ResetPassword';
+import { getSession, onAuthStateChange, signOut } from './auth';
 import {
   LIBRARY_CATEGORIES,
   CUBIC_BUSINESS_MODEL_LIBRARY_CATEGORIES,
@@ -52,10 +53,32 @@ import { bumpFileVersion } from './fileVersion';
 import './App.css';
 
 export default function App() {
-  // Sign-on gate (see auth.ts for what this can and can't actually guard). Remembered in this
-  // browser's localStorage so it isn't asked on every visit — only Log Out or clearing site
-  // data forgets it.
-  const [authedEmail, setAuthedEmail] = useState<string | null>(() => getStoredAuthEmail());
+  // Sign-on gate — real accounts via Supabase (auth.ts), which persists its own session in
+  // this browser (survives reloads; only Log Out or clearing site data forgets it). The
+  // initial session check is async, so `authChecked` gates rendering Login vs. the app itself
+  // to avoid flashing the login screen for a split second on every reload before the existing
+  // session is confirmed. `passwordRecovery` is set when the auth listener sees a
+  // PASSWORD_RECOVERY event — the user just clicked a "reset your password" email link — and
+  // shows the Set New Password screen instead of either Login or the ordinary app.
+  const [authedEmail, setAuthedEmail] = useState<string | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
+  useEffect(() => {
+    getSession().then((session) => {
+      setAuthedEmail(session?.user.email ?? null);
+      setAuthChecked(true);
+    });
+    const {
+      data: { subscription },
+    } = onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setPasswordRecovery(true);
+        return;
+      }
+      setAuthedEmail(session?.user.email ?? null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
   const [project, setProject] = useState<TaxonomyProject | null>(null);
   // The sign-on landing menu (WorkflowMenu) shows first with no taxonomy open; picking either
   // path reveals today's existing screens underneath. `chosenWorkflowLevel` is purely a label
@@ -1160,10 +1183,14 @@ export default function App() {
   // state) already has the latest state, and "Resume Work in Progress" brings it back.
   function handleLogOut() {
     handleBackToMenu();
-    clearAuthEmail();
+    signOut();
     setAuthedEmail(null);
   }
 
+  if (!authChecked) return null;
+  if (passwordRecovery) {
+    return <ResetPassword onDone={() => setPasswordRecovery(false)} />;
+  }
   if (!authedEmail) {
     return <Login onSuccess={setAuthedEmail} />;
   }
