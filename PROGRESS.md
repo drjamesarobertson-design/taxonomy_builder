@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #147, 2026-09-23)
+## Current status (as of PR #149, 2026-09-23)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -1050,6 +1050,56 @@ leaf now preserves "ERP" (was "Erp"); the leaf-case-mismatch dialog's
 "Fix to Proper Case" on an ALL-CAPS "HANDLE ERP REQUESTS AGAIN" leaf
 does the same. Full existing regression suite re-run clean. `npx tsc
 --noEmit`, `npm run lint`, `npm run build` all clean.
+
+### Padding default, legacy-load migration bug, Format Descriptions range/entire scope (PR #149)
+James's next round of testing, from a real attached Function Master
+file — three separate reports:
+
+- **Padding-substitution export dialog defaulted to the wrong option.**
+  The dialog's own text argues strongly against using "0" instead of
+  "." — but "Replace with '0'" was the last (Enter-activated, blue
+  default) button. Swapped the order so "Keep '.'" — the actual
+  recommendation — is last and default instead.
+- **Root cause of "Format Descriptions does not change it" and "the
+  button does not register, the pop-up remains."** A taxonomy reopened
+  via "Resume Work in Progress" (autosave) or "Load from Library" was
+  carrying `settings.customAbbreviations` as `undefined` whenever it had
+  been saved before that field existed — `loadAutosave` (storage.ts) and
+  `listLibraryEntries` (library.ts) were direct reads that never ran the
+  same `migrateProjectData` backfill "Load from File" already applies.
+  Any code that spreads that field — Toggle Case, the leaf-case-mismatch
+  "Fix to Proper Case", Format Descriptions itself — threw an uncaught
+  exception the instant it ran, which from the user's side looked
+  exactly like "the button doesn't do anything and the dialog won't
+  close." Fixed at the source: both load paths now run
+  `migrateProjectData` before the project reaches the live app, matching
+  Load from File's own precedent.
+- **"Format Descriptions needs to prompt 'Format Selected Range' as
+  default and 'Format Entire Worksheet' with a confirmation for
+  entire."** Previously the button only ever formatted the whole
+  taxonomy. Grid.tsx now reports its own internal selection up to
+  App.tsx via a new `onSelectionChange` prop (App.tsx has no other
+  visibility into it); `formatDescriptions.ts`'s `applyFormatDescriptions`
+  and `collectUnknownAbbreviationWords` both take an optional
+  `scopeRowIds` filter. The mode-picker dialog now offers "Format Entire
+  Worksheet" and "Format Selected Range" (last/default, disabled with
+  nothing selected) instead of one "Format Descriptions" button; entire-
+  worksheet always shows its own separate confirmation dialog first. A
+  disabled default button no longer reads as the blue "ready to go"
+  answer (App.css) — it already couldn't be Enter-activated
+  (`button:not(:disabled)`), now it looks the part too.
+
+Playwright-verified: padding dialog button order and blue-default
+styling; a legacy-shape (pre-`customAbbreviations`) project injected
+directly into the autosave slot loads via "Resume Work in Progress"
+with zero uncaught page errors, and both Toggle Case and Format
+Descriptions (Entire Worksheet, with its confirmation) run cleanly
+against it; "Format Selected Range" leaves unselected rows untouched
+while "Format Entire Worksheet" reaches everything, confirmation dialog
+included. Full existing regression suite re-run clean, including the
+previous two rounds' own Format Descriptions and ERP-case-fix scripts,
+updated for this round's new button labels. `npx tsc --noEmit`,
+`npm run lint`, `npm run build` all clean.
 
 ### GL Analyser/Builder menu polish and two workflow-level renames (PR #133)
 James's same-evening follow-up on PR #131's GL Analyser/GL Builder entries,
