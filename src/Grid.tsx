@@ -2141,12 +2141,14 @@ export default function Grid({
     setContextMenu(null);
   }
 
-  // Right-click a code cell → "Import Block": stashes that cell as the anchor for wherever the
-  // block's own top row should land, then opens a hidden file picker. The rest of the flow
-  // (handleBlockFileSelected → beginImport → continueImportAfterColumns → finalizeImport) runs
-  // off pendingImport once a file is chosen.
+  // Right-click a code OR description cell → "Import Block": stashes that cell's row/level as
+  // the anchor for wherever the block's own top row should land, then opens a hidden file
+  // picker. Available on both kinds (matching Export Block, which is also on both menus) since
+  // a description cell and its matching code cell at the same row/level identify the same
+  // anchor. The rest of the flow (handleBlockFileSelected → beginImport →
+  // continueImportAfterColumns → finalizeImport) runs off pendingImport once a file is chosen.
   function handleImportBlockMenuClick() {
-    if (!contextMenu || contextMenu.kind !== 'code') return;
+    if (!contextMenu) return;
     importBlockAnchorRef.current = { rowId: contextMenu.rowId, level: contextMenu.level };
     setContextMenu(null);
     importBlockFileInputRef.current?.click();
@@ -3340,6 +3342,12 @@ export default function Grid({
                   Export Block
                 </li>
               )}
+              <li
+                className={selection && selection.rowIds.size > 0 ? undefined : 'context-menu-separator'}
+                onClick={handleImportBlockMenuClick}
+              >
+                Import Block
+              </li>
               <li className="context-menu-separator" onClick={handleOpenFind}>
                 Find…
               </li>
