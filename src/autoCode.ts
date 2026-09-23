@@ -196,3 +196,20 @@ export function autoCodeAlphaNumeric(rows: TaxonomyRow[], paddingChar: string): 
   result = padCodes(result, paddingChar);
   return result;
 }
+
+/** James's ask: a right-click "Fill Missing Codes" on a single code column, for the everyday
+ * case Auto Code (above) was really built for but is awkward to reach for — a manual entry,
+ * Insert Row, Promote or Demote has left a few rows' own-level code blank, mid-taxonomy, while
+ * the rest of the column is already coded. Same three-step pipeline as Auto Code, just scoped
+ * to the one column that was actually right-clicked rather than sweeping every level: generate
+ * a gap-coded sequence for this column's blank cells only (assignLevelCodes already fills
+ * around whatever codes already exist in each sibling group, not just at the group's own end),
+ * then carry ancestor codes down and pad the trailing columns for the whole taxonomy — both of
+ * those are already safe/idempotent, touching only genuinely blank cells, so running them
+ * unscoped here doesn't risk anything outside the column that was actually asked for. */
+export function fillMissingCodesAtLevel(rows: TaxonomyRow[], level: number, paddingChar: string): TaxonomyRow[] {
+  let result = assignLevelCodes(rows, level);
+  result = fillCodesDown(result);
+  result = padCodes(result, paddingChar);
+  return result;
+}

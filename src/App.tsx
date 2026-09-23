@@ -17,6 +17,8 @@ import { chooseExportFolder, peekExportFolderName, supportsFileSystemAccess } fr
 import { hasBlankCodeGaps, findLockIntegrityIssues } from './codeValidation';
 import { AUTO_CODE_TYPES, IMPLEMENTED_AUTO_CODE_TYPES, autoCodeAlphaNumeric } from './autoCode';
 import type { AutoCodeType } from './autoCode';
+import { FORMAT_MODES, applyFormatDescriptions, collectUnknownAbbreviationWords } from './formatDescriptions';
+import type { FormatMode } from './formatDescriptions';
 import { loadHelpText } from './helpText';
 import type { HelpTextMap } from './helpText';
 import NewTaxonomyForm from './NewTaxonomyForm';
@@ -230,6 +232,20 @@ export default function App() {
   // rebuilding later — only one is actually implemented so far (autoCode.ts).
   const [showAutoCode, setShowAutoCode] = useState(false);
   const [autoCodeType, setAutoCodeType] = useState<AutoCodeType>(AUTO_CODE_TYPES[0]);
+
+  // Format Descriptions (James's ask): bulk ALL CAPS / Proper Case cleanup for scrappy input,
+  // scoped by `formatMode`, with an interactive "keep this in caps?" queue for any ALL-CAPS
+  // word Format Descriptions doesn't already recognise as an abbreviation — mirrors
+  // GuidanceBanner's own bandSuggestions queue: one prompt at a time, `queue` shrinks by one
+  // per answer, `accepted` collects the words to add to this taxonomy's own custom
+  // abbreviation library once the whole queue is resolved.
+  const [showFormatDescriptions, setShowFormatDescriptions] = useState(false);
+  const [formatMode, setFormatMode] = useState<FormatMode>(FORMAT_MODES[2]);
+  const [abbreviationPrompt, setAbbreviationPrompt] = useState<{
+    mode: FormatMode;
+    queue: string[];
+    accepted: string[];
+  } | null>(null);
 
   // Export folder (Section 8-adjacent convenience James asked for): on Chromium browsers,
   // Save/Export can write straight into a folder picked once via the File System Access API,
@@ -1017,6 +1033,53 @@ export default function App() {
     setShowAutoCode(false);
   }
 
+  function handleFormatDescriptionsClick() {
+    if (!project) return;
+    // Bulk, whole-table content operation — same precedent as Auto Code / CSV Import: blocked
+    // outright while locked rather than threading protected-row guards through a bulk rewrite.
+    if (project.settings.locked) {
+      alert('This taxonomy is locked and descriptions cannot be bulk-formatted. Unlock it first if this is genuinely necessary.');
+      return;
+    }
+    setFormatMode(FORMAT_MODES[2]);
+    setShowFormatDescriptions(true);
+  }
+
+  // Runs the actual rewrite and persists any newly-accepted abbreviations into this taxonomy's
+  // settings, so the next Format Descriptions run (and Format Descriptions itself, mid-queue)
+  // already knows them.
+  function runFormatDescriptions(mode: FormatMode, customAbbreviations: string[]) {
+    if (!project) return;
+    const newRows = applyFormatDescriptions(project.rows, mode, customAbbreviations);
+    handleSettingsAndRowsChange({ ...project.settings, customAbbreviations }, newRows);
+  }
+
+  function handleFormatDescriptionsGenerate() {
+    if (!project) return;
+    setShowFormatDescriptions(false);
+    const unknown = collectUnknownAbbreviationWords(project.rows, formatMode, project.settings.customAbbreviations);
+    if (unknown.length === 0) {
+      runFormatDescriptions(formatMode, project.settings.customAbbreviations);
+      return;
+    }
+    setAbbreviationPrompt({ mode: formatMode, queue: unknown, accepted: [] });
+  }
+
+  // Answers one "Keep 'XYZ' in caps?" prompt at a time; once the queue is empty, runs the
+  // formatter with the seed list plus this taxonomy's existing custom abbreviations plus
+  // whichever words were accepted this round.
+  function resolveAbbreviationPrompt(accept: boolean) {
+    if (!abbreviationPrompt || !project) return;
+    const [word, ...rest] = abbreviationPrompt.queue;
+    const accepted = accept ? [...abbreviationPrompt.accepted, word] : abbreviationPrompt.accepted;
+    if (rest.length === 0) {
+      setAbbreviationPrompt(null);
+      runFormatDescriptions(abbreviationPrompt.mode, [...project.settings.customAbbreviations, ...accepted]);
+    } else {
+      setAbbreviationPrompt({ ...abbreviationPrompt, queue: rest, accepted });
+    }
+  }
+
   function handleNewTaxonomy() {
     if (project && dirty && !confirm('Discard the current taxonomy and start a new one?')) return;
     setProject(null);
@@ -1203,6 +1266,15 @@ export default function App() {
             {project && (
               <button type="button" onClick={handleAutoCodeClick} title="Auto-fill blank codes throughout the taxonomy">
                 Auto Code
+              </button>
+            )}
+            {project && (
+              <button
+                type="button"
+                onClick={handleFormatDescriptionsClick}
+                title="Clean up scrappy capitalisation — ALL CAPS headings, Proper Case posting-level entries"
+              >
+                Format Descriptions
               </button>
             )}
             {project && (
@@ -1463,6 +1535,53 @@ export default function App() {
               </button>
               <button type="button" onClick={handleAutoCodeGenerate}>
                 Generate Codes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showFormatDescriptions && (
+        <div className="validation-overlay" onClick={() => setShowFormatDescriptions(false)}>
+          <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
+            <p>Choose what Format Descriptions should clean up:</p>
+            <select value={formatMode} onChange={(e) => setFormatMode(e.target.value as FormatMode)}>
+              {FORMAT_MODES.map((mode) => (
+                <option key={mode} value={mode}>
+                  {mode}
+                </option>
+              ))}
+            </select>
+            <p className="csv-import-summary">
+              Recognised abbreviations (ERP, CoA, etc.) keep their own casing rather than being
+              Proper-Cased. If an ALL-CAPS word isn't recognised, you'll be asked whether to keep
+              it in caps.
+            </p>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setShowFormatDescriptions(false)}>
+                Cancel
+              </button>
+              <button type="button" onClick={handleFormatDescriptionsGenerate}>
+                Format Descriptions
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {abbreviationPrompt && (
+        <div className="validation-overlay">
+          <div className="validation-dialog">
+            <p>
+              Keep "{abbreviationPrompt.queue[0]}" in capitals? It isn't in this taxonomy's list of
+              recognised abbreviations yet.
+            </p>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => resolveAbbreviationPrompt(false)}>
+                No — Proper Case It
+              </button>
+              <button type="button" onClick={() => resolveAbbreviationPrompt(true)}>
+                Yes — Keep in Caps
               </button>
             </div>
           </div>

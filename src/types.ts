@@ -139,6 +139,12 @@ export interface TaxonomySettings {
    * skips the wizard's "Another Description Column?" step entirely. Defaults false so every
    * other taxonomy (and every older project file) is unaffected. */
   singleCodeColumn: boolean;
+  /** "Format Descriptions" (James's ask): abbreviations this taxonomy's user has confirmed keep
+   * their own exact casing (e.g. "CoA") when Format Descriptions Proper-Cases a description,
+   * on top of the built-in seed list (abbreviations.ts's DEFAULT_ABBREVIATIONS). Grows one entry
+   * at a time as the user answers "keep this in caps?" prompts; defaults to [] so every older
+   * project file behaves exactly as before. */
+  customAbbreviations: string[];
 }
 
 export interface TaxonomyRow {
@@ -191,6 +197,7 @@ export const DEFAULT_SETTINGS: TaxonomySettings = {
   column1CodeLength: 1,
   properCaseOnly: false,
   singleCodeColumn: false,
+  customAbbreviations: [],
 };
 
 export function createEmptyRow(numLevels: number, suffixes: SuffixField[] = []): TaxonomyRow {

@@ -77,6 +77,9 @@ export function migrateProjectData(data: TaxonomyProject): TaxonomyProject {
   // Older files predate the "Limit to Single Code Column" setup option — default to false,
   // matching every taxonomy's ordinary multi-level behaviour before this existed.
   if (typeof settings.singleCodeColumn !== 'boolean') settings.singleCodeColumn = false;
+  // Older files predate Format Descriptions' custom abbreviation library — default to none,
+  // matching the seed-list-only behaviour before this existed.
+  if (!Array.isArray(settings.customAbbreviations)) settings.customAbbreviations = [];
   const project = data as unknown as Record<string, unknown>;
   if (typeof project.fileVersions !== 'object' || project.fileVersions === null) {
     project.fileVersions = {};
