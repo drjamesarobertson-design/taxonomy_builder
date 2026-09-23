@@ -63,7 +63,22 @@ export default function App() {
   const [authedEmail, setAuthedEmail] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [passwordRecovery, setPasswordRecovery] = useState(false);
+  // Automated testing hook, dev builds only: Supabase now owns real sign-on, but the sandboxed
+  // environment this is developed in has no network path to Supabase's own domain (a hard
+  // gateway policy, confirmed via the proxy's own status endpoint) — so every Playwright test
+  // of the REST of the app (Grid, exports, etc.) would otherwise be unable to get past the
+  // login screen at all. `import.meta.env.DEV` is always false in a production build (`vite
+  // build`), so this can never activate on the deployed site regardless of URL — it also
+  // requires the explicit query param, so an ordinary `npm run dev` session still goes through
+  // real Supabase login unless a test script deliberately asks to skip it.
+  const devAuthBypass =
+    import.meta.env.DEV && new URLSearchParams(window.location.search).get('test-bypass-auth') === '1';
   useEffect(() => {
+    if (devAuthBypass) {
+      setAuthedEmail('dev-test@local');
+      setAuthChecked(true);
+      return;
+    }
     getSession().then((session) => {
       setAuthedEmail(session?.user.email ?? null);
       setAuthChecked(true);
@@ -78,6 +93,7 @@ export default function App() {
       setAuthedEmail(session?.user.email ?? null);
     });
     return () => subscription.unsubscribe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [project, setProject] = useState<TaxonomyProject | null>(null);
   // The sign-on landing menu (WorkflowMenu) shows first with no taxonomy open; picking either
