@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #145, 2026-09-23)
+## Current status (as of PR #147, 2026-09-23)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -1016,6 +1016,40 @@ also passing. Full existing regression suite (Fill Missing
 Codes/Go To's own smoke test, Auto Code, Lock integrity, item-count
 warnings, Library follow-ups) re-run clean. `npx tsc --noEmit`,
 `npm run lint`, `npm run build` all clean.
+
+### Fix ERP/abbreviation mangling in Toggle Case and leaf-case-mismatch fix (PR #147)
+James's immediate follow-up testing Format Descriptions: two OLDER,
+pre-existing case-conversion paths turned out not to have been updated
+alongside it, so "ERP" still came back as "Erp" depending which UI
+action triggered the conversion.
+
+- Right-click **Toggle Case** (Section 6.2) on an ALL-CAPS entry
+  containing "ERP" produced "Erp".
+- The leaf-case-mismatch warning's own **"Fix to Proper Case"** button
+  (an existing notice — Section 4.3's ALL CAPS/Proper Case rule, flagged
+  when a currently-childless entry is typed in ALL CAPS next to an
+  already-Proper-Case sibling) did the same.
+
+Both went through the plain `caseUtils.toProperCase` — which predates
+Format Descriptions and has no notion of abbreviations at all — rather
+than the abbreviation-aware `toProperCasePreservingAbbreviations`
+(abbreviations.ts) Format Descriptions itself already uses correctly.
+`caseUtils.toggleCase` now takes an optional `customAbbreviations` list
+and routes its ALL-CAPS-to-Proper-Case direction through the
+abbreviation-aware conversion; both Grid.tsx call sites (the Toggle
+Case handler, and the leaf-case-mismatch dialog's Fix button) now pass
+`settings.customAbbreviations` through. Deliberately does NOT add the
+interactive "keep this in caps?" prompt to either of these — that stays
+Format Descriptions' own batch-run behaviour; a single quick action
+just respects whatever's already known (the seed list plus this
+taxonomy's saved custom list) and leaves anything genuinely unrecognised
+to ordinary Proper Case, same as before.
+
+Playwright-verified: Toggle Case on an ALL-CAPS "MANAGE ERP EXPORTS"
+leaf now preserves "ERP" (was "Erp"); the leaf-case-mismatch dialog's
+"Fix to Proper Case" on an ALL-CAPS "HANDLE ERP REQUESTS AGAIN" leaf
+does the same. Full existing regression suite re-run clean. `npx tsc
+--noEmit`, `npm run lint`, `npm run build` all clean.
 
 ### GL Analyser/Builder menu polish and two workflow-level renames (PR #133)
 James's same-evening follow-up on PR #131's GL Analyser/GL Builder entries,

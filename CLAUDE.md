@@ -4,6 +4,8 @@ This file is persistent project context for Claude Code. It stays in place for t
 
 **Read this file in full before writing any code.** Where a build-sequence prompt (given separately, session by session) asks for a specific piece of this system, everything else here still matters as context — later pieces depend on the data model and conventions established here.
 
+**2026-09-23 amendment, from James directly:** the project has moved well past what this document envisaged when it was written. Section 9 ("Explicitly Out of Scope for This Version"), Section 2's "No backend or database required for v1", and the "v1 / proof-of-concept" framing in Section 1 are **no longer treated as constraints** — they're kept below as a historical record of the original thinking, not as a current boundary on what can be proposed or built. Whether something is in scope now is decided by James directly, round by round, the same way every other feature in this project has been. `PROGRESS.md`'s "Current status" section is the authoritative record of what actually exists and has actually been decided; where it conflicts with this document's original v1 framing, `PROGRESS.md` wins. Read this file for the data model and conventions (Sections 3–8), not for what's "allowed."
+
 ---
 
 ## 1. Purpose and Context
@@ -157,6 +159,8 @@ At this stage, each taxonomy is a standalone project — there is no library or 
 ---
 
 ## 9. Explicitly Out of Scope for This Version
+
+**No longer a constraint — see the 2026-09-23 amendment at the top of this file.** Kept below as the original v1 thinking, not as a current boundary; check `PROGRESS.md` and James's direct instructions for what's actually in scope now.
 
 Noting these here so they are not accidentally built prematurely, and so the later-phase roadmap is visible:
 
