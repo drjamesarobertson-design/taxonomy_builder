@@ -2,7 +2,8 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { TaxonomyRow, TaxonomySettings } from './types';
 import { createEmptyRow, growRowsToLevels } from './types';
 import { getLevelColor } from './colors';
-import { toggleCase, toProperCase } from './caseUtils';
+import { toggleCase } from './caseUtils';
+import { toProperCasePreservingAbbreviations } from './abbreviations';
 import { isValidCodeChar, isAllowedByCodeRestriction, hasCodeGap } from './codeValidation';
 import {
   findOtherNotLastInGroup,
@@ -90,6 +91,7 @@ export default function Grid({
     guidance,
     column1CodeLength,
     properCaseOnly,
+    customAbbreviations,
   } = settings;
   // Simple Taxonomy wizard: no code column is shown at all until the coding stage — the
   // 'headings' and 'subItems' stages are description-only by design. `numLevels` itself grows
@@ -1696,7 +1698,7 @@ export default function Grid({
         selection.rowIds.has(row.id)
           ? {
               ...row,
-              descriptions: row.descriptions.map((d, i) => (i === level ? toggleCase(d) : d)),
+              descriptions: row.descriptions.map((d, i) => (i === level ? toggleCase(d, customAbbreviations) : d)),
             }
           : row,
       ),
@@ -3785,7 +3787,12 @@ export default function Grid({
                   onChange(
                     rows.map((row) =>
                       row.id === rowId
-                        ? { ...row, descriptions: row.descriptions.map((d) => (d ? toProperCase(d) : d)) }
+                        ? {
+                            ...row,
+                            descriptions: row.descriptions.map((d) =>
+                              d ? toProperCasePreservingAbbreviations(d, customAbbreviations) : d,
+                            ),
+                          }
                         : row,
                     ),
                   );
