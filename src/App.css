@@ -1439,6 +1439,26 @@ body.app-dark-theme .taxonomy-meta .purpose {
   touch-action: none;
 }
 
+/* James's report: the handle didn't read as something you could grab and drag. A visible
+   "grip" glyph, same idea as a window's own drag handle, rather than relying on the cursor
+   style alone (easy to miss, and doesn't show at all on a touch device). */
+.audit-panel-drag-dots {
+  letter-spacing: 0.05em;
+  opacity: 0.85;
+}
+
+/* James's report: the flagged cell wasn't visibly distinguishable — browser default focus
+   styling is too subtle in a dense grid, especially against a coloured column (Section 4.2).
+   Applied directly to the input via a plain DOM class (App.tsx) rather than through Grid's own
+   props, since Grid has no notion of "audit" at all — !important overrides whatever background
+   that column's own level colouring set. */
+.audit-target-cell {
+  outline: 3px solid #ff6a00 !important;
+  outline-offset: 1px;
+  background: #fff3b0 !important;
+  box-shadow: 0 0 0 5px rgba(255, 106, 0, 0.3);
+}
+
 .audit-panel-handle:active {
   cursor: grabbing;
 }

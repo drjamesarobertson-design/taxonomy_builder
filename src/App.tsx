@@ -293,6 +293,14 @@ export default function App() {
   } | null>(null);
   // The "Audit — Y/N" prompt (default Yes) shown before Export to CSV specifically.
   const [csvAuditPrompt, setCsvAuditPrompt] = useState(false);
+  // Where the panel should re-anchor to (near the cell App.tsx just jumped to) — null while
+  // there's no cell for the current state (checking/clean/auto-fixable). Set only by
+  // jumpToAuditIssue below.
+  const [auditAnchor, setAuditAnchor] = useState<{ top: number; left: number } | null>(null);
+  // The one DOM id currently wearing the audit-target-cell highlight, so the NEXT jump (or
+  // Exit) can clean up the PREVIOUS one before applying a new one — a plain ref rather than
+  // state, since it's a direct DOM side effect, not something that drives a render.
+  const highlightedCellIdRef = useRef<string | null>(null);
 
   // Auto Code (James's ask): a general-purpose numeric-first gap-coding action, independent of
   // the Simple Taxonomy wizard's own mnemonic Suggest Codes — usable any time, on any taxonomy,
@@ -736,6 +744,44 @@ export default function App() {
     return ids;
   }
 
+  function clearAuditHighlight() {
+    if (highlightedCellIdRef.current) {
+      document.getElementById(highlightedCellIdRef.current)?.classList.remove('audit-target-cell');
+      highlightedCellIdRef.current = null;
+    }
+  }
+
+  /** James's report: the panel's text advanced on Resume Audit/Skip, but nothing about the
+   * cursor or the grid followed — the cell that had been jumped to (Clear Error) was left
+   * behind, stranded on whatever row that was, while the message went on to describe a
+   * different row entirely. The fix is to make every transition onto a new current issue —
+   * not just an explicit Clear Error click — scroll/focus/highlight that cell and re-anchor the
+   * panel near it itself, so the panel, the highlight and the message always agree about where
+   * the problem actually is. */
+  function jumpToAuditIssue(issue: AuditIssue | null) {
+    clearAuditHighlight();
+    if (!issue || issue.kind === 'auto') {
+      setAuditAnchor(null);
+      return;
+    }
+    const id = issue.kind === 'code' ? codeInputId(issue.level, issue.rowId) : descInputId(issue.level, issue.rowId);
+    requestAnimationFrame(() => {
+      const input = document.getElementById(id) as HTMLInputElement | null;
+      if (!input) return;
+      input.scrollIntoView({ block: 'center' });
+      input.focus();
+      input.select();
+      input.classList.add('audit-target-cell');
+      highlightedCellIdRef.current = id;
+      const rect = input.getBoundingClientRect();
+      const panelWidth = 360; // matches .audit-panel's own width (22rem) plus a small margin
+      setAuditAnchor({
+        top: Math.max(8, Math.min(rect.top - 10, window.innerHeight - 200)),
+        left: Math.min(Math.max(8, rect.right + 16), window.innerWidth - panelWidth),
+      });
+    });
+  }
+
   /** Starts (or restarts) an audit run. The issue list is computed synchronously right here —
    * fast enough that no genuine async gap exists — with only the "Conducting Taxonomy Health
    * Check…" -> next-status transition deliberately delayed (James approved this wording; a
@@ -744,14 +790,17 @@ export default function App() {
    * fast Exit-then-rerun in that window can't resurrect a stale run. */
   function runAudit(origin: AuditOrigin) {
     if (!project) return;
+    clearAuditHighlight();
     const issues = findAuditIssues(project.rows, project.settings.properCaseOnly, project.settings.paddingChar);
     const originalRowIds = rowsWithIssues(issues);
-    setAudit({ origin, originalRowIds, cursor: 0, currentIssue: issues[0] ?? null, status: 'checking' });
+    const firstIssue = issues[0] ?? null;
+    setAudit({ origin, originalRowIds, cursor: 0, currentIssue: firstIssue, status: 'checking' });
     setTimeout(() => {
       setAudit((current) => {
         if (!current || current.origin !== origin) return current;
         return { ...current, status: current.originalRowIds.length === 0 ? 'clean' : 'issue' };
       });
+      if (originalRowIds.length > 0) jumpToAuditIssue(firstIssue);
     }, 400);
   }
 
@@ -766,7 +815,8 @@ export default function App() {
    * explicitly rather than reading `project.rows` from closure — a caller that just applied a
    * fix via setProject/handleSettingsAndRowsChange can't rely on `project` reflecting it yet in
    * that same tick (React batches the state update), so it passes the just-computed rows
-   * straight through instead of reading the still-stale `project`. */
+   * straight through instead of reading the still-stale `project`. Always jumps to (or clears,
+   * on reaching clean) wherever it lands — see jumpToAuditIssue. */
   function advanceAudit(fromIndex: number, rows: TaxonomyRow[] = project?.rows ?? []) {
     if (!project || !audit) return;
     const fresh = findAuditIssues(rows, project.settings.properCaseOnly, project.settings.paddingChar);
@@ -780,14 +830,19 @@ export default function App() {
     }
     if (next >= audit.originalRowIds.length) {
       setAudit({ ...audit, cursor: audit.originalRowIds.length, currentIssue: null, status: 'clean' });
+      jumpToAuditIssue(null);
     } else {
-      setAudit({ ...audit, cursor: next, currentIssue: firstIssueByRow.get(audit.originalRowIds[next]) ?? null, status: 'issue' });
+      const nextIssue = firstIssueByRow.get(audit.originalRowIds[next]) ?? null;
+      setAudit({ ...audit, cursor: next, currentIssue: nextIssue, status: 'issue' });
+      jumpToAuditIssue(nextIssue);
     }
   }
 
-  // Clear Error: jumps to and focuses the exact cell the current issue is about — the same
-  // "drop the cursor there" pattern GuidanceBanner.tsx already uses for its own duplicate-code
-  // and manual-code notices — then switches the panel to Resume Audit for when the fix is done.
+  // Clear Error: re-jumps to (in case the user scrolled away) and focuses the exact cell the
+  // current issue is about — the same "drop the cursor there" pattern GuidanceBanner.tsx
+  // already uses for its own duplicate-code and manual-code notices — then switches the panel
+  // to Resume Audit for when the fix is done. The initial jump already happened automatically
+  // (jumpToAuditIssue, above) the moment this became the current issue.
   function handleAuditClearError() {
     if (!audit || !audit.currentIssue || !project) return;
     const issue = audit.currentIssue;
@@ -801,13 +856,7 @@ export default function App() {
       advanceAudit(audit.cursor, paddedRows);
       return;
     }
-    const id = issue.kind === 'code' ? codeInputId(issue.level, issue.rowId) : descInputId(issue.level, issue.rowId);
-    requestAnimationFrame(() => {
-      const input = document.getElementById(id) as HTMLInputElement | null;
-      input?.scrollIntoView({ block: 'center' });
-      input?.focus();
-      input?.select();
-    });
+    jumpToAuditIssue(issue);
     setAudit({ ...audit, status: 'resuming' });
   }
 
@@ -829,6 +878,8 @@ export default function App() {
     if (!audit) return;
     const origin = audit.origin;
     setAudit(null);
+    clearAuditHighlight();
+    setAuditAnchor(null);
     if (origin === 'export-csv') setExportChoice({ format: 'csv' });
   }
 
@@ -2320,6 +2371,7 @@ export default function App() {
           originalTotal={audit.originalRowIds.length}
           message={audit.currentIssue?.message ?? ''}
           isAutoFixable={audit.currentIssue?.kind === 'auto'}
+          anchor={auditAnchor}
           onClearError={handleAuditClearError}
           onSkip={handleAuditSkip}
           onExit={handleAuditExit}
