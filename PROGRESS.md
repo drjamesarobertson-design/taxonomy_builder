@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #143, 2026-09-21)
+## Current status (as of PR #145, 2026-09-23)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -938,6 +938,83 @@ position" behaviour as correct, now asserting the corrected,
 row-order-safe behaviour instead. Full existing regression suite
 re-run clean, including both large real-file CSV imports (~2400 and
 ~1200 rows) end to end through Auto Code. `npx tsc --noEmit`,
+`npm run lint`, `npm run build` all clean.
+
+### Fill Missing Codes, code column Go To navigation, Format Descriptions (PR #145)
+James's next round, three separate asks:
+
+- **Right-click "Fill Missing Codes"**, code column menu. Auto Code
+  (above) re-codes an entire taxonomy from scratch; James's everyday
+  case is smaller — a manual entry, Insert Row, Promote or Demote has
+  left a handful of rows blank at their own level, mid-taxonomy, with
+  the rest of the column already coded, and re-running Auto Code over
+  everything felt like overkill for patching a gap. `fillMissingCodesAtLevel`
+  (autoCode.ts) reuses the exact same three-step pipeline as Auto Code
+  (`assignLevelCodes` → `fillCodesDown` → `padCodes`), scoped to the
+  single column actually right-clicked rather than sweeping every
+  level — `assignLevelCodes` already fills gap-coded values around
+  whatever codes exist elsewhere in a sibling group, not just at the
+  group's own end, so it needed no new gap-generation logic. Blocked
+  while locked, same precedent as Auto Code; reports "No missing codes
+  to fill in this column" rather than silently doing nothing when
+  there's nothing to patch.
+- **Code column navigation**: "Go to Top" and "Go to End" jump straight
+  to the first/last row's code cell in the right-clicked column; "Go to
+  Line…" and "Go to Code…" open a small prompt (same
+  `.validation-overlay`/`.validation-dialog` pattern as the existing
+  Find dialog). "Go to Code" searches forward from the row the menu was
+  opened on and wraps around the whole column, so repeating it steps
+  through every row sharing that code — deliberately mirroring Find's
+  own "Next" behaviour for consistency. Built for taxonomies running to
+  hundreds or thousands of rows, where scrolling to a specific line or
+  hunting for a specific code by eye stops being practical.
+- **"Format Descriptions" toolbar button.** James's ask: allow scrappy,
+  inconsistently-capitalised input during entry, then clean it up in
+  one pass rather than requiring correct capitalization as you type.
+  Offers three scopes via a small dropdown dialog — "Capitalise only
+  headings", "Proper case posting level descriptions", or "Capitalise
+  and Proper Case All" — so a user midway through data entry can fix
+  just one half at a time. New `formatDescriptions.ts`: a row "has
+  children" exactly when the next row in sequence is deeper (mirrors
+  Grid.tsx's own `getDescendantEndIndex` check); headings are plain
+  `.toUpperCase()`'d (ALL CAPS never needs to preserve an abbreviation's
+  own casing — uppercasing is uppercasing either way); leaves go through
+  `toProperCasePreservingAbbreviations` (new `abbreviations.ts`), which
+  case-insensitively matches each word against a seed list of ~40 common
+  ERP/business/accounting abbreviations (ERP, CoA, GL, KPI, EBITDA, and
+  so on) plus this taxonomy's own growing custom list, and writes back
+  the registered entry's own exact casing — not just "keep it upper-
+  case", since James's own example "CoA" is mixed-case — regardless of
+  how the word was actually typed (so "erp", "Erp" and "ERP" in the
+  input all resolve to the registered "ERP"). Answering his question
+  directly: there's no single authoritative online library of
+  "abbreviations that survive Proper Case" built for exactly this
+  purpose, so the seed list draws on general business-abbreviation
+  usage and is deliberately small — the real library is meant to grow
+  from James's own usage. Any ALL-CAPS word Format Descriptions doesn't
+  already recognise triggers a one-at-a-time "Keep 'XYZ' in capitals?"
+  prompt (queue pattern mirrors GuidanceBanner's existing
+  `bandSuggestions` flow) before the rewrite runs; an accepted word is
+  persisted into `TaxonomySettings.customAbbreviations` (new field,
+  default `[]`, with a `storage.ts` migration for older project files)
+  so it's never asked again for this taxonomy. Blocked while locked,
+  same precedent as Auto Code and CSV Import.
+
+Playwright-verified: Fill Missing Codes (gap-coded values inserted
+correctly around pre-existing codes, ascending order and distinctness
+confirmed, "No missing codes" reported on a clean re-run) and all four
+Go To actions (19 assertions total, one script). Format Descriptions
+verified via a scrappy 3-level CSV import (a lowercase heading, a
+lowercase sub-heading, and a leaf containing both a seeded abbreviation
+typed lowercase and an unregistered ALL-CAPS word) through all three
+scopes: headings uppercase correctly, leaves Proper-Case correctly with
+"erp" normalising to the registered "ERP", the unrecognised word
+prompts once and is remembered (no re-prompt) on a second run, and
+"Capitalise only headings" mode never touches leaves and never prompts.
+Pure-logic unit tests for `formatDescriptions.ts`/`abbreviations.ts`
+also passing. Full existing regression suite (Fill Missing
+Codes/Go To's own smoke test, Auto Code, Lock integrity, item-count
+warnings, Library follow-ups) re-run clean. `npx tsc --noEmit`,
 `npm run lint`, `npm run build` all clean.
 
 ### GL Analyser/Builder menu polish and two workflow-level renames (PR #133)
