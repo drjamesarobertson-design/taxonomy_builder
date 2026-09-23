@@ -12,6 +12,7 @@ import {
   findLeafCaseMismatch,
 } from './guidance';
 import { codeInputId, descInputId } from './domIds';
+import { fillMissingCodesAtLevel } from './autoCode';
 import type { TaxonomyBlock } from './blockTransfer';
 import { parseBlockFile } from './blockTransfer';
 import type { HelpTextMap } from './helpText';
@@ -280,6 +281,16 @@ export default function Grid({
     matches: Array<{ rowId: string; level: number }>;
     index: number;
   } | null>(null);
+  // James's ask: code-column right-click navigation for a taxonomy that runs to hundreds or
+  // thousands of rows — "Go to Line" and "Go to Code" need a small prompt (the same pattern as
+  // Find…, above), so both share one dialog state; "level" and "fromIndex" are captured at the
+  // moment the menu was opened (contextMenu itself is cleared before the dialog is even shown),
+  // and "Go to Code" searches forward from fromIndex and wraps around, so repeating it steps
+  // through every row sharing that code the same way Find's own "Next" does.
+  const [goToPrompt, setGoToPrompt] = useState<{ mode: 'line' | 'code'; level: number; fromIndex: number } | null>(
+    null,
+  );
+  const [goToInput, setGoToInput] = useState('');
   // Item 10's Copy Codes / Paste Codes clipboard: a rectangular block of code values (one
   // array per column, top-to-bottom within each), pasted back in starting wherever the user
   // next right-clicks "Paste Codes" — a plain overtype, independent of row selection.
@@ -1770,6 +1781,92 @@ export default function Grid({
     jumpToFindMatch(findResults.matches[index]);
   }
 
+  function jumpToCodeCell(level: number, rowId: string) {
+    requestAnimationFrame(() => {
+      const input = document.getElementById(codeInputId(level, rowId)) as HTMLInputElement | null;
+      if (!input) return;
+      input.scrollIntoView({ block: 'center' });
+      input.focus();
+      input.select();
+    });
+  }
+
+  // Right-click "Go to Top" / "Go to End" — jump straight to the first or last row's code cell
+  // in the same column that was right-clicked, no prompt needed.
+  function handleGoToTop() {
+    if (!contextMenu || contextMenu.kind !== 'code' || rows.length === 0) return;
+    const level = contextMenu.level;
+    setContextMenu(null);
+    jumpToCodeCell(level, rows[0].id);
+  }
+
+  function handleGoToEnd() {
+    if (!contextMenu || contextMenu.kind !== 'code' || rows.length === 0) return;
+    const level = contextMenu.level;
+    setContextMenu(null);
+    jumpToCodeCell(level, rows[rows.length - 1].id);
+  }
+
+  // Right-click "Go to Line…" / "Go to Code…" — opens the small prompt; runGoTo() below does
+  // the actual jump once a value is submitted. The row right-clicked (if any) is captured now,
+  // since contextMenu is cleared the moment the dialog opens.
+  function handleOpenGoToLine() {
+    if (!contextMenu || contextMenu.kind !== 'code') return;
+    const level = contextMenu.level;
+    const fromIndex = rows.findIndex((r) => r.id === contextMenu.rowId);
+    setGoToInput('');
+    setGoToPrompt({ mode: 'line', level, fromIndex });
+    setContextMenu(null);
+  }
+
+  function handleOpenGoToCode() {
+    if (!contextMenu || contextMenu.kind !== 'code') return;
+    const level = contextMenu.level;
+    const fromIndex = rows.findIndex((r) => r.id === contextMenu.rowId);
+    setGoToInput('');
+    setGoToPrompt({ mode: 'code', level, fromIndex });
+    setContextMenu(null);
+  }
+
+  function runGoTo() {
+    if (!goToPrompt) return;
+    const { mode, level, fromIndex } = goToPrompt;
+    const query = goToInput.trim();
+    if (!query) {
+      setGoToPrompt(null);
+      return;
+    }
+    if (mode === 'line') {
+      const n = Number(query);
+      if (!Number.isInteger(n) || n < 1 || n > rows.length) {
+        showValidationError(`Enter a row number between 1 and ${rows.length}.`);
+        return;
+      }
+      setGoToPrompt(null);
+      jumpToCodeCell(level, rows[n - 1].id);
+      return;
+    }
+    // "Go to Code": searches forward from the row the menu was opened on (or the top, if that
+    // row's gone) and wraps around, so repeating the same search steps through every row that
+    // shares this code — the same "Next" behaviour Find already gives on the description side.
+    const needle = query.toLowerCase();
+    const start = fromIndex === -1 ? 0 : fromIndex;
+    let matchIndex = -1;
+    for (let offset = 1; offset <= rows.length; offset++) {
+      const idx = (start + offset) % rows.length;
+      if ((rows[idx].codes[level] ?? '').toLowerCase() === needle) {
+        matchIndex = idx;
+        break;
+      }
+    }
+    if (matchIndex === -1) {
+      showValidationError(`No row found with code "${query}" in this column.`);
+      return;
+    }
+    setGoToPrompt(null);
+    jumpToCodeCell(level, rows[matchIndex].id);
+  }
+
   // Lock Taxonomy: the sanctioned way to retire a protected row, since it can no longer be
   // edited or deleted directly (Section-equivalent: preserves the historical code/description
   // instead of erasing it). Prefixes the description with "XXX " rather than replacing it, so
@@ -1925,6 +2022,32 @@ export default function Grid({
     onChange(updated);
     setSelection(null);
     setContextMenu(null);
+  }
+
+  // Right-click "Fill Missing Codes" (James's ask): the everyday case the toolbar's Auto Code
+  // was really built for but is awkward to reach for — a manual entry, Insert Row, Promote or
+  // Demote has left a few rows' own-level code blank partway down an otherwise fully-coded
+  // column. Scoped to the single column actually right-clicked, not every level like Auto Code
+  // — generates a gap-coded sequence for this column's blanks, carries ancestor codes down, and
+  // pads the trailing columns (fillMissingCodesAtLevel, autoCode.ts). Same whole-table-structural
+  // precedent as Auto Code: blocked outright while locked rather than threading protected-row
+  // guards through a bulk fill.
+  function handleFillMissingCodes() {
+    if (!contextMenu || contextMenu.kind !== 'code') return;
+    setContextMenu(null);
+    if (locked) {
+      showValidationError('This taxonomy is locked and codes cannot be auto-filled. Unlock it first if this is genuinely necessary.');
+      return;
+    }
+    const level = contextMenu.level;
+    const result = fillMissingCodesAtLevel(rows, level, paddingChar);
+    const changed = result.some((row, i) => row.codes[level] !== rows[i].codes[level]);
+    if (!changed) {
+      showValidationError('No missing codes to fill in this column.');
+      return;
+    }
+    onChange(result);
+    setSelection(null);
   }
 
   // Right-click "Export Block" (item 3) — an alternative to the toolbar's whole-table Create
@@ -3209,6 +3332,7 @@ export default function Grid({
                 Replicate Codes Above
               </li>
               <li onClick={handleReplicateBelow}>Replicate Codes Below</li>
+              <li onClick={handleFillMissingCodes}>Fill Missing Codes</li>
               <li className="context-menu-separator" onClick={handleAddColumnClick}>
                 Add Column
               </li>
@@ -3241,6 +3365,12 @@ export default function Grid({
                 {pendingInsertCount() > 1 ? `Insert ${pendingInsertCount()} Rows Below` : 'Insert Row Below'}
               </li>
               <li onClick={handleDeleteRowFromMenu}>Delete Row</li>
+              <li className="context-menu-separator" onClick={handleGoToTop}>
+                Go to Top
+              </li>
+              <li onClick={handleGoToEnd}>Go to End</li>
+              <li onClick={handleOpenGoToLine}>Go to Line…</li>
+              <li onClick={handleOpenGoToCode}>Go to Code…</li>
               <li className="context-menu-separator" onClick={() => handleGridMenuHelp('gridCodeMenuHelp')}>
                 Help
               </li>
@@ -3769,6 +3899,34 @@ export default function Grid({
                   Cancel
                 </button>
                 <button type="submit">Find</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {goToPrompt && (
+        <div className="validation-overlay" onClick={() => setGoToPrompt(null)}>
+          <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
+            <p>{goToPrompt.mode === 'line' ? 'Go to row number:' : 'Go to code:'}</p>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                runGoTo();
+              }}
+            >
+              <input
+                type="text"
+                autoFocus
+                value={goToInput}
+                onChange={(e) => setGoToInput(e.target.value)}
+                placeholder={goToPrompt.mode === 'line' ? `1 to ${rows.length}` : 'e.g. 8'}
+              />
+              <div className="confirm-dialog-actions">
+                <button type="button" onClick={() => setGoToPrompt(null)}>
+                  Cancel
+                </button>
+                <button type="submit">Go</button>
               </div>
             </form>
           </div>
