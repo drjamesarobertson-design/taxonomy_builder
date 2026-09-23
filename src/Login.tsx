@@ -11,11 +11,18 @@ type Mode = 'login' | 'register' | 'forgot';
 
 // The sign-on gate shown before anything else (App.tsx). Backed by Supabase (auth.ts) — real
 // accounts, real password hashing/reset, not the static hardcoded list this used to be.
+// A leading "+" then 7-15 digits (spaces allowed for readability) — loose E.164-style check,
+// just enough to catch a missing country code rather than fully validating real numbers.
+const MOBILE_NUMBER_PATTERN = /^\+[1-9]\d[\d ]{5,17}$/;
+
 export default function Login({ onSuccess }: LoginProps) {
   const [mode, setMode] = useState<Mode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [companyName, setCompanyName] = useState('');
+  const [mobileNumber, setMobileNumber] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
@@ -26,6 +33,9 @@ export default function Login({ onSuccess }: LoginProps) {
     setInfo(null);
     setPassword('');
     setConfirmPassword('');
+    setFullName('');
+    setCompanyName('');
+    setMobileNumber('');
   }
 
   async function handleLogin(e: FormEvent) {
@@ -47,9 +57,17 @@ export default function Login({ onSuccess }: LoginProps) {
       setError('Passwords do not match.');
       return;
     }
+    if (!MOBILE_NUMBER_PATTERN.test(mobileNumber.trim())) {
+      setError('Mobile number must include the international dialling code, e.g. +44 7700 900123.');
+      return;
+    }
     setChecking(true);
     setError(null);
-    const { error: err, needsEmailConfirmation } = await signUp(email, password);
+    const { error: err, needsEmailConfirmation } = await signUp(email, password, {
+      fullName,
+      companyName,
+      mobileNumber,
+    });
     setChecking(false);
     if (err) {
       setError(err);
@@ -132,13 +150,44 @@ export default function Login({ onSuccess }: LoginProps) {
       {mode === 'register' && (
         <form className="login-form" onSubmit={handleRegister}>
           <label>
+            Name
+            <input
+              type="text"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              required
+              autoFocus
+              autoComplete="name"
+            />
+          </label>
+          <label>
+            Company Name
+            <input
+              type="text"
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
+              required
+              autoComplete="organization"
+            />
+          </label>
+          <label>
+            Mobile Number (with country dialling code)
+            <input
+              type="tel"
+              value={mobileNumber}
+              onChange={(e) => setMobileNumber(e.target.value)}
+              required
+              placeholder="+44 7700 900123"
+              autoComplete="tel"
+            />
+          </label>
+          <label>
             Email
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              autoFocus
               autoComplete="username"
             />
           </label>

@@ -13,6 +13,12 @@ export async function signIn(email: string, password: string): Promise<{ error: 
   return { error: error?.message ?? null };
 }
 
+export interface SignUpProfile {
+  fullName: string;
+  companyName: string;
+  mobileNumber: string;
+}
+
 /** `needsEmailConfirmation` is true when the project requires clicking a confirmation link
  * before the new account can log in — a Supabase project setting, not something this app
  * controls — signalled by Supabase returning no session yet for a brand-new signup.
@@ -22,12 +28,26 @@ export async function signIn(email: string, password: string): Promise<{ error: 
  * what sent James's first confirmation link to a dead localhost address instead of the actual
  * deployed site. Supabase will only actually honour this value if the exact URL is also listed
  * in the project's Authentication -> URL Configuration -> Redirect URLs allowlist; setting it
- * here alone isn't enough on its own. */
-export async function signUp(email: string, password: string): Promise<{ error: string | null; needsEmailConfirmation: boolean }> {
+ * here alone isn't enough on its own.
+ * `profile` (James's ask) is stored as Supabase Auth user metadata via `options.data` — no
+ * separate database table needed for this; it shows up on each user's record in the Supabase
+ * dashboard (Authentication -> Users). */
+export async function signUp(
+  email: string,
+  password: string,
+  profile: SignUpProfile,
+): Promise<{ error: string | null; needsEmailConfirmation: boolean }> {
   const { data, error } = await supabase.auth.signUp({
     email: email.trim(),
     password,
-    options: { emailRedirectTo: window.location.origin + window.location.pathname },
+    options: {
+      emailRedirectTo: window.location.origin + window.location.pathname,
+      data: {
+        full_name: profile.fullName.trim(),
+        company_name: profile.companyName.trim(),
+        mobile_number: profile.mobileNumber.trim(),
+      },
+    },
   });
   if (error) return { error: error.message, needsEmailConfirmation: false };
   return { error: null, needsEmailConfirmation: data.session === null };
