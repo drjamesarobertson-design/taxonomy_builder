@@ -40,15 +40,19 @@ function affectsLeaves(mode: FormatMode): boolean {
 
 /** Every distinct unknown ALL-CAPS word across whichever rows the chosen mode will actually
  * touch — headings are always just plain-uppercased (no abbreviation casing to preserve), so
- * only rows Format Descriptions will Proper-Case (leaves) need this "prompt when unsure" pass. */
+ * only rows Format Descriptions will Proper-Case (leaves) need this "prompt when unsure" pass.
+ * `scopeRowIds`, when given, restricts this to "Format Selected Range" — undefined means every
+ * row, matching "Format Entire Worksheet". */
 export function collectUnknownAbbreviationWords(
   rows: TaxonomyRow[],
   mode: FormatMode,
   customAbbreviations: readonly string[],
+  scopeRowIds?: ReadonlySet<string>,
 ): string[] {
   if (!affectsLeaves(mode)) return [];
   const found = new Set<string>();
   rows.forEach((row, idx) => {
+    if (scopeRowIds && !scopeRowIds.has(row.id)) return;
     const level = levelOf(row);
     if (level === -1 || rowHasChildren(rows, idx)) return;
     for (const word of findUnknownAllCapsWords(row.descriptions[level] ?? '', customAbbreviations)) {
@@ -60,13 +64,17 @@ export function collectUnknownAbbreviationWords(
 
 /** Applies the chosen formatting mode to every row's own description column (the one matching
  * its level — the only one ever populated, Section 4.1). `customAbbreviations` should already
- * include anything the user accepted via the "keep this in caps?" prompt for this run. */
+ * include anything the user accepted via the "keep this in caps?" prompt for this run.
+ * `scopeRowIds`, when given, restricts the rewrite to just those rows ("Format Selected
+ * Range") — undefined touches every row ("Format Entire Worksheet"). */
 export function applyFormatDescriptions(
   rows: TaxonomyRow[],
   mode: FormatMode,
   customAbbreviations: readonly string[],
+  scopeRowIds?: ReadonlySet<string>,
 ): TaxonomyRow[] {
   return rows.map((row, idx) => {
+    if (scopeRowIds && !scopeRowIds.has(row.id)) return row;
     const level = levelOf(row);
     if (level === -1) return row;
     const text = row.descriptions[level] ?? '';

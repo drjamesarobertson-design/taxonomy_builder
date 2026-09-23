@@ -107,10 +107,22 @@ export async function listLibraryEntries(): Promise<LibraryEntry[]> {
   const migrations = entries
     .map((e) => ({ original: e, migrated: migrateLegacyCategory(e) }))
     .filter((m): m is { original: LibraryEntry; migrated: LibraryEntry } => m.migrated !== null);
-  if (migrations.length === 0) return entries;
-  await Promise.all(migrations.map((m) => putEntry(m.migrated)));
+  if (migrations.length > 0) {
+    await Promise.all(migrations.map((m) => putEntry(m.migrated)));
+  }
   const migratedById = new Map(migrations.map((m) => [m.original.id, m.migrated]));
-  return entries.map((e) => migratedById.get(e.id) ?? e);
+  // James's report: an entry saved to the Library before a newer settings field existed (e.g.
+  // customAbbreviations) came back into the live app with that field still `undefined` once
+  // reopened — this read straight from IndexedDB, unlike Load from File, which already runs
+  // this same migration. Any code that spreads that field (toProperCasePreservingAbbreviations,
+  // findUnknownAllCapsWords) threw the moment it ran, which read as "the button doesn't
+  // register." Not written back to IndexedDB (unlike the category migration above) — cheap and
+  // idempotent enough to just re-run on every load rather than adding another persisted-write
+  // path for it.
+  return entries.map((e) => {
+    const base = migratedById.get(e.id) ?? e;
+    return { ...base, project: migrateProjectData(base.project) };
+  });
 }
 
 function putEntry(entry: LibraryEntry): Promise<void> {
