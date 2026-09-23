@@ -15,9 +15,20 @@ export async function signIn(email: string, password: string): Promise<{ error: 
 
 /** `needsEmailConfirmation` is true when the project requires clicking a confirmation link
  * before the new account can log in — a Supabase project setting, not something this app
- * controls — signalled by Supabase returning no session yet for a brand-new signup. */
+ * controls — signalled by Supabase returning no session yet for a brand-new signup.
+ * `emailRedirectTo` is explicit here for the same reason sendPasswordReset already sets its own
+ * `redirectTo` below — without it, Supabase falls back to the project's own "Site URL" setting
+ * (its own default is `http://localhost:3000`, unless someone's changed it), which is exactly
+ * what sent James's first confirmation link to a dead localhost address instead of the actual
+ * deployed site. Supabase will only actually honour this value if the exact URL is also listed
+ * in the project's Authentication -> URL Configuration -> Redirect URLs allowlist; setting it
+ * here alone isn't enough on its own. */
 export async function signUp(email: string, password: string): Promise<{ error: string | null; needsEmailConfirmation: boolean }> {
-  const { data, error } = await supabase.auth.signUp({ email: email.trim(), password });
+  const { data, error } = await supabase.auth.signUp({
+    email: email.trim(),
+    password,
+    options: { emailRedirectTo: window.location.origin + window.location.pathname },
+  });
   if (error) return { error: error.message, needsEmailConfirmation: false };
   return { error: null, needsEmailConfirmation: data.session === null };
 }
