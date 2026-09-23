@@ -1235,6 +1235,14 @@ export default function App() {
           )}
         </div>
         <div className="header-right">
+          {/* Sequence, grouping and colour treatment per James's "Taxonomy Builder Button
+              Sequence" spreadsheet (v1.22) — 8 groups, alternating between the existing button
+              blue and a second, restrained blue tone (Option C of the mock-up: colour rhythm
+              plus a vertical divider bar between every group, rather than a distinct shade per
+              group, which stopped being reliably tellable apart on its own past 5-6 groups).
+              Log Out stays ungated by `project` (always available, including from the landing
+              menu with no taxonomy open) but now sits inside .toolbar, styled like the rest of
+              its group, rather than as a separately-styled button off to the side. */}
           <div className="toolbar">
             {project && (
               <button type="button" onClick={handleUndo} disabled={undoStack.length === 0}>
@@ -1246,6 +1254,13 @@ export default function App() {
                 Redo
               </button>
             )}
+            {project && <span className="toolbar-divider" />}
+            {project && (
+              <button type="button" className="toolbar-alt" onClick={() => setShowSettings(true)}>
+                Settings
+              </button>
+            )}
+            {project && <span className="toolbar-divider" />}
             {project && supportsFileSystemAccess() && (
               <button
                 type="button"
@@ -1260,6 +1275,56 @@ export default function App() {
                 {justSaved ? 'Saved ✓' : 'Save to File'}
               </button>
             )}
+            {project && (
+              <button type="button" onClick={() => setExportChoice({ format: 'csv' })}>
+                Export to CSV
+              </button>
+            )}
+            {project && (
+              <button type="button" onClick={() => setExportChoice({ format: 'xlsx' })}>
+                Export to Excel
+              </button>
+            )}
+            {project && (
+              <button
+                type="button"
+                onClick={handleCreateBlock}
+                title="Export the whole table as a block another taxonomy can import"
+              >
+                Create Block
+              </button>
+            )}
+            {project && (
+              <button
+                type="button"
+                className={justAddedToLibrary ? 'save-flash' : undefined}
+                onClick={handleAddToLibraryClick}
+                title={
+                  currentLibraryEntryId
+                    ? "Update this taxonomy's existing Library entry"
+                    : 'Save a copy of this taxonomy to the Library'
+                }
+              >
+                {justAddedToLibrary ? 'Added ✓' : 'Add to Library'}
+              </button>
+            )}
+            {project && <span className="toolbar-divider" />}
+            {project && (
+              <button type="button" className="toolbar-alt" onClick={handleLoadClick}>
+                Load from File
+              </button>
+            )}
+            {project && (
+              <button
+                type="button"
+                className="toolbar-alt"
+                onClick={handleImportCsvClick}
+                title="Import a taxonomy from a Discrete Columns CSV"
+              >
+                Import CSV
+              </button>
+            )}
+            {project && <span className="toolbar-divider" />}
             {project && (
               <div className="lock-menu-wrapper" ref={lockMenuRef}>
                 <button
@@ -1340,68 +1405,28 @@ export default function App() {
                 🔓 Unlock Taxonomy
               </button>
             )}
+            {project && <span className="toolbar-divider" />}
             {project && (
-              <button type="button" onClick={handleAutoCodeClick} title="Auto-fill blank codes throughout the taxonomy">
+              <button
+                type="button"
+                className="toolbar-alt"
+                onClick={handleAutoCodeClick}
+                title="Auto-fill blank codes throughout the taxonomy"
+              >
                 Auto Code
               </button>
             )}
             {project && (
               <button
                 type="button"
+                className="toolbar-alt"
                 onClick={handleFormatDescriptionsClick}
                 title="Clean up scrappy capitalisation — ALL CAPS headings, Proper Case posting-level entries"
               >
                 Format Descriptions
               </button>
             )}
-            {project && (
-              <button type="button" onClick={() => setExportChoice({ format: 'csv' })}>
-                Export to CSV
-              </button>
-            )}
-            {project && (
-              <button type="button" onClick={() => setExportChoice({ format: 'xlsx' })}>
-                Export to Excel
-              </button>
-            )}
-            {project && (
-              <button
-                type="button"
-                onClick={handleCreateBlock}
-                title="Export the whole table as a block another taxonomy can import"
-              >
-                Create Block
-              </button>
-            )}
-            {project && (
-              <button
-                type="button"
-                className={justAddedToLibrary ? 'save-flash' : undefined}
-                onClick={handleAddToLibraryClick}
-                title={
-                  currentLibraryEntryId
-                    ? "Update this taxonomy's existing Library entry"
-                    : 'Save a copy of this taxonomy to the Library'
-                }
-              >
-                {justAddedToLibrary ? 'Added ✓' : 'Add to Library'}
-              </button>
-            )}
-            {project && (
-              <button type="button" onClick={handleLoadClick}>
-                Load from File
-              </button>
-            )}
-            {project && (
-              <button type="button" onClick={handleImportCsvClick} title="Import a taxonomy from a Discrete Columns CSV">
-                Import CSV
-              </button>
-            )}
-            {project && (
-              <button type="button" onClick={() => setShowSettings(true)}>
-                Settings
-              </button>
-            )}
+            {project && <span className="toolbar-divider" />}
             {project && (
               <button
                 type="button"
@@ -1416,6 +1441,9 @@ export default function App() {
                 New Taxonomy
               </button>
             )}
+            <button type="button" className="toolbar-alt" onClick={handleLogOut} title={`Signed in as ${authedEmail}`}>
+              Log Out
+            </button>
             <input
               ref={fileInputRef}
               type="file"
@@ -1438,9 +1466,6 @@ export default function App() {
               onChange={handleCsvFileSelected}
             />
           </div>
-          <button type="button" className="log-out-btn" onClick={handleLogOut} title={`Signed in as ${authedEmail}`}>
-            Log Out
-          </button>
           <Logo className="app-logo" />
         </div>
       </header>

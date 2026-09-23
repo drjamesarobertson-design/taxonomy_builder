@@ -1580,15 +1580,27 @@ body.app-dark-theme .taxonomy-meta .purpose {
   font-size: 0.85rem;
 }
 
-.log-out-btn {
-  padding: 0.4rem 0.9rem;
-  cursor: pointer;
-  background: transparent;
-  color: #cfe0ff;
-  border: 1px solid #4a6cad;
-  border-radius: 4px;
+/* Toolbar grouping (James's "Taxonomy Builder Button Sequence" spreadsheet, Option C of the
+   mock-up he approved): a restrained two-tone rhythm — alternate groups get this second blue —
+   plus a vertical divider bar between every group. Deliberately just two tones rather than a
+   distinct shade per group: color alone stopped reading as reliably distinct past 5-6 groups,
+   so the dividers do the real work of marking a boundary, and the tones just add a little
+   rhythm on top. */
+.toolbar button.toolbar-alt {
+  background: #3a74b8;
+  border-color: #3a74b8;
 }
 
-.log-out-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+.toolbar button.toolbar-alt:hover {
+  background: #2f5f96;
+  border-color: #2f5f96;
+}
+
+.toolbar-divider {
+  width: 2px;
+  align-self: stretch;
+  background: rgba(255, 255, 255, 0.35);
+  border-radius: 1px;
+  margin: 0 0.25rem;
+  flex-shrink: 0;
 }
