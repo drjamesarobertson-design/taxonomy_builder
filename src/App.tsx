@@ -16,6 +16,7 @@ import { exportBlock } from './blockTransfer';
 import { chooseExportFolder, peekExportFolderName, supportsFileSystemAccess } from './exportFolder';
 import { hasBlankCodeGaps, findAuditIssues } from './codeValidation';
 import { padCodes } from './guidance';
+import { toggleCase } from './caseUtils';
 import type { AuditIssue } from './codeValidation';
 import { codeInputId, descInputId } from './domIds';
 import AuditPanel from './AuditPanel';
@@ -775,8 +776,13 @@ export default function App() {
       highlightedCellIdRef.current = id;
       const rect = input.getBoundingClientRect();
       const panelWidth = 360; // matches .audit-panel's own width (22rem) plus a small margin
+      // Reserve enough height for the tallest realistic panel content (a two/three-line
+      // message plus its button row) — 200px wasn't enough headroom and let a longer message
+      // push the panel's own buttons below the viewport, unclickable, on a short page (James's
+      // report reproduced this exact way on a one-row taxonomy).
+      const panelMaxHeight = 300;
       setAuditAnchor({
-        top: Math.max(8, Math.min(rect.top - 10, window.innerHeight - 200)),
+        top: Math.max(8, Math.min(rect.top - 10, window.innerHeight - panelMaxHeight)),
         left: Math.min(Math.max(8, rect.right + 16), window.innerWidth - panelWidth),
       });
     });
@@ -820,22 +826,58 @@ export default function App() {
   function advanceAudit(fromIndex: number, rows: TaxonomyRow[] = project?.rows ?? []) {
     if (!project || !audit) return;
     const fresh = findAuditIssues(rows, project.settings.properCaseOnly, project.settings.paddingChar);
+
+    // James's report (and a real, serious bug): Skip on the LAST issue in the walk-through was
+    // reporting "clean" — including routing a Lock-origin run straight to "Confirm Lock" — even
+    // though that skipped issue was never actually fixed, just passed over. Reaching the end of
+    // `originalRowIds` only means "nothing left to walk forward to," not "nothing wrong" — a
+    // full fresh check across the whole taxonomy, independent of where the cursor happens to be,
+    // is the only thing allowed to report clean. Never let Lock through on anything less.
+    if (fresh.length === 0) {
+      setAudit({ ...audit, cursor: audit.originalRowIds.length, currentIssue: null, status: 'clean' });
+      jumpToAuditIssue(null);
+      return;
+    }
+
     const firstIssueByRow = new Map<string, AuditIssue>();
     for (const issue of fresh) {
       if (!firstIssueByRow.has(issue.rowId)) firstIssueByRow.set(issue.rowId, issue);
     }
+
+    // Walk forward from fromIndex to the end of the original list first...
     let next = fromIndex;
     while (next < audit.originalRowIds.length && !firstIssueByRow.has(audit.originalRowIds[next])) {
       next++;
     }
+    // ...and if that runs out without finding one, wrap around and check from the start back up
+    // to fromIndex — covers exactly the Skip-past-the-last-issue case: the row(s) skipped
+    // earlier in this same walk are still broken and need revisiting, not a false "clean".
     if (next >= audit.originalRowIds.length) {
-      setAudit({ ...audit, cursor: audit.originalRowIds.length, currentIssue: null, status: 'clean' });
-      jumpToAuditIssue(null);
-    } else {
+      next = 0;
+      while (next < fromIndex && !firstIssueByRow.has(audit.originalRowIds[next])) {
+        next++;
+      }
+    }
+
+    if (next < audit.originalRowIds.length && firstIssueByRow.has(audit.originalRowIds[next])) {
       const nextIssue = firstIssueByRow.get(audit.originalRowIds[next]) ?? null;
       setAudit({ ...audit, cursor: next, currentIssue: nextIssue, status: 'issue' });
       jumpToAuditIssue(nextIssue);
+      return;
     }
+
+    // Nothing in the ORIGINAL walk list is broken anymore, yet fresh.length > 0 — a genuinely
+    // new problem appeared on a row that had none when this run started (a manual edit
+    // elsewhere, or Undo). Extend the walk to include it rather than declaring victory.
+    const newIssue = fresh[0];
+    setAudit({
+      ...audit,
+      originalRowIds: [...audit.originalRowIds, newIssue.rowId],
+      cursor: audit.originalRowIds.length,
+      currentIssue: newIssue,
+      status: 'issue',
+    });
+    jumpToAuditIssue(newIssue);
   }
 
   // Clear Error: re-jumps to (in case the user scrolled away) and focuses the exact cell the
@@ -854,6 +896,24 @@ export default function App() {
       const paddedRows = padCodes(project.rows, project.settings.paddingChar);
       handleSettingsAndRowsChange(project.settings, paddedRows);
       advanceAudit(audit.cursor, paddedRows);
+      return;
+    }
+    if (issue.kind === 'toggleCase') {
+      // James's report: repeatedly clicking Resume Audit without first doing this by hand
+      // (right-click -> Toggle Case) understandably read as "the fix isn't registering" — one
+      // button now does both, same toggleCase() Grid.tsx's own right-click menu uses.
+      const toggledRows = project.rows.map((row) =>
+        row.id === issue.rowId
+          ? {
+              ...row,
+              descriptions: row.descriptions.map((d, i) =>
+                i === issue.level ? toggleCase(d, project.settings.customAbbreviations) : d,
+              ),
+            }
+          : row,
+      );
+      handleSettingsAndRowsChange(project.settings, toggledRows);
+      advanceAudit(audit.cursor, toggledRows);
       return;
     }
     jumpToAuditIssue(issue);
@@ -2370,7 +2430,7 @@ export default function App() {
           currentIndex={Math.min(audit.cursor + 1, audit.originalRowIds.length)}
           originalTotal={audit.originalRowIds.length}
           message={audit.currentIssue?.message ?? ''}
-          isAutoFixable={audit.currentIssue?.kind === 'auto'}
+          currentIssueKind={audit.currentIssue?.kind ?? null}
           anchor={auditAnchor}
           onClearError={handleAuditClearError}
           onSkip={handleAuditSkip}
@@ -2408,7 +2468,7 @@ export default function App() {
                   else performLockUpdates();
                 }}
               >
-                Continue
+                {lockConfirm === 'lock' ? 'Continue and Lock' : 'Continue and Lock Updates'}
               </button>
             </div>
           </div>

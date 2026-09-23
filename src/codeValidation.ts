@@ -108,13 +108,19 @@ export interface AuditIssue {
   /** Which column to jump to — the row's own deepest level for a description-side issue, or
    * the first offending column for a code-side issue. Meaningless for 'auto'. */
   level: number;
-  /** What "Clear Error" does for this issue: focus a code or description cell for the user to
-   * fix by hand, or — 'auto' — apply a whole-taxonomy fix immediately (padCodes for the
-   * padding-symmetry check below). The grid itself refuses to let a code character be typed
-   * into a column beyond a row's own level ("Enter Descriptions Before Entering Codes"), so a
-   * padding gap genuinely can't be fixed by jumping to the cell and typing — padCodes (already
-   * how Fill Codes/Pad Codes elsewhere in this app handle exactly this) is the only way. */
-  kind: 'code' | 'desc' | 'auto';
+  /** What the panel's primary action button does for this issue:
+   * - 'code' / 'desc' — focus that cell for the user to fix by hand ("Clear Error").
+   * - 'auto' — apply a whole-taxonomy fix immediately with no cell to jump to at all (padCodes
+   *   for padding-symmetry) — the grid refuses to let a code character be typed into a column
+   *   beyond a row's own level ("Enter Descriptions Before Entering Codes"), so this genuinely
+   *   can't be fixed by jumping to a cell and typing.
+   * - 'toggleCase' — a childless ALL CAPS heading almost always just needs Toggle Case (it's a
+   *   leaf, not a heading someone forgot to build out) — James's report: repeatedly clicking
+   *   Resume Audit without first doing this by hand (right-click -> Toggle Case) understandably
+   *   read as "the fix isn't registering", when nothing had actually changed yet. One button
+   *   ("Fix and Resume Audit") does both. Still a cell to jump to/highlight, unlike 'auto' —
+   *   the fix itself just doesn't require manual typing. */
+  kind: 'code' | 'desc' | 'auto' | 'toggleCase';
   message: string;
 }
 
@@ -213,9 +219,9 @@ export function findAuditIssues(
     issues.push({
       rowId: rows[i].id,
       level: levelOf(rows[i]),
-      kind: 'desc',
+      kind: 'toggleCase',
       message:
-        'This heading is left in ALL CAPS (structural) but has no child entries underneath — either add its breakdown or change it to Proper Case if it\'s really a posting-level entry.',
+        'This ALL CAPS heading has no children — usually a posting-level entry left in the wrong case. "Fix and Resume Audit" switches it to Proper Case, or Skip to add its breakdown instead.',
     });
   }
 

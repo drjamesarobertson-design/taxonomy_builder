@@ -11,10 +11,11 @@ interface AuditPanelProps {
   currentIndex: number;
   originalTotal: number;
   message: string;
-  /** Whether the current issue is one "Clear Error" jumps to a cell for (false), or one it
-   * fixes immediately with no cell to jump to (true) — the button reads differently either
-   * way, since there's nothing for the user to manually do in the second case. */
-  isAutoFixable: boolean;
+  /** The current issue's kind (or null in checking/clean) — decides the primary action
+   * button's label: "Clear Error" (code/desc, jump for a manual fix), "Fix Automatically"
+   * (auto, no cell involved at all), or "Fix and Resume Audit" (toggleCase — still a cell to
+   * look at, but the fix itself is one click, not manual typing). */
+  currentIssueKind: 'code' | 'desc' | 'auto' | 'toggleCase' | null;
   /** Where App.tsx just scrolled/focused the current issue's cell to, in viewport coordinates —
    * null while there's no cell for this state (checking/clean/auto-fixable). James's report:
    * with the panel fixed at a single spot regardless of where the flagged row actually was, an
@@ -46,7 +47,7 @@ export default function AuditPanel({
   currentIndex,
   originalTotal,
   message,
-  isAutoFixable,
+  currentIssueKind,
   anchor,
   onClearError,
   onSkip,
@@ -144,7 +145,11 @@ export default function AuditPanel({
               </button>
               {status === 'issue' ? (
                 <button type="button" onClick={onClearError}>
-                  {isAutoFixable ? 'Fix Automatically' : 'Clear Error'}
+                  {currentIssueKind === 'auto'
+                    ? 'Fix Automatically'
+                    : currentIssueKind === 'toggleCase'
+                      ? 'Fix and Resume Audit'
+                      : 'Clear Error'}
                 </button>
               ) : (
                 <button type="button" onClick={onResume}>
