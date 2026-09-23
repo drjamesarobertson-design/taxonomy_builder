@@ -19,7 +19,7 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #149, 2026-09-23)
+## Current status (as of PR #151, 2026-09-23)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
@@ -1099,6 +1099,49 @@ while "Format Entire Worksheet" reaches everything, confirmation dialog
 included. Full existing regression suite re-run clean, including the
 previous two rounds' own Format Descriptions and ERP-case-fix scripts,
 updated for this round's new button labels. `npx tsc --noEmit`,
+`npm run lint`, `npm run build` all clean.
+
+### Recommendation-override dialogs default to Cancel, not the override (PR #151)
+James's ask: a dialog overriding a practice already prescribed as
+recommended should lead people toward that recommendation, not toward
+ignoring it — the override action itself should never be the default
+(Enter-activated, blue) button, no matter how many rounds' worth of
+these dialogs have accumulated with the opposite convention.
+
+Audited every confirm-style dialog in the app for this pattern. Six
+qualified — the ascending-order violation, the "0" code warning, the
+code and description item-count (5-9 items) warnings, "no gap in the
+codes to insert this row", the Simple Taxonomy wizard's own 5-9
+heading/sub-item count override, and the blank-code export warning —
+and all six now default to **Cancel/decline** instead of Override/
+Insert Anyway/Continue Anyway/Accept. `Grid.tsx`'s shared
+`confirmDialog` state gains an optional `defaultToCancel` flag; its
+JSX reorders the two buttons based on it rather than always rendering
+Cancel first, reusing the same "last button = default" convention the
+Enter-key handler and blue-highlight CSS already apply app-wide.
+`GuidanceBanner.tsx`'s `confirmOverride` dialog and `App.tsx`'s
+`blankCodeWarning` dialog reorder unconditionally, since both only
+ever have one qualifying use each.
+
+Deliberately left unchanged: plain user-initiated confirmations for a
+destructive action the user chose themselves (Clear All Codes, Add/
+Delete Column, Width of Col 1 truncation) — these aren't overriding a
+stated recommendation, just confirming intent someone already
+expressed by clicking that action, so the ordinary "confirm is
+default" convention stays. The Unlock Taxonomy warning uses a native
+`window.confirm()` with no stylable/reorderable buttons, so it's
+unaffected either way.
+
+Playwright-verified: all five interactive scenarios (ascending order,
+"0" warning, code item-count, no-gap insert, Simple Taxonomy
+heading-count override) show the correct button order and the blue
+default styling landing on Cancel, across five independent
+taxonomies/browser tabs built specifically to isolate each trigger
+from the others (an earlier draft of this test reused rows across
+scenarios and tripped over its own cross-contamination — codes typed
+in decreasing order down a column trip the ascending-order check
+regardless of which warning the test actually meant to isolate). Full
+existing regression suite re-run clean. `npx tsc --noEmit`,
 `npm run lint`, `npm run build` all clean.
 
 ### GL Analyser/Builder menu polish and two workflow-level renames (PR #133)
