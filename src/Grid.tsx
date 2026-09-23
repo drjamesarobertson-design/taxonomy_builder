@@ -259,6 +259,14 @@ export default function Grid({
     confirmLabel?: string;
     cancelLabel?: string;
     onConfirm: () => void;
+    /** James's ask: a dialog overriding a recommended practice (ascending order, avoiding "0",
+     * the 5-9 items guidance, inserting into a code gap that doesn't exist) should lead people
+     * TOWARD the recommendation, not toward ignoring it — Cancel (declining the override) is
+     * the one styled/Enter-activated as default here, not the override action itself. Ordinary
+     * confirmations for something the user deliberately chose to do (Clear All Codes, Add
+     * Column, Width of Col 1 truncation) aren't overriding a stated recommendation, so those
+     * keep the normal "confirm is default" convention. */
+    defaultToCancel?: boolean;
   } | null>(null);
   // Right-click "Width of Col 1…" (James's ask, column 1 only): lets an existing taxonomy's
   // Column 1 code width be changed after the fact — previously settable only once, at creation,
@@ -897,6 +905,7 @@ export default function Grid({
         setConfirmDialog({
           message: 'Codes should increase, lesser value is invalid—Override?',
           confirmLabel: 'Override',
+          defaultToCancel: true,
           onConfirm: () => {
             if (maxCharsHere > 1) multiCharOrderCheckedRef.current.add(orderCheckKey);
             updateCode(rowId, level, value, { ...options, skipOrderCheck: true });
@@ -920,6 +929,7 @@ export default function Grid({
       setConfirmDialog({
         message: 'It is strongly recommended that you avoid using "0" as a valid code for analysis purposes.',
         confirmLabel: 'Override',
+        defaultToCancel: true,
         onConfirm: () => updateCode(rowId, level, value, { ...options, skipZeroWarning: true }),
       });
       return;
@@ -1029,6 +1039,7 @@ export default function Grid({
               ? `${count} entries, ideal number of entries is seven plus or minus two, seriously consider splitting this section in two`
               : `${count} entries, ideal number of entries is seven plus or minus two, consider splitting this section in two`,
           confirmLabel: 'Override',
+          defaultToCancel: true,
           onConfirm: () => updateCode(rowId, level, value, { ...options, skipItemCountWarning: true }),
         });
         return;
@@ -1382,6 +1393,7 @@ export default function Grid({
       setConfirmDialog({
         message: 'There is no gap in the codes to insert this row',
         confirmLabel: 'Insert Anyway',
+        defaultToCancel: true,
         onConfirm: doInsert,
       });
     } else {
@@ -3066,6 +3078,7 @@ export default function Grid({
                                     ? `${count} entries, ideal number of entries is seven plus or minus two, seriously consider splitting this section in two`
                                     : `${count} entries, ideal number of entries is seven plus or minus two, consider splitting this section in two`,
                                 confirmLabel: 'Override',
+                                defaultToCancel: true,
                                 onConfirm: () => {},
                               }),
                             );
@@ -3437,25 +3450,37 @@ export default function Grid({
           >
             <p>{confirmDialog.message}</p>
             <div className="confirm-dialog-actions">
-              <button
-                type="button"
-                onClick={() => {
-                  setConfirmDialog(null);
-                  restoreFocusAfterDescDialog();
-                }}
-              >
-                {confirmDialog.cancelLabel ?? 'Cancel'}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  confirmDialog.onConfirm();
-                  setConfirmDialog(null);
-                  restoreFocusAfterDescDialog();
-                }}
-              >
-                {confirmDialog.confirmLabel ?? 'Delete'}
-              </button>
+              {(() => {
+                const cancelButton = (
+                  <button
+                    key="cancel"
+                    type="button"
+                    onClick={() => {
+                      setConfirmDialog(null);
+                      restoreFocusAfterDescDialog();
+                    }}
+                  >
+                    {confirmDialog.cancelLabel ?? 'Cancel'}
+                  </button>
+                );
+                const confirmButton = (
+                  <button
+                    key="confirm"
+                    type="button"
+                    onClick={() => {
+                      confirmDialog.onConfirm();
+                      setConfirmDialog(null);
+                      restoreFocusAfterDescDialog();
+                    }}
+                  >
+                    {confirmDialog.confirmLabel ?? 'Delete'}
+                  </button>
+                );
+                // Last button = default (Enter-activated, styled blue) — see the confirmDialog
+                // state's own comment: declining an override of a recommended practice is the
+                // one that goes last here, not the override itself.
+                return confirmDialog.defaultToCancel ? [confirmButton, cancelButton] : [cancelButton, confirmButton];
+              })()}
             </div>
           </div>
         </div>

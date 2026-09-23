@@ -1804,10 +1804,9 @@ export default function App() {
             }}
           >
             <p>Blank cells in code range, all cells in code range must contain a character</p>
+            {/* James's ask: Cancel goes last (default/blue/Enter-activated) rather than
+                "Accept" — proceeding with blank codes isn't the recommended path. */}
             <div className="confirm-dialog-actions">
-              <button type="button" onClick={() => setBlankCodeWarning(null)}>
-                Cancel
-              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -1817,6 +1816,9 @@ export default function App() {
                 }}
               >
                 Accept
+              </button>
+              <button type="button" onClick={() => setBlankCodeWarning(null)}>
+                Cancel
               </button>
             </div>
           </div>

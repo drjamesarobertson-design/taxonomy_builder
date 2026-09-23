@@ -323,12 +323,15 @@ export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExi
         <div className="validation-overlay" onClick={() => setConfirmOverride(null)}>
           <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
             <p>{confirmOverride.message}</p>
+            {/* James's ask: a dialog overriding a recommended practice (here, the 5-9 items
+                guidance) should lead people toward the recommendation, not toward ignoring it —
+                Cancel goes last (styled blue, Enter-activated) instead of "Continue Anyway". */}
             <div className="confirm-dialog-actions">
-              <button type="button" onClick={() => setConfirmOverride(null)}>
-                Cancel
-              </button>
               <button type="button" onClick={confirmOverride.onConfirm}>
                 Continue Anyway
+              </button>
+              <button type="button" onClick={() => setConfirmOverride(null)}>
+                Cancel
               </button>
             </div>
           </div>
