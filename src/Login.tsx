@@ -26,6 +26,13 @@ export default function Login({ onSuccess }: LoginProps) {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
+  // James's report: the "check your email" message never actually appeared — setInfo(...) was
+  // immediately followed by switchMode('login'), whose own setInfo(null) reset it before the
+  // next render. A separate, dedicated bit of state (rather than reusing `info`, which
+  // switchMode always clears) plus an actual modal — matching the app's own .validation-dialog
+  // convention, so it's unmissable and gets the same Enter-to-dismiss App.tsx already wires up
+  // for that class — replaces the small inline paragraph this used to be.
+  const [showConfirmEmailNotice, setShowConfirmEmailNotice] = useState(false);
 
   function switchMode(next: Mode) {
     setMode(next);
@@ -74,8 +81,8 @@ export default function Login({ onSuccess }: LoginProps) {
       return;
     }
     if (needsEmailConfirmation) {
-      setInfo('Account created — check your email for a confirmation link before logging in.');
       switchMode('login');
+      setShowConfirmEmailNotice(true);
       return;
     }
     onSuccess(email.trim());
@@ -250,6 +257,17 @@ export default function Login({ onSuccess }: LoginProps) {
             </a>
           </p>
         </form>
+      )}
+
+      {showConfirmEmailNotice && (
+        <div className="validation-overlay">
+          <div className="validation-dialog">
+            <p>Email on its way — please click the link in it to verify your account before logging in.</p>
+            <button type="button" onClick={() => setShowConfirmEmailNotice(false)}>
+              OK
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
