@@ -14,7 +14,12 @@ import {
 } from './gridExport';
 import { exportBlock } from './blockTransfer';
 import { chooseExportFolder, peekExportFolderName, supportsFileSystemAccess } from './exportFolder';
-import { hasBlankCodeGaps, findLockIntegrityIssues } from './codeValidation';
+import { hasBlankCodeGaps, findAuditIssues } from './codeValidation';
+import { padCodes } from './guidance';
+import type { AuditIssue } from './codeValidation';
+import { codeInputId, descInputId } from './domIds';
+import AuditPanel from './AuditPanel';
+import type { AuditOrigin } from './AuditPanel';
 import { AUTO_CODE_TYPES, IMPLEMENTED_AUTO_CODE_TYPES, autoCodeAlphaNumeric } from './autoCode';
 import type { AutoCodeType } from './autoCode';
 import { FORMAT_MODES, applyFormatDescriptions, collectUnknownAbbreviationWords } from './formatDescriptions';
@@ -257,12 +262,37 @@ export default function App() {
   // handleLockTaxonomy's own comment for why: a native confirm() dialog can consume the click's
   // user activation before the save afterward gets to call the native Save-As picker.
   const [lockConfirm, setLockConfirm] = useState<'lock' | 'lockUpdates' | null>(null);
-  // James's report: the integrity-check failure below used to go through the plain-paragraph
-  // `loadError` banner at the top of the page — easy to miss entirely (it reads as if Lock just
-  // silently did nothing), and never cleared itself once the user actually fixed the taxonomy
-  // and re-clicked Lock, so a stale "isn't complete" message could sit there indefinitely. A
-  // proper modal dialog, cleared on every fresh Lock attempt, fixes both.
-  const [lockIntegrityIssues, setLockIntegrityIssues] = useState<string[] | null>(null);
+
+  // Audit Taxonomy (James's spec, considerably elaborated in review): Lock Taxonomy no longer
+  // runs its own separate integrity check — it launches this walkthrough instead, and can't
+  // proceed until it comes back clean (mandatory, no bypass — James: "should not be able to
+  // lock an incomplete taxonomy"). Also reachable standalone from its own toolbar button, and
+  // offered (default yes) before Export to CSV, since that export feeds other software where
+  // completeness matters — Export to Excel, being for review/inspection, isn't gated by it.
+  //
+  // `originalIssues` is the fixed list found when this run started; `cursor` walks through it.
+  // The "N" in "Issue X of N" stays fixed at that original count for the whole run, even though
+  // an already-cleared entry is silently skipped over (advanceAudit) rather than lowering N —
+  // matching James's own worked example ("Fixed. Issue 3 of 5").
+  // Walks row-by-row (`originalRowIds`, distinct rows carrying >=1 issue, in row order,
+  // captured when this run started — that's the fixed "N" in "Issue X of N") rather than a
+  // frozen list of individual issues. That distinction matters: fixing one problem on a row can
+  // reveal a genuinely different one on the SAME row that wasn't checkable before (a blank
+  // description also masks whatever's wrong with that row's code, since the code check only
+  // runs once a level exists) — tracking issue *instances* missed that case entirely (a first
+  // cut of this did, and silently reported "clean" with a still-blank code left behind).
+  // `currentIssue` is always the latest fresh check's result for `originalRowIds[cursor]`, so a
+  // row with two problems in sequence is shown correctly both times without advancing cursor
+  // between them.
+  const [audit, setAudit] = useState<{
+    origin: AuditOrigin;
+    originalRowIds: string[];
+    cursor: number;
+    currentIssue: AuditIssue | null;
+    status: 'checking' | 'clean' | 'issue' | 'resuming';
+  } | null>(null);
+  // The "Audit — Y/N" prompt (default Yes) shown before Export to CSV specifically.
+  const [csvAuditPrompt, setCsvAuditPrompt] = useState(false);
 
   // Auto Code (James's ask): a general-purpose numeric-first gap-coding action, independent of
   // the Simple Taxonomy wizard's own mnemonic Suggest Codes — usable any time, on any taxonomy,
@@ -687,15 +717,152 @@ export default function App() {
     // James's report: Lock allowed locking a taxonomy with no codes at all. This is a hard
     // gate, not a dismissible warning — Lock exists specifically to guarantee integrity for
     // data an ERP may already be posting against, so letting an incomplete taxonomy through
-    // (even with an explicit "yes I know") would undermine the one thing Lock is for.
-    const issues = findLockIntegrityIssues(project.rows, project.settings.properCaseOnly);
-    if (issues.length > 0) {
-      setLockIntegrityIssues(issues);
+    // (even with an explicit "yes I know") would undermine the one thing Lock is for. Now
+    // routed entirely through Audit Taxonomy (below) rather than a separate check of its own.
+    runAudit('lock');
+  }
+
+  /** Every distinct rowId carrying >=1 issue, in row order — the fixed "N" denominator for
+   * "Issue X of N", and the list `advanceAudit` walks. */
+  function rowsWithIssues(issues: AuditIssue[]): string[] {
+    const seen = new Set<string>();
+    const ids: string[] = [];
+    for (const issue of issues) {
+      if (!seen.has(issue.rowId)) {
+        seen.add(issue.rowId);
+        ids.push(issue.rowId);
+      }
+    }
+    return ids;
+  }
+
+  /** Starts (or restarts) an audit run. The issue list is computed synchronously right here —
+   * fast enough that no genuine async gap exists — with only the "Conducting Taxonomy Health
+   * Check…" -> next-status transition deliberately delayed (James approved this wording; a
+   * near-instant flash would read as if nothing happened for a check this is meant to feel
+   * thorough). The setTimeout re-checks `current.origin` against a closed-over `origin` so a
+   * fast Exit-then-rerun in that window can't resurrect a stale run. */
+  function runAudit(origin: AuditOrigin) {
+    if (!project) return;
+    const issues = findAuditIssues(project.rows, project.settings.properCaseOnly, project.settings.paddingChar);
+    const originalRowIds = rowsWithIssues(issues);
+    setAudit({ origin, originalRowIds, cursor: 0, currentIssue: issues[0] ?? null, status: 'checking' });
+    setTimeout(() => {
+      setAudit((current) => {
+        if (!current || current.origin !== origin) return current;
+        return { ...current, status: current.originalRowIds.length === 0 ? 'clean' : 'issue' };
+      });
+    }, 400);
+  }
+
+  /** Re-checks the taxonomy fresh and walks `originalRowIds` forward from `fromIndex`, looking
+   * for the next row that still has ANY current issue — not necessarily the same problem it had
+   * before (fixing one thing on a row can genuinely reveal a different, previously-unchecked
+   * problem on that same row, e.g. a blank description also hides whatever's wrong with that
+   * row's code) — skipping any row that's now fully clean, including as a side effect of fixing
+   * a different one (Fill Codes / Pad Codes can clear several rows in one action). Shared by
+   * both Resume Audit (fromIndex = current cursor — "does this row still have a problem?") and
+   * Skip (fromIndex = cursor + 1 — "don't check this row again, move on"). Takes `rows`
+   * explicitly rather than reading `project.rows` from closure — a caller that just applied a
+   * fix via setProject/handleSettingsAndRowsChange can't rely on `project` reflecting it yet in
+   * that same tick (React batches the state update), so it passes the just-computed rows
+   * straight through instead of reading the still-stale `project`. */
+  function advanceAudit(fromIndex: number, rows: TaxonomyRow[] = project?.rows ?? []) {
+    if (!project || !audit) return;
+    const fresh = findAuditIssues(rows, project.settings.properCaseOnly, project.settings.paddingChar);
+    const firstIssueByRow = new Map<string, AuditIssue>();
+    for (const issue of fresh) {
+      if (!firstIssueByRow.has(issue.rowId)) firstIssueByRow.set(issue.rowId, issue);
+    }
+    let next = fromIndex;
+    while (next < audit.originalRowIds.length && !firstIssueByRow.has(audit.originalRowIds[next])) {
+      next++;
+    }
+    if (next >= audit.originalRowIds.length) {
+      setAudit({ ...audit, cursor: audit.originalRowIds.length, currentIssue: null, status: 'clean' });
+    } else {
+      setAudit({ ...audit, cursor: next, currentIssue: firstIssueByRow.get(audit.originalRowIds[next]) ?? null, status: 'issue' });
+    }
+  }
+
+  // Clear Error: jumps to and focuses the exact cell the current issue is about — the same
+  // "drop the cursor there" pattern GuidanceBanner.tsx already uses for its own duplicate-code
+  // and manual-code notices — then switches the panel to Resume Audit for when the fix is done.
+  function handleAuditClearError() {
+    if (!audit || !audit.currentIssue || !project) return;
+    const issue = audit.currentIssue;
+    if (issue.kind === 'auto') {
+      // Padding-symmetry: the grid itself refuses to let a code character be typed into a
+      // column beyond a row's own level, so there's no cell to jump to and no manual fix —
+      // apply the same whole-taxonomy padCodes sweep Fill Codes/Pad Codes already use elsewhere,
+      // then immediately re-check and advance rather than waiting on a Resume Audit click.
+      const paddedRows = padCodes(project.rows, project.settings.paddingChar);
+      handleSettingsAndRowsChange(project.settings, paddedRows);
+      advanceAudit(audit.cursor, paddedRows);
       return;
     }
-    setLockIntegrityIssues(null);
-    setLockConfirm('lock');
+    const id = issue.kind === 'code' ? codeInputId(issue.level, issue.rowId) : descInputId(issue.level, issue.rowId);
+    requestAnimationFrame(() => {
+      const input = document.getElementById(id) as HTMLInputElement | null;
+      input?.scrollIntoView({ block: 'center' });
+      input?.focus();
+      input?.select();
+    });
+    setAudit({ ...audit, status: 'resuming' });
   }
+
+  function handleAuditSkip() {
+    if (!audit) return;
+    advanceAudit(audit.cursor + 1);
+  }
+
+  function handleAuditResume() {
+    if (!audit) return;
+    advanceAudit(audit.cursor);
+  }
+
+  // Exit Audit: always closes the panel. For Lock/Lock updates it's genuinely a dead end —
+  // "mandatory, no bypass" (James) — locking simply doesn't happen. For Export to CSV, Audit was
+  // only ever advisory (the Y/N prompt before it), so exiting mid-walkthrough still lets the
+  // export proceed rather than losing the work of getting there.
+  function handleAuditExit() {
+    if (!audit) return;
+    const origin = audit.origin;
+    setAudit(null);
+    if (origin === 'export-csv') setExportChoice({ format: 'csv' });
+  }
+
+  // Standalone "Audit Taxonomy" toolbar button — usable any time, whether or not locking or
+  // exporting is on the user's mind at all (James: "one can use Audit even if NO lock
+  // intended — to check before exporting").
+  function handleAuditTaxonomyClick() {
+    runAudit('standalone');
+  }
+
+  // The "Audit — Y/N" prompt before Export to CSV (default Yes). Export to Excel is deliberately
+  // not gated by this at all — James: CSV feeds other software (needs to be complete), Excel is
+  // for review/inspection (doesn't).
+  function handleExportCsvClick() {
+    setCsvAuditPrompt(true);
+  }
+
+  // Effect (rather than inline in runAudit's setTimeout) so it covers every path into a clean
+  // result — the initial check, and every Resume/Skip that lands on "nothing left" via
+  // advanceAudit. Lock and Export-to-CSV each have their own "what next" step once clean;
+  // standalone Audit shows its own clean-state buttons (AuditPanel) and just waits.
+  useEffect(() => {
+    if (!audit || audit.status !== 'clean') return;
+    if (audit.origin === 'lock') {
+      setAudit(null);
+      setLockConfirm('lock');
+    } else if (audit.origin === 'lockUpdates') {
+      setAudit(null);
+      setLockConfirm('lockUpdates');
+    } else if (audit.origin === 'export-csv') {
+      setAudit(null);
+      setExportChoice({ format: 'csv' });
+    }
+  }, [audit]);
 
   function performLockTaxonomy() {
     if (!project) return;
@@ -733,15 +900,9 @@ export default function App() {
   // time — the taxonomy's own history plus everything added since the last Lock, as one list.
   function handleLockUpdates() {
     if (!project) return;
-    // Same integrity gate as the initial Lock — the new rows being locked in this time need to
-    // be just as complete as the ones the first Lock already protected.
-    const issues = findLockIntegrityIssues(project.rows, project.settings.properCaseOnly);
-    if (issues.length > 0) {
-      setLockIntegrityIssues(issues);
-      return;
-    }
-    setLockIntegrityIssues(null);
-    setLockConfirm('lockUpdates');
+    // Same mandatory Audit gate as the initial Lock — the new rows being locked in this time
+    // need to be just as complete as the ones the first Lock already protected.
+    runAudit('lockUpdates');
   }
 
   function performLockUpdates() {
@@ -1276,7 +1437,7 @@ export default function App() {
               </button>
             )}
             {project && (
-              <button type="button" onClick={() => setExportChoice({ format: 'csv' })}>
+              <button type="button" onClick={handleExportCsvClick}>
                 Export to CSV
               </button>
             )}
@@ -1424,6 +1585,16 @@ export default function App() {
                 title="Clean up scrappy capitalisation — ALL CAPS headings, Proper Case posting-level entries"
               >
                 Format Descriptions
+              </button>
+            )}
+            {project && <span className="toolbar-divider" />}
+            {project && (
+              <button
+                type="button"
+                onClick={handleAuditTaxonomyClick}
+                title="Walk through every open issue one at a time, with a jump straight to each one"
+              >
+                Audit Taxonomy
               </button>
             )}
             {project && <span className="toolbar-divider" />}
@@ -2113,22 +2284,55 @@ export default function App() {
         </div>
       )}
 
-      {lockIntegrityIssues && (
-        <div className="validation-overlay" onClick={() => setLockIntegrityIssues(null)}>
+      {csvAuditPrompt && (
+        <div className="validation-overlay" onClick={() => setCsvAuditPrompt(false)}>
           <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
-            <p>This taxonomy isn't complete yet — Lock can't proceed until:</p>
-            <ul>
-              {lockIntegrityIssues.map((issue, i) => (
-                <li key={i}>{issue}</li>
-              ))}
-            </ul>
+            <p>Run Audit Taxonomy before exporting to CSV? Recommended — this export feeds other software, where a gap is much harder to spot after the fact than a quick check now.</p>
             <div className="confirm-dialog-actions">
-              <button type="button" onClick={() => setLockIntegrityIssues(null)}>
-                OK
+              <button
+                type="button"
+                onClick={() => {
+                  setCsvAuditPrompt(false);
+                  setExportChoice({ format: 'csv' });
+                }}
+              >
+                No
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCsvAuditPrompt(false);
+                  runAudit('export-csv');
+                }}
+              >
+                Yes, Audit
               </button>
             </div>
           </div>
         </div>
+      )}
+
+      {audit && (
+        <AuditPanel
+          status={audit.status}
+          origin={audit.origin}
+          currentIndex={Math.min(audit.cursor + 1, audit.originalRowIds.length)}
+          originalTotal={audit.originalRowIds.length}
+          message={audit.currentIssue?.message ?? ''}
+          isAutoFixable={audit.currentIssue?.kind === 'auto'}
+          onClearError={handleAuditClearError}
+          onSkip={handleAuditSkip}
+          onExit={handleAuditExit}
+          onResume={handleAuditResume}
+          onLockFromClean={() => {
+            setAudit(null);
+            setLockConfirm('lock');
+          }}
+          onExportCsvFromClean={() => {
+            setAudit(null);
+            setExportChoice({ format: 'csv' });
+          }}
+        />
       )}
 
       {lockConfirm && (

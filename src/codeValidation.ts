@@ -29,17 +29,9 @@ export function hasBlankCodeGaps(rows: TaxonomyRow[]): boolean {
   });
 }
 
-// Lock Taxonomy integrity check (James's ask — locking with no codes at all, or an incomplete
-// structure, defeats the whole point of Lock: guaranteeing long-term integrity for data an ERP
-// may already be posting against). Three checks, each returning a plain description of what it
-// found so the caller can list every problem at once rather than making the user fix one,
-// re-click Lock, and discover the next.
-
-/** Rows with no description at any level — a genuinely empty placeholder row, most often left
- * over from an Insert Row that was never followed through on. */
-export function findEmptyRows(rows: TaxonomyRow[]): number[] {
-  return rows.map((row, i) => (levelOf(row) === -1 ? i : -1)).filter((i) => i !== -1);
-}
+// Taxonomy integrity checks — used by Audit Taxonomy (below), which Lock Taxonomy now runs
+// through rather than checking separately (James's ask): guaranteeing long-term integrity for
+// data an ERP may already be posting against.
 
 function immediateParentIndex(rows: TaxonomyRow[], idx: number): number {
   const level = levelOf(rows[idx]);
@@ -105,43 +97,164 @@ export function findChildlessHeadings(rows: TaxonomyRow[], properCaseOnly: boole
   return result;
 }
 
-/** Everything Lock Taxonomy should refuse to proceed past — plain-English, one entry per
- * distinct problem found, so a single click surfaces the whole list rather than one at a time. */
-export function findLockIntegrityIssues(rows: TaxonomyRow[], properCaseOnly: boolean = false): string[] {
-  const issues: string[] = [];
-  if (rows.length === 0) {
-    issues.push('This taxonomy has no rows yet.');
-    return issues;
+// Audit Taxonomy (James's ask, "Audit Taxonomy — Proposed Specification"): Lock Taxonomy no
+// longer runs its own separate check (findLockIntegrityIssues, above this comment in earlier
+// versions of this file, is gone — replaced entirely by this). One issue per distinct problem,
+// each carrying exactly which row/cell it's about so the walkthrough (App.tsx) has somewhere
+// concrete to jump to, in top-to-bottom row order (James: "systematic top to bottom is good").
+
+export interface AuditIssue {
+  rowId: string;
+  /** Which column to jump to — the row's own deepest level for a description-side issue, or
+   * the first offending column for a code-side issue. Meaningless for 'auto'. */
+  level: number;
+  /** What "Clear Error" does for this issue: focus a code or description cell for the user to
+   * fix by hand, or — 'auto' — apply a whole-taxonomy fix immediately (padCodes for the
+   * padding-symmetry check below). The grid itself refuses to let a code character be typed
+   * into a column beyond a row's own level ("Enter Descriptions Before Entering Codes"), so a
+   * padding gap genuinely can't be fixed by jumping to the cell and typing — padCodes (already
+   * how Fill Codes/Pad Codes elsewhere in this app handle exactly this) is the only way. */
+  kind: 'code' | 'desc' | 'auto';
+  message: string;
+}
+
+/** A row's own code, checked across its "valid range" (column 0 through its own level) —
+ * distinguishes a genuinely empty code (no columns filled at all) from an incomplete one (some
+ * filled, some not) per James's ask, since the two read as different problems to a user fixing
+ * them. Returns null when the row's code is already complete. */
+function codeCompletion(row: TaxonomyRow, level: number): { firstBlank: number; isEmpty: boolean } | null {
+  let filledCount = 0;
+  let firstBlank = -1;
+  for (let i = 0; i <= level; i++) {
+    if (row.codes[i]) filledCount++;
+    else if (firstBlank === -1) firstBlank = i;
   }
-  const emptyRows = findEmptyRows(rows);
-  if (emptyRows.length > 0) {
-    issues.push(
-      `Row${emptyRows.length === 1 ? '' : 's'} ${emptyRows.map((i) => i + 1).join(', ')} ${
-        emptyRows.length === 1 ? 'has' : 'have'
-      } no description yet.`,
-    );
+  if (firstBlank === -1) return null;
+  return { firstBlank, isEmpty: filledCount === 0 };
+}
+
+/** James's ask: "the hierarchy of descriptions cascades down top left to bottom right, one
+ * column increment at a time — if this progression is broken this must be fixed." A row's level
+ * should never be more than one deeper than the nearest preceding row that's shallower than it
+ * (its effective parent) — jumping straight from a level-1 heading to a level-4 entry, with
+ * nothing at levels 2-3 for that branch, is exactly the kind of gap Lock is meant to catch.
+ * Includes the taxonomy's very first entries starting below level 0 with nothing shallower
+ * above them at all (parent level treated as -1 in that case). */
+export function findHierarchySkips(rows: TaxonomyRow[]): number[] {
+  const result: number[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const level = levelOf(rows[i]);
+    if (level <= 0) continue;
+    const parentIdx = immediateParentIndex(rows, i);
+    const parentLevel = parentIdx === -1 ? -1 : levelOf(rows[parentIdx]);
+    if (level - parentLevel > 1) result.push(i);
   }
-  if (hasBlankCodeGaps(rows)) {
-    issues.push('One or more rows have a description but are missing a code.');
+  return result;
+}
+
+/** James's ask: "the codes must have corresponding trailing periods, there must be perfect
+ * symmetry" — Section 4.4's padding convention. Every code column beyond a row's own level
+ * should carry the taxonomy's padding character, never be left genuinely blank (or, just as
+ * wrong, carry a stray real code past where this row's own hierarchy actually reaches).
+ * Returns the first offending column per row. */
+export function findPaddingSymmetryIssues(
+  rows: TaxonomyRow[],
+  paddingChar: string,
+): Array<{ rowIndex: number; level: number; column: number }> {
+  const result: Array<{ rowIndex: number; level: number; column: number }> = [];
+  for (let i = 0; i < rows.length; i++) {
+    const level = levelOf(rows[i]);
+    if (level === -1) continue;
+    for (let col = level + 1; col < rows[i].codes.length; col++) {
+      if ((rows[i].codes[col] ?? '') !== paddingChar) {
+        result.push({ rowIndex: i, level, column: col });
+        break;
+      }
+    }
   }
+  return result;
+}
+
+/** The full Audit Taxonomy walkthrough's issue list — Tranche 1 of James's spec: the checks
+ * Lock Taxonomy used to run (blank description, blank/incomplete code, ascending-order
+ * violation, childless ALL CAPS heading), plus the two new structural checks above. Tranche 2
+ * (the "Other" placement, oversized/undersized sibling groups, far-right outliers, description
+ * length) is deliberately not here yet — a separate round, per James's own "two tranches"
+ * agreement, since each of those carries its own assisted action (Split, Edit) rather than
+ * just a jump-to-cell fix. */
+export function findAuditIssues(
+  rows: TaxonomyRow[],
+  properCaseOnly: boolean,
+  paddingChar: string,
+): AuditIssue[] {
+  const issues: AuditIssue[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const level = levelOf(row);
+    if (level === -1) {
+      issues.push({ rowId: row.id, level: 0, kind: 'desc', message: 'This row has no description yet.' });
+      continue;
+    }
+    const completion = codeCompletion(row, level);
+    if (completion) {
+      issues.push({
+        rowId: row.id,
+        level: completion.firstBlank,
+        kind: 'code',
+        message: completion.isEmpty
+          ? 'This row has a description but no code yet.'
+          : 'This row has an incomplete code — not every column up to its own level is filled in.',
+      });
+    }
+  }
+
+  const childlessHeadings = findChildlessHeadings(rows, properCaseOnly);
+  for (const i of childlessHeadings) {
+    issues.push({
+      rowId: rows[i].id,
+      level: levelOf(rows[i]),
+      kind: 'desc',
+      message:
+        'This heading is left in ALL CAPS (structural) but has no child entries underneath — either add its breakdown or change it to Proper Case if it\'s really a posting-level entry.',
+    });
+  }
+
+  const hierarchySkips = findHierarchySkips(rows);
+  for (const i of hierarchySkips) {
+    issues.push({
+      rowId: rows[i].id,
+      level: levelOf(rows[i]),
+      kind: 'desc',
+      message:
+        "This entry's level skips one or more columns deeper than its nearest heading above it — the hierarchy should cascade down one level at a time.",
+    });
+  }
+
+  const paddingIssues = findPaddingSymmetryIssues(rows, paddingChar);
+  for (const { rowIndex, column } of paddingIssues) {
+    issues.push({
+      rowId: rows[rowIndex].id,
+      level: column,
+      kind: 'auto',
+      message: `This row's code isn't padded correctly — every column beyond its own level should carry "${paddingChar}", not be left blank. Fixed automatically — the grid doesn't allow typing a code past a row's own level by hand.`,
+    });
+  }
+
   const violation = findAscendingOrderViolation(rows);
   if (violation) {
-    issues.push(
-      `Row ${violation.rowIndex + 1} ("${violation.value}") is out of ascending order after row ${
-        violation.prevRowIndex + 1
-      } ("${violation.prevValue}") in column ${violation.level + 1}.`,
-    );
+    issues.push({
+      rowId: rows[violation.rowIndex].id,
+      level: violation.level,
+      kind: 'code',
+      message: `This code ("${violation.value}") is out of ascending order after row ${violation.prevRowIndex + 1} ("${violation.prevValue}") in this column.`,
+    });
   }
-  const childlessHeadings = findChildlessHeadings(rows, properCaseOnly);
-  if (childlessHeadings.length > 0) {
-    issues.push(
-      `Row${childlessHeadings.length === 1 ? '' : 's'} ${childlessHeadings.map((i) => i + 1).join(', ')} ${
-        childlessHeadings.length === 1 ? 'is' : 'are'
-      } left in ALL CAPS (structural) but ${
-        childlessHeadings.length === 1 ? 'has' : 'have'
-      } no child entries underneath — either add its breakdown or change it to Proper Case if it's really a posting-level entry.`,
-    );
-  }
+
+  // Row order (James: "systematic top to bottom is good, as you propose") — re-sort by each
+  // issue's row position now that every check above has been folded in, since they were
+  // appended check-by-check rather than row-by-row.
+  const indexOfRow = new Map(rows.map((r, i) => [r.id, i]));
+  issues.sort((a, b) => (indexOfRow.get(a.rowId) ?? 0) - (indexOfRow.get(b.rowId) ?? 0));
   return issues;
 }
 
