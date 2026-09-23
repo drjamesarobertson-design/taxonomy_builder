@@ -40,6 +40,12 @@ interface GridProps {
   /** Item 3: right-click "Export Block" on a selected range of rows — App.tsx owns the actual
    * Include Suffix?/filename flow, Grid just hands up which rows the selection covered. */
   onExportBlock: (rowsSubset: TaxonomyRow[]) => void;
+  /** James's ask: "Format Descriptions" needs to default to formatting just the currently
+   * selected range, offering the whole taxonomy as a separate, confirmed action — App.tsx has
+   * no visibility into Grid's own internal `selection` state otherwise, so this fires whenever
+   * it changes (any cell kind — a code-column selection still identifies real rows just as
+   * well as a description one for this purpose). Null means nothing is currently selected. */
+  onSelectionChange?: (rowIds: ReadonlySet<string> | null) => void;
 }
 
 type CellKind = 'code' | 'desc' | 'suffix';
@@ -78,6 +84,7 @@ export default function Grid({
   helpText,
   autoFocusFirstRow,
   onExportBlock,
+  onSelectionChange,
 }: GridProps) {
   const {
     numLevels,
@@ -119,6 +126,13 @@ export default function Grid({
     { kind: 'level'; level: number } | { kind: 'codeDot'; level: number } | null
   >(null);
   const [selection, setSelection] = useState<Selection | null>(null);
+  useEffect(() => {
+    onSelectionChange?.(selection?.rowIds ?? null);
+    // onSelectionChange is a fresh closure from App.tsx on every render; including it would
+    // fire this effect (and Format Descriptions' selection tracking) on every keystroke rather
+    // than only on an actual selection change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selection]);
   const [anchorRowId, setAnchorRowId] = useState<string | null>(null);
   const [anchorLevel, setAnchorLevel] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);

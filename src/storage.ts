@@ -146,7 +146,13 @@ export function loadAutosave(): TaxonomyProject | null {
     const raw = localStorage.getItem(AUTOSAVE_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw);
-    return isTaxonomyProject(data) ? data : null;
+    // James's report: a taxonomy autosaved before a newer settings field existed (e.g.
+    // customAbbreviations) came back into the live app with that field still `undefined` —
+    // "Resume Work in Progress" is a direct localStorage read, unlike Load from File, which
+    // already runs this same migration. Any code that spreads that field
+    // (toProperCasePreservingAbbreviations, findUnknownAllCapsWords) threw the moment it ran,
+    // which read as "the button doesn't register."
+    return isTaxonomyProject(data) ? migrateProjectData(data) : null;
   } catch {
     return null;
   }

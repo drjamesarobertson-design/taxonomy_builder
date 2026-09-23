@@ -1383,6 +1383,18 @@ body.app-dark-theme .taxonomy-meta .purpose {
   border-color: #12409e;
 }
 
+/* A disabled default button (e.g. "Format Selected Range" with nothing selected) shouldn't
+   still read as the blue, ready-to-go answer — Enter already skips it (App.tsx's handler only
+   ever clicks button:not(:disabled)) and its own [disabled] styling should agree visually. */
+.confirm-dialog-actions button:last-of-type:disabled,
+.validation-dialog > button:last-of-type:disabled {
+  background: #e5e7eb;
+  color: #6b7280;
+  border-color: #d1d5db;
+  font-weight: 400;
+  cursor: not-allowed;
+}
+
 .validation-dialog input[type='text'] {
   display: block;
   width: 100%;

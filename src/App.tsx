@@ -243,9 +243,19 @@ export default function App() {
   const [formatMode, setFormatMode] = useState<FormatMode>(FORMAT_MODES[2]);
   const [abbreviationPrompt, setAbbreviationPrompt] = useState<{
     mode: FormatMode;
+    scopeRowIds: ReadonlySet<string> | undefined;
     queue: string[];
     accepted: string[];
   } | null>(null);
+  // James's ask: Format Descriptions should default to formatting just whatever's currently
+  // selected in the grid, offering the whole taxonomy as a separate, explicitly confirmed
+  // action rather than the only option — Grid.tsx reports its own internal selection up via
+  // onSelectionChange since App.tsx doesn't otherwise have visibility into it. undefined
+  // scopeRowIds (passed to formatDescriptions.ts) means "every row" throughout.
+  const [gridSelectionRowIds, setGridSelectionRowIds] = useState<ReadonlySet<string> | null>(null);
+  // "Format Entire Worksheet" needs its own confirmation step (James's ask) — holds the mode to
+  // run once confirmed; null means that confirmation isn't currently showing.
+  const [formatEntireConfirm, setFormatEntireConfirm] = useState<FormatMode | null>(null);
 
   // Export folder (Section 8-adjacent convenience James asked for): on Chromium browsers,
   // Save/Export can write straight into a folder picked once via the File System Access API,
@@ -1047,22 +1057,46 @@ export default function App() {
 
   // Runs the actual rewrite and persists any newly-accepted abbreviations into this taxonomy's
   // settings, so the next Format Descriptions run (and Format Descriptions itself, mid-queue)
-  // already knows them.
-  function runFormatDescriptions(mode: FormatMode, customAbbreviations: string[]) {
+  // already knows them. `scopeRowIds` undefined means every row; otherwise only rows in that
+  // set are eligible for rewriting (James's "Format Selected Range").
+  function runFormatDescriptions(mode: FormatMode, customAbbreviations: string[], scopeRowIds: ReadonlySet<string> | undefined) {
     if (!project) return;
-    const newRows = applyFormatDescriptions(project.rows, mode, customAbbreviations);
+    const newRows = applyFormatDescriptions(project.rows, mode, customAbbreviations, scopeRowIds);
     handleSettingsAndRowsChange({ ...project.settings, customAbbreviations }, newRows);
   }
 
-  function handleFormatDescriptionsGenerate() {
+  // Shared by both "Format Selected Range" and (after its own confirmation) "Format Entire
+  // Worksheet" — collects any not-yet-recognised ALL-CAPS words within scope first, prompting
+  // for each before the actual rewrite runs.
+  function beginFormatDescriptions(mode: FormatMode, scopeRowIds: ReadonlySet<string> | undefined) {
     if (!project) return;
-    setShowFormatDescriptions(false);
-    const unknown = collectUnknownAbbreviationWords(project.rows, formatMode, project.settings.customAbbreviations);
+    const unknown = collectUnknownAbbreviationWords(project.rows, mode, project.settings.customAbbreviations, scopeRowIds);
     if (unknown.length === 0) {
-      runFormatDescriptions(formatMode, project.settings.customAbbreviations);
+      runFormatDescriptions(mode, project.settings.customAbbreviations, scopeRowIds);
       return;
     }
-    setAbbreviationPrompt({ mode: formatMode, queue: unknown, accepted: [] });
+    setAbbreviationPrompt({ mode, scopeRowIds, queue: unknown, accepted: [] });
+  }
+
+  // "Format Selected Range" (the dialog's default action) — the currently selected rows only.
+  function handleFormatSelectedRange() {
+    if (!gridSelectionRowIds || gridSelectionRowIds.size === 0) return;
+    setShowFormatDescriptions(false);
+    beginFormatDescriptions(formatMode, gridSelectionRowIds);
+  }
+
+  // "Format Entire Worksheet" — James's ask: this sweeping, less-common action always gets its
+  // own confirmation step, separate from (and after) the mode-picker dialog.
+  function handleFormatEntireWorksheetClick() {
+    setShowFormatDescriptions(false);
+    setFormatEntireConfirm(formatMode);
+  }
+
+  function handleFormatEntireWorksheetConfirm() {
+    if (!formatEntireConfirm) return;
+    const mode = formatEntireConfirm;
+    setFormatEntireConfirm(null);
+    beginFormatDescriptions(mode, undefined);
   }
 
   // Answers one "Keep 'XYZ' in caps?" prompt at a time; once the queue is empty, runs the
@@ -1074,7 +1108,7 @@ export default function App() {
     const accepted = accept ? [...abbreviationPrompt.accepted, word] : abbreviationPrompt.accepted;
     if (rest.length === 0) {
       setAbbreviationPrompt(null);
-      runFormatDescriptions(abbreviationPrompt.mode, [...project.settings.customAbbreviations, ...accepted]);
+      runFormatDescriptions(abbreviationPrompt.mode, [...project.settings.customAbbreviations, ...accepted], abbreviationPrompt.scopeRowIds);
     } else {
       setAbbreviationPrompt({ ...abbreviationPrompt, queue: rest, accepted });
     }
@@ -1497,6 +1531,7 @@ export default function App() {
             helpText={helpText}
             autoFocusFirstRow={autoFocusFirstRow}
             onExportBlock={handleExportBlockRange}
+            onSelectionChange={setGridSelectionRowIds}
           />
           <footer className="app-footer">
             The ERP Doctor Taxonomy Builder is the Intellectual Property of the ERP Doctor and
@@ -1561,8 +1596,39 @@ export default function App() {
               <button type="button" onClick={() => setShowFormatDescriptions(false)}>
                 Cancel
               </button>
-              <button type="button" onClick={handleFormatDescriptionsGenerate}>
-                Format Descriptions
+              <button type="button" onClick={handleFormatEntireWorksheetClick}>
+                Format Entire Worksheet
+              </button>
+              <button
+                type="button"
+                onClick={handleFormatSelectedRange}
+                disabled={!gridSelectionRowIds || gridSelectionRowIds.size === 0}
+                title={
+                  !gridSelectionRowIds || gridSelectionRowIds.size === 0
+                    ? 'Select a row or range in the grid first'
+                    : undefined
+                }
+              >
+                Format Selected Range
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {formatEntireConfirm && (
+        <div className="validation-overlay" onClick={() => setFormatEntireConfirm(null)}>
+          <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
+            <p>
+              This will reformat descriptions across the entire taxonomy, not just a selected
+              range — continue?
+            </p>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setFormatEntireConfirm(null)}>
+                Cancel
+              </button>
+              <button type="button" onClick={handleFormatEntireWorksheetConfirm}>
+                Format Entire Worksheet
               </button>
             </div>
           </div>
@@ -1657,16 +1723,10 @@ export default function App() {
               of the content.
             </p>
             <div className="confirm-dialog-actions">
-              <button
-                type="button"
-                onClick={() => {
-                  const { mode, excludeDelimiters, suffixMode } = paddingSubstituteChoice;
-                  setPaddingSubstituteChoice(null);
-                  performExport(mode, undefined, excludeDelimiters, suffixMode);
-                }}
-              >
-                Keep "."
-              </button>
+              {/* Last button = the default (Enter-activated, styled blue — App.tsx's global
+                  Enter handler and App.css both key off "last button in this row"), so the
+                  recommended "Keep '.'" choice goes last, not "Replace with '0'" — James's
+                  report: the dialog argued strongly against "0" but still defaulted to it. */}
               <button
                 type="button"
                 onClick={() => {
@@ -1676,6 +1736,16 @@ export default function App() {
                 }}
               >
                 Replace with "0"
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const { mode, excludeDelimiters, suffixMode } = paddingSubstituteChoice;
+                  setPaddingSubstituteChoice(null);
+                  performExport(mode, undefined, excludeDelimiters, suffixMode);
+                }}
+              >
+                Keep "."
               </button>
             </div>
           </div>
