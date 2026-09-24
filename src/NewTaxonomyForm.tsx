@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DEFAULT_SETTINGS, MAX_LEVELS } from './types';
 import type { SuffixField } from './types';
 import HelpIcon from './HelpIcon';
@@ -27,6 +27,15 @@ function defaultSuffix(): SuffixField {
 }
 
 export default function NewTaxonomyForm({ onCreate, helpText }: NewTaxonomyFormProps) {
+  // James's report: arriving here with the page already scrolled down (e.g. from browsing the
+  // Library) left the sticky header (.app-sticky-top, App.css) pinned over this form's own top
+  // — the "Create a New Taxonomy" heading and Title label — with no visible way to tell it was
+  // there short of scrolling back up manually. Reset to the top on mount, same as any other
+  // fresh "page" a single-page app navigates to.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
   const [title, setTitle] = useState('');
   const [tableName, setTableName] = useState('');
   const [purpose, setPurpose] = useState('');
