@@ -119,40 +119,25 @@ function spreadSlots(count: number, availableSlots = 8): string[] {
 // convention, which is cosmetic by comparison — so a group where any Other row isn't already
 // last falls back to one combined, strictly row-order spread across every sibling, ordinary and
 // Other alike, guaranteeing the codes it produces can never violate ascending order.
-function assignLevelCodes(rows: TaxonomyRow[], level: number): TaxonomyRow[] {
-  const groups = groupSiblingIndices(rows, level);
+// The actual per-group assignment — factored out of assignLevelCodes so the Audit walkthrough
+// (fillRestOfGroup, below) can run this same rule against just ONE sibling group, not sweep the
+// whole column, when the user has only just typed a code for one row in it.
+function assignGroupCodes(rows: TaxonomyRow[], indices: number[], level: number): TaxonomyRow[] {
   const result = [...rows];
-  for (const indices of groups.values()) {
-    const otherIndices = indices.filter((i) => isOtherOrMiscellaneousLabel(result[i].descriptions[level] ?? ''));
-    const otherIndexSet = new Set(otherIndices);
-    const ordinaryIndices = indices.filter((i) => !otherIndexSet.has(i));
-    const used = new Set(indices.map((i) => result[i].codes[level]).filter((c) => c));
+  const otherIndices = indices.filter((i) => isOtherOrMiscellaneousLabel(result[i].descriptions[level] ?? ''));
+  const otherIndexSet = new Set(otherIndices);
+  const ordinaryIndices = indices.filter((i) => !otherIndexSet.has(i));
+  const used = new Set(indices.map((i) => result[i].codes[level]).filter((c) => c));
 
-    const otherTrails =
-      ordinaryIndices.length === 0 ||
-      otherIndices.every((oi) => oi > ordinaryIndices[ordinaryIndices.length - 1]);
+  const otherTrails =
+    ordinaryIndices.length === 0 || otherIndices.every((oi) => oi > ordinaryIndices[ordinaryIndices.length - 1]);
 
-    if (!otherTrails) {
-      // Fallback: every sibling, in row order, sharing one spread — no reserved slot, since a
-      // reservation only makes sense when nothing ordinary follows it.
-      const slots = spreadSlots(indices.length);
-      let slotPos = 0;
-      for (const idx of indices) {
-        const row = result[idx];
-        if (row.codes[level]) continue;
-        while (slotPos < slots.length && used.has(slots[slotPos])) slotPos++;
-        const code = slots[slotPos];
-        if (!code) continue;
-        used.add(code);
-        slotPos++;
-        result[idx] = { ...row, codes: row.codes.map((c, i) => (i === level ? code : c)) };
-      }
-      continue;
-    }
-
-    const slots = spreadSlots(ordinaryIndices.length);
+  if (!otherTrails) {
+    // Fallback: every sibling, in row order, sharing one spread — no reserved slot, since a
+    // reservation only makes sense when nothing ordinary follows it.
+    const slots = spreadSlots(indices.length);
     let slotPos = 0;
-    for (const idx of ordinaryIndices) {
+    for (const idx of indices) {
       const row = result[idx];
       if (row.codes[level]) continue;
       while (slotPos < slots.length && used.has(slots[slotPos])) slotPos++;
@@ -162,23 +147,60 @@ function assignLevelCodes(rows: TaxonomyRow[], level: number): TaxonomyRow[] {
       slotPos++;
       result[idx] = { ...row, codes: row.codes.map((c, i) => (i === level ? code : c)) };
     }
+    return result;
+  }
 
-    // "9" (index 8) whenever the ordinary siblings fit within 1-8; otherwise the next slot past
-    // however far they actually reached — found from the spread's own last slot rather than
-    // assumed from `ordinaryIndices.length`, since a gap greater than 1 (the overflow case,
-    // count > 8) can reach a higher index than the sibling count alone would suggest.
-    const highestOrdinarySlotIndex = slots.length > 0 ? CODE_SLOTS.indexOf(slots[slots.length - 1]) : -1;
-    let otherSlotIndex = Math.max(8, highestOrdinarySlotIndex + 1);
-    for (const idx of otherIndices) {
-      const row = result[idx];
-      if (row.codes[level]) continue;
-      while (otherSlotIndex < CODE_SLOTS.length && used.has(CODE_SLOTS[otherSlotIndex])) otherSlotIndex++;
-      const code = CODE_SLOTS[otherSlotIndex];
-      if (!code) continue;
-      used.add(code);
-      otherSlotIndex++;
-      result[idx] = { ...row, codes: row.codes.map((c, i) => (i === level ? code : c)) };
-    }
+  const slots = spreadSlots(ordinaryIndices.length);
+  let slotPos = 0;
+  for (const idx of ordinaryIndices) {
+    const row = result[idx];
+    if (row.codes[level]) continue;
+    while (slotPos < slots.length && used.has(slots[slotPos])) slotPos++;
+    const code = slots[slotPos];
+    if (!code) continue;
+    used.add(code);
+    slotPos++;
+    result[idx] = { ...row, codes: row.codes.map((c, i) => (i === level ? code : c)) };
+  }
+
+  // "9" (index 8) whenever the ordinary siblings fit within 1-8; otherwise the next slot past
+  // however far they actually reached — found from the spread's own last slot rather than
+  // assumed from `ordinaryIndices.length`, since a gap greater than 1 (the overflow case,
+  // count > 8) can reach a higher index than the sibling count alone would suggest.
+  const highestOrdinarySlotIndex = slots.length > 0 ? CODE_SLOTS.indexOf(slots[slots.length - 1]) : -1;
+  let otherSlotIndex = Math.max(8, highestOrdinarySlotIndex + 1);
+  for (const idx of otherIndices) {
+    const row = result[idx];
+    if (row.codes[level]) continue;
+    while (otherSlotIndex < CODE_SLOTS.length && used.has(CODE_SLOTS[otherSlotIndex])) otherSlotIndex++;
+    const code = CODE_SLOTS[otherSlotIndex];
+    if (!code) continue;
+    used.add(code);
+    otherSlotIndex++;
+    result[idx] = { ...row, codes: row.codes.map((c, i) => (i === level ? code : c)) };
+  }
+  return result;
+}
+
+// Assigns gap-spaced codes to every row whose own code at `level` is still blank, one sibling
+// group at a time. A row that already holds a real code (typed in manually before Auto Code was
+// run) is left untouched, and its value is excluded from the slots handed to its still-blank
+// siblings so nothing collides with it. Any Other/Miscellaneous sibling in the group is coded
+// separately from — and after — its ordinary siblings, always landing on the last slot the
+// group actually needs ("9" whenever the rest fits in 1-8) — but ONLY when it's actually the
+// convention Section 5 describes: that row physically sitting last in the group already. James's
+// report on a real imported file: two "Other ..." rows sat in the MIDDLE of an 8-row sibling
+// group, not at the end, and got the reserved-high-slot treatment anyway ("9" and "A") — which
+// left ordinary siblings further down the same group with LOWER values ("6", "7"), breaking
+// Section 4.4's hard ascending-order rule. That rule always wins over the "Other near 9"
+// convention, which is cosmetic by comparison — so a group where any Other row isn't already
+// last falls back to one combined, strictly row-order spread across every sibling, ordinary and
+// Other alike, guaranteeing the codes it produces can never violate ascending order.
+function assignLevelCodes(rows: TaxonomyRow[], level: number): TaxonomyRow[] {
+  const groups = groupSiblingIndices(rows, level);
+  let result = rows;
+  for (const indices of groups.values()) {
+    result = assignGroupCodes(result, indices, level);
   }
   return result;
 }
@@ -209,6 +231,29 @@ export function autoCodeAlphaNumeric(rows: TaxonomyRow[], paddingChar: string): 
  * unscoped here doesn't risk anything outside the column that was actually asked for. */
 export function fillMissingCodesAtLevel(rows: TaxonomyRow[], level: number, paddingChar: string): TaxonomyRow[] {
   let result = assignLevelCodes(rows, level);
+  result = fillCodesDown(result);
+  result = padCodes(result, paddingChar);
+  return result;
+}
+
+/** James's ask, straight out of the Audit walkthrough on his real Function_Master file: a whole
+ * run of siblings (a "series") with no code at all yet at this level — Audit can only ever flag
+ * one row at a time, so fixing the row it happens to be pointing at still left every other
+ * member of that exact group to its own separate trip through the walkthrough. The one value
+ * just typed for THIS row is enough to gap-code the rest of its own immediate sibling group
+ * right away, using the same rule Auto Code / Fill Missing Codes already apply — reusing
+ * assignGroupCodes rather than fillMissingCodesAtLevel's whole-column sweep, since a value
+ * entered for one row says nothing about an unrelated group elsewhere in the same column; only
+ * THIS row's own group should move. Returns `rows` unchanged (same reference) when nothing else
+ * in the group is blank, so a caller can cheaply tell "nothing to re-render" from "group filled"
+ * by reference equality. */
+export function fillRestOfGroup(rows: TaxonomyRow[], rowId: string, level: number, paddingChar: string): TaxonomyRow[] {
+  const rowIndex = rows.findIndex((r) => r.id === rowId);
+  if (rowIndex === -1) return rows;
+  const groups = groupSiblingIndices(rows, level);
+  const indices = [...groups.values()].find((g) => g.includes(rowIndex));
+  if (!indices || !indices.some((i) => i !== rowIndex && !rows[i].codes[level])) return rows;
+  let result = assignGroupCodes(rows, indices, level);
   result = fillCodesDown(result);
   result = padCodes(result, paddingChar);
   return result;

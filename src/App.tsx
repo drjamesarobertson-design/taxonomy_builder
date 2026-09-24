@@ -21,7 +21,7 @@ import type { AuditIssue } from './codeValidation';
 import { codeInputId, descInputId } from './domIds';
 import AuditPanel from './AuditPanel';
 import type { AuditOrigin } from './AuditPanel';
-import { AUTO_CODE_TYPES, IMPLEMENTED_AUTO_CODE_TYPES, autoCodeAlphaNumeric } from './autoCode';
+import { AUTO_CODE_TYPES, IMPLEMENTED_AUTO_CODE_TYPES, autoCodeAlphaNumeric, fillRestOfGroup } from './autoCode';
 import type { AutoCodeType } from './autoCode';
 import { FORMAT_MODES, applyFormatDescriptions, collectUnknownAbbreviationWords } from './formatDescriptions';
 import type { FormatMode } from './formatDescriptions';
@@ -1085,9 +1085,28 @@ export default function App() {
     if (issue.kind !== 'code' && issue.kind !== 'desc') return;
     const targetId = issue.kind === 'code' ? codeInputId(issue.level, issue.rowId) : descInputId(issue.level, issue.rowId);
     function handleFocusOut(e: FocusEvent) {
-      if ((e.target as HTMLElement | null)?.id === targetId) {
-        advanceAudit(audit!.cursor);
+      if ((e.target as HTMLElement | null)?.id !== targetId || !project) return;
+      // James's ask, straight from the walkthrough: a whole run of siblings sharing the exact
+      // same blank code column ("a series") shouldn't mean one Audit trip per row — the value
+      // just typed for THIS row is enough to gap-code the rest of its own immediate sibling
+      // group right away, same rule Auto Code/Fill Missing Codes already use. Scoped to only
+      // THIS row's group (fillRestOfGroup), never the whole column, and a no-op (same rows
+      // reference back) for the ordinary case of one isolated blank code elsewhere. Gated on the
+      // row Audit was actually pointing at having a REAL value now, not merely "this cell lost
+      // focus" — jumpToAuditIssue's own focus+select of the NEXT issue's cell, immediately after
+      // this one, is itself a focus change that can end up re-entering this handler for a row
+      // nobody has typed into yet; without this check that spilled a full group-fill onto an
+      // entirely unrelated, still-blank sibling group elsewhere in the same column.
+      let rows = project.rows;
+      const editedRow = issue.kind === 'code' ? rows.find((r) => r.id === issue.rowId) : undefined;
+      if (issue.kind === 'code' && editedRow?.codes[issue.level]) {
+        const filled = fillRestOfGroup(rows, issue.rowId, issue.level, project.settings.paddingChar);
+        if (filled !== rows) {
+          rows = filled;
+          handleSettingsAndRowsChange(project.settings, rows);
+        }
       }
+      advanceAudit(audit!.cursor, rows);
     }
     document.addEventListener('focusout', handleFocusOut);
     return () => document.removeEventListener('focusout', handleFocusOut);
