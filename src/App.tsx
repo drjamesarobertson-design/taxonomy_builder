@@ -1066,12 +1066,23 @@ export default function App() {
   // multi-character description by re-selecting it after each character via jumpToAuditIssue's
   // own focus/select) — so a click on "Resume Audit" itself still works exactly as before
   // (mousedown blurs the cell first either way), just no longer the ONLY way forward.
+  //
+  // Also covers status 'issue', not just 'resuming': jumpToAuditIssue ALREADY auto-focuses and
+  // selects the target cell the moment a NEW issue becomes current — advanceAudit calls it
+  // directly, before the user has clicked anything. So a user can reasonably just start typing
+  // straight into that already-focused cell without ever clicking "Clear Error" first (there's
+  // nothing left to click for — it's already active). James's own report traced to exactly
+  // this: this effect originally only armed once status reached 'resuming' (i.e. only after an
+  // explicit Clear Error click), so typing directly into an auto-focused cell and tabbing away
+  // never triggered a recheck at all — the panel stayed on the original message forever, not
+  // because the fix didn't land, but because nothing was ever listening for that blur.
+  //
   // Re-registered on every `project` change (i.e. every keystroke) specifically so the listener
   // always closes over the LATEST rows — advanceAudit's default `rows` param reads `project`
   // from this closure, and a stale one here would re-check against what the cell held before
   // the very edit this effect exists to catch.
   useEffect(() => {
-    if (!audit || audit.status !== 'resuming' || !audit.currentIssue) return;
+    if (!audit || (audit.status !== 'resuming' && audit.status !== 'issue') || !audit.currentIssue) return;
     const issue = audit.currentIssue;
     if (issue.kind !== 'code' && issue.kind !== 'desc') return;
     const targetId = issue.kind === 'code' ? codeInputId(issue.level, issue.rowId) : descInputId(issue.level, issue.rowId);
