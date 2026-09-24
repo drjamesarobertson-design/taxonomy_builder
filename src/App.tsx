@@ -778,17 +778,44 @@ export default function App() {
    * the problem actually is. */
   function jumpToAuditIssue(issue: AuditIssue | null) {
     clearAuditHighlight();
-    if (!issue || issue.kind === 'auto') {
+    if (!issue) {
       setAuditAnchor(null);
       return;
     }
-    const id = issue.kind === 'code' ? codeInputId(issue.level, issue.rowId) : descInputId(issue.level, issue.rowId);
+    // 'auto' (padding-symmetry): no single cell to fix by hand — the grid refuses to let a code
+    // character be typed past a row's own level — so `issue.level` here is the first OFFENDING
+    // trailing column, not a cell to focus. James's report (twice): with no highlight at all for
+    // this kind, there was no way to tell which row a padding message was even about. Still
+    // highlights (scroll + outline only, no focus/select — there's genuinely nothing to type
+    // into) the row's OWN description cell, found by scanning for its last non-blank column,
+    // same logic as codeValidation.ts's own (unexported) levelOf.
+    let level = issue.level;
+    if (issue.kind === 'auto') {
+      const row = project?.rows.find((r) => r.id === issue.rowId);
+      let ownLevel = -1;
+      if (row) {
+        for (let i = row.descriptions.length - 1; i >= 0; i--) {
+          if ((row.descriptions[i] ?? '').trim()) {
+            ownLevel = i;
+            break;
+          }
+        }
+      }
+      if (ownLevel === -1) {
+        setAuditAnchor(null);
+        return;
+      }
+      level = ownLevel;
+    }
+    const id = issue.kind === 'code' ? codeInputId(level, issue.rowId) : descInputId(level, issue.rowId);
     requestAnimationFrame(() => {
       const input = document.getElementById(id) as HTMLInputElement | null;
       if (!input) return;
       input.scrollIntoView({ block: 'center' });
-      input.focus();
-      input.select();
+      if (issue.kind !== 'auto') {
+        input.focus();
+        input.select();
+      }
       input.classList.add('audit-target-cell');
       highlightedCellIdRef.current = id;
       const rect = input.getBoundingClientRect();
@@ -915,7 +942,7 @@ export default function App() {
     const issue = audit.currentIssue;
     if (issue.kind === 'auto') {
       // Padding-symmetry: the grid itself refuses to let a code character be typed into a
-      // column beyond a row's own level, so there's no cell to jump to and no manual fix —
+      // column beyond a row's own level, so there's no cell to TYPE into and no manual fix —
       // apply padTrailingCodes (guidance.ts) to fill in trailing padding only, then immediately
       // re-check and advance rather than waiting on a Resume Audit click. Deliberately NOT the
       // broader padCodes Fill Codes/Pad Codes use elsewhere — that one also pads an ancestor
@@ -1028,6 +1055,35 @@ export default function App() {
       setExportChoice({ format: 'csv' });
     }
   }, [audit]);
+
+  // James's repeated report, across several rounds of real-file testing: after Clear Error
+  // jumps to the flagged cell (status 'resuming'), nothing re-checks the fix until "Resume
+  // Audit" is clicked by hand — type the correction, tab/click on to the next thing (a very
+  // natural next move), and the panel just sits there still describing the now-fixed cell as
+  // broken. Read as "the fix isn't registering" / "doubling up" / "this error does not exist"
+  // each time, even though the fix genuinely landed. Auto-rechecks the moment the SPECIFIC cell
+  // this issue is about loses focus — not on every keystroke (which would fight typing in a
+  // multi-character description by re-selecting it after each character via jumpToAuditIssue's
+  // own focus/select) — so a click on "Resume Audit" itself still works exactly as before
+  // (mousedown blurs the cell first either way), just no longer the ONLY way forward.
+  // Re-registered on every `project` change (i.e. every keystroke) specifically so the listener
+  // always closes over the LATEST rows — advanceAudit's default `rows` param reads `project`
+  // from this closure, and a stale one here would re-check against what the cell held before
+  // the very edit this effect exists to catch.
+  useEffect(() => {
+    if (!audit || audit.status !== 'resuming' || !audit.currentIssue) return;
+    const issue = audit.currentIssue;
+    if (issue.kind !== 'code' && issue.kind !== 'desc') return;
+    const targetId = issue.kind === 'code' ? codeInputId(issue.level, issue.rowId) : descInputId(issue.level, issue.rowId);
+    function handleFocusOut(e: FocusEvent) {
+      if ((e.target as HTMLElement | null)?.id === targetId) {
+        advanceAudit(audit!.cursor);
+      }
+    }
+    document.addEventListener('focusout', handleFocusOut);
+    return () => document.removeEventListener('focusout', handleFocusOut);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [audit?.status, audit?.currentIssue, project]);
 
   function performLockTaxonomy() {
     if (!project) return;

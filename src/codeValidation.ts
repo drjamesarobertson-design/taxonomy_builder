@@ -110,16 +110,19 @@ export interface AuditIssue {
   level: number;
   /** What the panel's primary action button does for this issue:
    * - 'code' / 'desc' — focus that cell for the user to fix by hand ("Clear Error").
-   * - 'auto' — apply a whole-taxonomy fix immediately with no cell to jump to at all
-   *   (padTrailingCodes for padding-symmetry) — the grid refuses to let a code character be
-   *   typed into a column
-   *   beyond a row's own level ("Enter Descriptions Before Entering Codes"), so this genuinely
-   *   can't be fixed by jumping to a cell and typing.
+   * - 'auto' — apply a whole-taxonomy fix immediately (padTrailingCodes for padding-symmetry) —
+   *   the grid refuses to let a code character be typed into a column beyond a row's own level
+   *   ("Enter Descriptions Before Entering Codes"), so this genuinely can't be fixed by jumping
+   *   to a cell and typing. Still highlights the row's own description cell (App.tsx's
+   *   jumpToAuditIssue re-derives its actual level, since this issue's own `level` is the first
+   *   offending trailing column, not the row's level) so there's at least a visible "this is the
+   *   row" — James's report: with no highlight at all here, there was no way to tell which row a
+   *   padding message was even about.
    * - 'toggleCase' — a childless ALL CAPS heading almost always just needs Toggle Case (it's a
    *   leaf, not a heading someone forgot to build out) — James's report: repeatedly clicking
    *   Resume Audit without first doing this by hand (right-click -> Toggle Case) understandably
    *   read as "the fix isn't registering", when nothing had actually changed yet. One button
-   *   ("Fix and Resume Audit") does both. Still a cell to jump to/highlight, unlike 'auto' —
+   *   ("Fix and Resume Audit") does both. Still a cell to jump to/highlight, same as 'auto' now —
    *   the fix itself just doesn't require manual typing.
    * - 'otherNotLast' / 'oversized' / 'outlier' — Tranche 2's soft, override-able checks (Section
    *   6.7: "inform, never block"). Each jumps to the relevant cell like 'desc' does, but its

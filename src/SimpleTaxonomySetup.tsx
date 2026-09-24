@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DEFAULT_SETTINGS } from './types';
 import HelpIcon from './HelpIcon';
 import type { HelpTextMap } from './helpText';
@@ -27,6 +27,12 @@ interface SimpleTaxonomySetupProps {
 // Every other workflow-menu level still uses the full form unchanged, with column 1 staying a
 // single character.
 export default function SimpleTaxonomySetup({ onCreate, helpText }: SimpleTaxonomySetupProps) {
+  // Same fix as NewTaxonomyForm's own — arriving here with the page already scrolled down
+  // leaves the sticky header pinned over this form's own top content. Reset to the top on mount.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
   const [title, setTitle] = useState('');
   const [tableName, setTableName] = useState('');
   const [purpose, setPurpose] = useState('');
