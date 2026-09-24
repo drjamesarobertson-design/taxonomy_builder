@@ -59,6 +59,17 @@ import { bumpFileVersion } from './fileVersion';
 import './App.css';
 
 export default function App() {
+  // James's ask: a small, always-visible "PR #nnn" tag so he can confirm — from inside the app
+  // itself, without ever touching GitHub — that a refresh actually picked up the fix he was told
+  // to expect. VITE_PR_NUMBER is set at build time by the GitHub Pages deploy workflow, parsed
+  // straight from the merged commit's own message (deploy-pages.yml); it's genuinely absent in
+  // an ordinary local `npm run dev`, which is the only time "Local build" shows instead.
+  const buildInfoTag = (
+    <div className="build-info-tag" aria-hidden="true">
+      {import.meta.env.VITE_PR_NUMBER ? `PR #${import.meta.env.VITE_PR_NUMBER}` : 'Local build'}
+    </div>
+  );
+
   // Sign-on gate — real accounts via Supabase (auth.ts), which persists its own session in
   // this browser (survives reloads; only Log Out or clearing site data forgets it). The
   // initial session check is async, so `authChecked` gates rendering Login vs. the app itself
@@ -1615,13 +1626,24 @@ export default function App() {
 
   if (!authChecked) return null;
   if (passwordRecovery) {
-    return <ResetPassword onDone={() => setPasswordRecovery(false)} />;
+    return (
+      <>
+        <ResetPassword onDone={() => setPasswordRecovery(false)} />
+        {buildInfoTag}
+      </>
+    );
   }
   if (!authedEmail) {
-    return <Login onSuccess={setAuthedEmail} />;
+    return (
+      <>
+        <Login onSuccess={setAuthedEmail} />
+        {buildInfoTag}
+      </>
+    );
   }
 
   return (
+    <>
     <div className="app-shell">
       <LibrarySidebar
         entries={libraryEntries}
@@ -2637,5 +2659,7 @@ export default function App() {
       )}
       </div>
     </div>
+    {buildInfoTag}
+    </>
   );
 }

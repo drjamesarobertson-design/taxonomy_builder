@@ -24,7 +24,21 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # James's ask: a small, always-visible "PR #nnn" tag in the app itself, so he can compare
+      # it against whatever PR number he was told to expect without ever leaving the app or
+      # touching GitHub. GitHub's own default commit message for a merged PR (either merge
+      # method: "Merge pull request #170 from ..." or "<title> (#170)" for a squash) always
+      # contains "#<number>" somewhere in the last line, so this is extracted straight from the
+      # commit that triggered this deploy — no separate bookkeeping to keep in sync.
+      - name: Extract PR number for the in-app build tag
+        id: pr
+        run: |
+          MSG=$(git log -1 --pretty=%s)
+          NUM=$(echo "$MSG" | grep -oE '#[0-9]+' | head -1 | tr -d '#')
+          echo "number=${NUM:-unknown}" >> "$GITHUB_OUTPUT"
       - run: npm run build
+        env:
+          VITE_PR_NUMBER: ${{ steps.pr.outputs.number }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

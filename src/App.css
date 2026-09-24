@@ -1707,3 +1707,21 @@ body.app-dark-theme .taxonomy-meta .purpose {
   margin: 0 0.25rem;
   flex-shrink: 0;
 }
+
+/* James's ask: an always-visible, unobtrusive "PR #nnn" tag (App.tsx's buildInfoTag) so he can
+   confirm which build a refresh actually loaded, purely by looking at the app itself. Fixed to
+   the corner rather than inline in the header — it needs to stay in the exact same spot on every
+   screen (login, menu, working grid) regardless of what else is on the page. */
+.build-info-tag {
+  position: fixed;
+  right: 6px;
+  bottom: 4px;
+  z-index: 9999;
+  font-size: 0.7rem;
+  color: #9aa1ac;
+  background: rgba(255, 255, 255, 0.85);
+  padding: 1px 6px;
+  border-radius: 3px;
+  pointer-events: none;
+  user-select: none;
+}
