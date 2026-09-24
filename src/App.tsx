@@ -55,6 +55,7 @@ import {
   setLibraryCategoryOrder,
   deleteLibraryEntry,
   importLibraryBundle,
+  migrateLegacyLocalLibrary,
 } from './library';
 import type { LibraryCategory, LibraryEntry, LibraryExportBundle } from './library';
 import { bumpFileVersion } from './fileVersion';
@@ -489,11 +490,31 @@ export default function App() {
   }
 
   function refreshLibrary() {
-    listLibraryEntries().then(setLibraryEntries);
+    listLibraryEntries()
+      .then(setLibraryEntries)
+      .catch((err) => {
+        console.error('Failed to load Library:', err);
+        setLibraryEntries([]);
+      });
   }
 
+  // Every Library write now goes over the network (Supabase) rather than local IndexedDB, so a
+  // genuine failure (offline, session expired) is more likely than it used to be — surfaced here
+  // rather than left as a silent console-only rejection, so it's visible in the app itself.
+  function reportLibraryError(err: unknown) {
+    console.error('Library operation failed:', err);
+    setLoadError(err instanceof Error ? err.message : 'Something went wrong saving to the Library.');
+  }
+
+  // James's ask: move the Library from browser-local storage to per-account cloud storage, so
+  // each signed-in user's Library is their own and follows them to any device. On first mount,
+  // before the first refreshLibrary() below, offer this browser's old local Library (if any) a
+  // one-time ride across — migrateLegacyLocalLibrary itself no-ops once the cloud Library already
+  // has anything in it, so this is safe to run on every startup, not just the first.
   useEffect(() => {
-    refreshLibrary();
+    migrateLegacyLocalLibrary()
+      .catch((err) => console.error('Legacy Library migration failed:', err))
+      .finally(refreshLibrary);
   }, []);
 
   function flashAddedToLibrary() {
@@ -520,22 +541,26 @@ export default function App() {
     if (!project) return;
     const title = libraryNamePrompt.trim() || project.title;
     const namedProject = { ...project, title };
-    addLibraryEntry(namedProject, libraryCategoryPrompt).then((entry) => {
-      setProject(namedProject);
-      setCurrentLibraryEntryId(entry.id);
-      setShowLibraryCategoryPrompt(false);
-      refreshLibrary();
-      flashAddedToLibrary();
-    });
+    addLibraryEntry(namedProject, libraryCategoryPrompt)
+      .then((entry) => {
+        setProject(namedProject);
+        setCurrentLibraryEntryId(entry.id);
+        setShowLibraryCategoryPrompt(false);
+        refreshLibrary();
+        flashAddedToLibrary();
+      })
+      .catch(reportLibraryError);
   }
 
   function confirmOverwriteLibraryEntry() {
     if (!project || !currentLibraryEntryId) return;
-    updateLibraryEntryProject(currentLibraryEntryId, project).then(() => {
-      setShowLibraryOverwritePrompt(false);
-      refreshLibrary();
-      flashAddedToLibrary();
-    });
+    updateLibraryEntryProject(currentLibraryEntryId, project)
+      .then(() => {
+        setShowLibraryOverwritePrompt(false);
+        refreshLibrary();
+        flashAddedToLibrary();
+      })
+      .catch(reportLibraryError);
   }
 
   // A prior "New Version" leaves an " v1.NN" suffix on the title (mirroring the existing
@@ -551,13 +576,15 @@ export default function App() {
     const category = linkedEntry?.category ?? LIBRARY_CATEGORIES[0];
     const { project: versioned, versionLabel } = bumpFileVersion(project, 'library');
     const newProject = { ...versioned, title: `${stripLibraryVersionSuffix(versioned.title)}${versionLabel}` };
-    addLibraryEntry(newProject, category).then((entry) => {
-      setProject(newProject);
-      setCurrentLibraryEntryId(entry.id);
-      setShowLibraryOverwritePrompt(false);
-      refreshLibrary();
-      flashAddedToLibrary();
-    });
+    addLibraryEntry(newProject, category)
+      .then((entry) => {
+        setProject(newProject);
+        setCurrentLibraryEntryId(entry.id);
+        setShowLibraryOverwritePrompt(false);
+        refreshLibrary();
+        flashAddedToLibrary();
+      })
+      .catch(reportLibraryError);
   }
 
   function handleMoveToWorkArea(entry: LibraryEntry) {
@@ -576,25 +603,27 @@ export default function App() {
   }
 
   function handleRenameLibraryEntry(id: string, title: string) {
-    renameLibraryEntry(id, title).then(refreshLibrary);
+    renameLibraryEntry(id, title).then(refreshLibrary).catch(reportLibraryError);
   }
 
   function handleReorderLibrary(category: LibraryCategory, orderedIds: string[]) {
-    setLibraryCategoryOrder(category, orderedIds).then(refreshLibrary);
+    setLibraryCategoryOrder(category, orderedIds).then(refreshLibrary).catch(reportLibraryError);
   }
 
   function handleImportLibrary(bundle: LibraryExportBundle) {
-    importLibraryBundle(bundle).then(refreshLibrary);
+    importLibraryBundle(bundle).then(refreshLibrary).catch(reportLibraryError);
   }
 
   function handleRemoveLibraryEntry() {
     if (!libraryRemoveTarget) return;
     const { id } = libraryRemoveTarget;
-    deleteLibraryEntry(id).then(() => {
-      if (id === currentLibraryEntryId) setCurrentLibraryEntryId(null);
-      setLibraryRemoveTarget(null);
-      refreshLibrary();
-    });
+    deleteLibraryEntry(id)
+      .then(() => {
+        if (id === currentLibraryEntryId) setCurrentLibraryEntryId(null);
+        setLibraryRemoveTarget(null);
+        refreshLibrary();
+      })
+      .catch(reportLibraryError);
   }
 
   async function handleChooseFolder() {

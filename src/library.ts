@@ -1,13 +1,15 @@
 // The Library (left-hand sidebar): a place to keep multiple built taxonomies for quick
-// reference and further work, organised under a fixed set of headings. This is genuinely
-// client-side persistence with no backend, per CLAUDE.md's "no backend or database" v1
-// scope — entries live in this browser's own IndexedDB, in a separate database from the
-// export-folder-handle store in exportFolder.ts, so a taxonomy's own save/load-to-file
-// flow (Section 8) is completely unaffected; the Library is an additional, optional place
-// to park a copy, not a replacement for saving to a file.
+// reference and further work, organised under a fixed set of headings. Per-account cloud
+// storage (Supabase, table `library_entries` — supabase/0002_create_library_entries.sql),
+// replacing the previous browser-local IndexedDB storage: each signed-in user's Library now
+// lives on their own account, isolated from every other user by Row Level Security, and follows
+// them to any device/browser they sign into rather than being stranded on one machine. It's
+// still an additional, optional place to park a copy of a taxonomy — a taxonomy's own save/load-
+// to-file flow (Section 8) is completely unaffected.
 
 import type { TaxonomyProject } from './types';
 import { isTaxonomyProject, migrateProjectData } from './storage';
+import { supabase } from './supabaseClient';
 
 // James's report: "Add to Library only offers Cubic Business Model" — the previous shape had
 // one "Cubic Business Model Related" heading which only revealed its real choices (Division,
@@ -51,21 +53,30 @@ export interface LibraryEntry {
   updatedAt: string;
 }
 
-const DB_NAME = 'taxonomy-builder-library';
-const STORE_NAME = 'entries';
+interface LibraryRow {
+  id: string;
+  user_id: string;
+  category: string;
+  entry_order: number;
+  project: TaxonomyProject;
+  updated_at: string;
+}
 
-function openDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+const TABLE_NAME = 'library_entries';
+
+function rowToEntry(row: LibraryRow): LibraryEntry {
+  return { id: row.id, category: row.category as LibraryCategory, order: row.entry_order, project: row.project, updatedAt: row.updated_at };
+}
+
+/** Every Library operation is scoped to the signed-in user's own account — Row Level Security
+ * enforces this server-side regardless, but resolving the id here lets each call build its own
+ * row explicitly rather than relying on a default, and gives a clear, catchable error (rather
+ * than an opaque RLS rejection) on the one path that genuinely shouldn't happen: a Library call
+ * made with no active session. */
+async function currentUserId(): Promise<string> {
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data.user) throw new Error('You need to be signed in to use the Library.');
+  return data.user.id;
 }
 
 // Two generations of legacy category shapes to migrate on first read, so entries saved under
@@ -97,13 +108,10 @@ function migrateLegacyCategory(entry: LibraryEntry & { subcategory?: string }): 
 }
 
 export async function listLibraryEntries(): Promise<LibraryEntry[]> {
-  const db = await openDb();
-  const entries = await new Promise<LibraryEntry[]>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const req = tx.objectStore(STORE_NAME).getAll();
-    req.onsuccess = () => resolve(req.result as LibraryEntry[]);
-    req.onerror = () => reject(req.error);
-  });
+  const userId = await currentUserId();
+  const { data, error } = await supabase.from(TABLE_NAME).select('*').eq('user_id', userId);
+  if (error) throw new Error(error.message);
+  const entries = (data as LibraryRow[]).map(rowToEntry);
   const migrations = entries
     .map((e) => ({ original: e, migrated: migrateLegacyCategory(e) }))
     .filter((m): m is { original: LibraryEntry; migrated: LibraryEntry } => m.migrated !== null);
@@ -113,10 +121,10 @@ export async function listLibraryEntries(): Promise<LibraryEntry[]> {
   const migratedById = new Map(migrations.map((m) => [m.original.id, m.migrated]));
   // James's report: an entry saved to the Library before a newer settings field existed (e.g.
   // customAbbreviations) came back into the live app with that field still `undefined` once
-  // reopened — this read straight from IndexedDB, unlike Load from File, which already runs
-  // this same migration. Any code that spreads that field (toProperCasePreservingAbbreviations,
+  // reopened — this read straight from storage, unlike Load from File, which already runs this
+  // same migration. Any code that spreads that field (toProperCasePreservingAbbreviations,
   // findUnknownAllCapsWords) threw the moment it ran, which read as "the button doesn't
-  // register." Not written back to IndexedDB (unlike the category migration above) — cheap and
+  // register." Not written back to storage (unlike the category migration above) — cheap and
   // idempotent enough to just re-run on every load rather than adding another persisted-write
   // path for it.
   return entries.map((e) => {
@@ -125,26 +133,23 @@ export async function listLibraryEntries(): Promise<LibraryEntry[]> {
   });
 }
 
-function putEntry(entry: LibraryEntry): Promise<void> {
-  return openDb().then(
-    (db) =>
-      new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        tx.objectStore(STORE_NAME).put(entry);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      }),
-  );
+async function putEntry(entry: LibraryEntry): Promise<void> {
+  const userId = await currentUserId();
+  const { error } = await supabase.from(TABLE_NAME).upsert({
+    id: entry.id,
+    user_id: userId,
+    category: entry.category,
+    entry_order: entry.order,
+    project: entry.project,
+    updated_at: entry.updatedAt,
+  });
+  if (error) throw new Error(error.message);
 }
 
 export async function deleteLibraryEntry(id: string): Promise<void> {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).delete(id);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
+  const userId = await currentUserId();
+  const { error } = await supabase.from(TABLE_NAME).delete().eq('id', id).eq('user_id', userId);
+  if (error) throw new Error(error.message);
 }
 
 function nextOrder(entries: LibraryEntry[], category: LibraryCategory): number {
@@ -187,29 +192,89 @@ export async function renameLibraryEntry(id: string, title: string): Promise<voi
  * category and a move in from a different one in the same call (every id passed here ends up
  * in `category`, at its position in the array). */
 export async function setLibraryCategoryOrder(category: LibraryCategory, orderedIds: string[]): Promise<void> {
+  const userId = await currentUserId();
   const entries = await listLibraryEntries();
-  const db = await openDb();
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    orderedIds.forEach((id, index) => {
+  const rows = orderedIds
+    .map((id, index) => {
       const existing = entries.find((e) => e.id === id);
-      if (existing) store.put({ ...existing, category, order: index });
-    });
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+      if (!existing) return null;
+      return {
+        id,
+        user_id: userId,
+        category,
+        entry_order: index,
+        project: existing.project,
+        updated_at: existing.updatedAt,
+      };
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null);
+  if (rows.length === 0) return;
+  const { error } = await supabase.from(TABLE_NAME).upsert(rows);
+  if (error) throw new Error(error.message);
+}
+
+// One-time migration off this browser's old, pre-cloud IndexedDB storage — the exact shape
+// library.ts used before per-account cloud storage existed. Read-only: never written back to,
+// and never deleted, so it stays a safety net regardless of how the cloud migration goes.
+const LEGACY_DB_NAME = 'taxonomy-builder-library';
+const LEGACY_STORE_NAME = 'entries';
+
+function openLegacyDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(LEGACY_DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(LEGACY_STORE_NAME)) {
+        db.createObjectStore(LEGACY_STORE_NAME, { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
   });
 }
 
+async function readLegacyEntries(): Promise<LibraryEntry[]> {
+  try {
+    const db = await openLegacyDb();
+    return await new Promise<LibraryEntry[]>((resolve, reject) => {
+      const tx = db.transaction(LEGACY_STORE_NAME, 'readonly');
+      const req = tx.objectStore(LEGACY_STORE_NAME).getAll();
+      req.onsuccess = () => resolve(req.result as LibraryEntry[]);
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    // No legacy IndexedDB at all (a browser/profile that never had the old Library) — nothing
+    // to migrate, not an error.
+    return [];
+  }
+}
+
+/** Brings this browser's old local Library across to the signed-in user's cloud account —
+ * called once on startup (App.tsx), before the first `listLibraryEntries()`. Only acts when the
+ * cloud Library is genuinely empty AND this browser has local entries to offer, so it never
+ * overwrites or duplicates onto an account that already has cloud entries (including from a
+ * previous run of this same migration). Returns how many entries were migrated, or 0. */
+export async function migrateLegacyLocalLibrary(): Promise<number> {
+  const cloud = await listLibraryEntries();
+  if (cloud.length > 0) return 0;
+  const local = await readLegacyEntries();
+  if (local.length === 0) return 0;
+  for (const entry of local) {
+    await addLibraryEntry(migrateProjectData(entry.project), entry.category);
+  }
+  return local.length;
+}
+
 // Export/Import Library: James's request for a way to (a) carry his Library to a new machine —
-// it lives only in this browser's own IndexedDB (see the file-level comment above) and is lost
-// outright on a machine/browser change — and (b) hand a curated subset to interested parties as
-// a demo, or bundle sample files with a sale. Both are the same underlying need: a portable file
-// holding one or more Library entries, built from a user-chosen selection (LibrarySidebar.tsx),
-// downloaded via download.ts's existing downloadBlob helper. Import always merges into whatever
-// Library is already open — a fresh id per entry — never replacing or overwriting, matching the
-// app's established "never silently overwrite" convention (see confirmAddToLibrary's own
-// overwrite-vs-new-version prompt in App.tsx).
+// this account's Library now already follows them to any device (see the file-level comment
+// above), but Export/Import remains useful for handing a curated subset to interested parties as
+// a demo, or bundling sample files with a sale — and (b) that same "hand a subset to someone
+// else" need. Both are the same underlying need: a portable file holding one or more Library
+// entries, built from a user-chosen selection (LibrarySidebar.tsx), downloaded via download.ts's
+// existing downloadBlob helper. Import always merges into whatever Library is already open — a
+// fresh id per entry — never replacing or overwriting, matching the app's established "never
+// silently overwrite" convention (see confirmAddToLibrary's own overwrite-vs-new-version prompt
+// in App.tsx).
 const LIBRARY_EXPORT_BUNDLE_TYPE = 'taxonomy-builder-library-export';
 
 export interface LibraryExportBundle {
