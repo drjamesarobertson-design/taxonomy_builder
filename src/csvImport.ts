@@ -463,6 +463,99 @@ export function parseDiscreteCsv(text: string): ParsedDiscreteCsv | { error: str
   return tryParseHeaderedCsv(table) ?? tryParseDescriptionOnlyCsv(table) ?? parseHeaderlessCsv(table);
 }
 
+// James's ask: "Separate Out Code Elements" — a file from another system that carries one
+// composite/concatenated code per row (e.g. "2111") instead of this app's own one-character-
+// per-column layout. Recognised by a plain "Code"/"Description" header pair (widened slightly,
+// same normalise-and-compare approach as matchesHeader above, rather than one literal spelling
+// each) — deliberately a separate, explicit import path rather than folded into
+// parseDiscreteCsv's own detection, since a composite code column would otherwise just look like
+// a column of over-long, non-single-character "code" values and fail every existing heuristic
+// outright rather than risk being silently misread as something it isn't.
+const COMPOSITE_CODE_HEADER_NAMES = ['code', 'account code', 'gl code', 'composite code', 'concatenated code', 'old code'];
+const COMPOSITE_DESC_HEADER_NAMES = ['description', 'name', 'desc', 'account name'];
+
+export interface ParsedCompositeCsvRow {
+  /** One character per detected level, left to right, right-padded with "." to numLevels. */
+  codeChars: string[];
+  description: string;
+}
+
+export interface ParsedCompositeCsv {
+  numLevels: number;
+  rows: ParsedCompositeCsvRow[];
+}
+
+// Splits each row's composite code into one character per column and finds the deepest level
+// actually reached — everything from there is exactly what buildSeparatedCsv (below) needs once
+// the user has chosen where to put delimiters, which this function has no way to know on its own.
+export function parseCompositeCodeCsv(text: string): ParsedCompositeCsv | { error: string } {
+  const table = parseCsvTable(text);
+  if (table.length === 0) return { error: 'This file is empty.' };
+  const header = table[0];
+  const dataRows = table.slice(1);
+
+  const codeCol = header.findIndex((h) => matchesHeader(h, COMPOSITE_CODE_HEADER_NAMES));
+  const descCol = header.findIndex((h) => matchesHeader(h, COMPOSITE_DESC_HEADER_NAMES));
+  if (codeCol === -1 || descCol === -1) {
+    return {
+      error:
+        'Could not find a "Code" column and a "Description" column in the header row — this import expects exactly one composite code column plus one description column.',
+    };
+  }
+
+  const dataRowsWithContent = dataRows.filter(
+    (r) => (r[codeCol] ?? '').trim() !== '' || (r[descCol] ?? '').trim() !== '',
+  );
+  const codeValues = dataRowsWithContent.map((r) => (r[codeCol] ?? '').trim());
+  const numLevels = Math.max(0, ...codeValues.map((c) => c.length));
+  if (numLevels === 0) {
+    return { error: 'No code values found in the "Code" column.' };
+  }
+  if (numLevels > MAX_LEVELS) {
+    return { error: `Detected codes up to ${numLevels} characters long, more than this tool supports (${MAX_LEVELS}).` };
+  }
+
+  const rows: ParsedCompositeCsvRow[] = dataRowsWithContent.map((r) => {
+    const code = (r[codeCol] ?? '').trim();
+    const codeChars = Array.from({ length: numLevels }, (_, i) => code[i] ?? '.');
+    return { codeChars, description: (r[descCol] ?? '').trim() };
+  });
+
+  return { numLevels, rows };
+}
+
+// Turns a parsed composite-code file into the same shape every other import path produces, once
+// the user has chosen delimiter positions and a delimiter character (SeparateCodeElementsSetup.tsx)
+// — reusing CsvImportConfirm/handleCsvImportConfirm downstream exactly as-is. A row's level (and
+// so which description column its text lands in) is wherever its own code stops before running
+// into trailing "." padding — the same convention the rest of this app already uses for "." as
+// the universal blank/no-further-hierarchy marker, independent of whatever padding character the
+// taxonomy is ultimately configured to use.
+export function buildSeparatedCsv(
+  parsed: ParsedCompositeCsv,
+  delimiterPositions: number[],
+  codeDelimiterChar: string,
+): ParsedDiscreteCsv {
+  const rows: TaxonomyRow[] = parsed.rows.map((r) => {
+    let level = 0;
+    for (let i = r.codeChars.length - 1; i >= 0; i--) {
+      if (r.codeChars[i] !== '.') {
+        level = i;
+        break;
+      }
+    }
+    const descriptions = Array(parsed.numLevels).fill('');
+    descriptions[level] = r.description;
+    return {
+      id: crypto.randomUUID(),
+      codes: [...r.codeChars],
+      descriptions,
+      suffixValues: [],
+    };
+  });
+  return { numLevels: parsed.numLevels, delimiterPositions, codeDelimiterChar, suffixes: [], rows };
+}
+
 export function readFileAsText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

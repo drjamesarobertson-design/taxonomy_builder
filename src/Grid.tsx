@@ -110,6 +110,7 @@ export default function Grid({
     column1CodeLength,
     properCaseOnly,
     customAbbreviations,
+    autoCodeGapIncrement,
   } = settings;
   // Simple Taxonomy wizard: no code column is shown at all until the coding stage — the
   // 'headings' and 'subItems' stages are description-only by design. `numLevels` itself grows
@@ -2167,7 +2168,7 @@ export default function Grid({
       return;
     }
     const level = contextMenu.level;
-    const result = fillMissingCodesAtLevel(rows, level, paddingChar);
+    const result = fillMissingCodesAtLevel(rows, level, paddingChar, codeRestriction, autoCodeGapIncrement);
     const changed = result.some((row, i) => row.codes[level] !== rows[i].codes[level]);
     if (!changed) {
       showValidationError('No missing codes to fill in this column.');

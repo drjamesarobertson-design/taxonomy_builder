@@ -21,7 +21,7 @@
 // level is padded — exactly the wizard's existing Fill Codes / Pad Codes steps, reused here
 // rather than reimplemented, run automatically as part of the one action.
 
-import type { TaxonomyRow } from './types';
+import type { CodeRestriction, TaxonomyRow } from './types';
 import { fillCodesDown, isOtherOrMiscellaneousLabel, maxLevelUsed, padCodes } from './guidance';
 
 // The dropdown James asked for names every code type up front so it doesn't need rebuilding
@@ -105,6 +105,23 @@ function spreadSlots(count: number, availableSlots = 8): string[] {
   return Array.from({ length: count }, (_, i) => CODE_SLOTS[i * gap]);
 }
 
+// James's ask: for Alpha and Alpha Numeric Code Restrictions, Auto Code's gap should be a fixed,
+// user-configured step (1 or 2 — TaxonomySettings.autoCodeGapIncrement) rather than spreadSlots'
+// adaptive floor(8 / count), which gives a different gap for almost every group size. A fixed
+// step of 2 continues straight past "9" into letters exactly as CODE_SLOTS already orders them
+// ("1, 3, 5, 7, 9, B, D, ..." — his own example), rather than collapsing to consecutive digits
+// once a group's count would no longer fit a gap within 1-8. Numeric Only keeps spreadSlots'
+// adaptive rule instead (isFixedGapRestriction, below) — with only nine digits available there's
+// no room for a fixed step to still cover a typical group.
+function spreadSlotsFixed(count: number, gapIncrement: number): string[] {
+  if (count <= 0) return [];
+  return Array.from({ length: count }, (_, i) => CODE_SLOTS[i * gapIncrement]);
+}
+
+function isFixedGapRestriction(codeRestriction: CodeRestriction): boolean {
+  return codeRestriction !== 'Numeric Only';
+}
+
 // Assigns codes to every row whose own code at `level` is still blank, one sibling group at a
 // time. Two genuinely different situations share this one entry point:
 //
@@ -130,7 +147,13 @@ function spreadSlots(count: number, availableSlots = 8): string[] {
 // Factored out of assignLevelCodes so the Audit walkthrough (fillRestOfGroup, below) can run
 // this same rule against just ONE sibling group, not sweep the whole column, when the user has
 // only just typed a code for one row in it.
-function assignGroupCodes(rows: TaxonomyRow[], indices: number[], level: number): TaxonomyRow[] {
+function assignGroupCodes(
+  rows: TaxonomyRow[],
+  indices: number[],
+  level: number,
+  codeRestriction: CodeRestriction,
+  gapIncrement: number,
+): TaxonomyRow[] {
   if (indices.some((i) => rows[i].codes[level])) return fillOrderedGaps(rows, indices, level);
 
   // Greenfield spread — see the block comment above. A row that already holds a real code can
@@ -142,6 +165,7 @@ function assignGroupCodes(rows: TaxonomyRow[], indices: number[], level: number)
   const otherIndexSet = new Set(otherIndices);
   const ordinaryIndices = indices.filter((i) => !otherIndexSet.has(i));
   const used = new Set(indices.map((i) => result[i].codes[level]).filter((c) => c));
+  const useFixedGap = isFixedGapRestriction(codeRestriction);
 
   const otherTrails =
     ordinaryIndices.length === 0 || otherIndices.every((oi) => oi > ordinaryIndices[ordinaryIndices.length - 1]);
@@ -149,7 +173,7 @@ function assignGroupCodes(rows: TaxonomyRow[], indices: number[], level: number)
   if (!otherTrails) {
     // Fallback: every sibling, in row order, sharing one spread — no reserved slot, since a
     // reservation only makes sense when nothing ordinary follows it.
-    const slots = spreadSlots(indices.length);
+    const slots = useFixedGap ? spreadSlotsFixed(indices.length, gapIncrement) : spreadSlots(indices.length);
     let slotPos = 0;
     for (const idx of indices) {
       const row = result[idx];
@@ -164,7 +188,7 @@ function assignGroupCodes(rows: TaxonomyRow[], indices: number[], level: number)
     return result;
   }
 
-  const slots = spreadSlots(ordinaryIndices.length);
+  const slots = useFixedGap ? spreadSlotsFixed(ordinaryIndices.length, gapIncrement) : spreadSlots(ordinaryIndices.length);
   let slotPos = 0;
   for (const idx of ordinaryIndices) {
     const row = result[idx];
@@ -198,23 +222,34 @@ function assignGroupCodes(rows: TaxonomyRow[], indices: number[], level: number)
 
 // One call to assignGroupCodes (above — greenfield spread or order-respecting patch, whichever
 // this group actually needs) per sibling group in the column.
-function assignLevelCodes(rows: TaxonomyRow[], level: number): TaxonomyRow[] {
+function assignLevelCodes(
+  rows: TaxonomyRow[],
+  level: number,
+  codeRestriction: CodeRestriction,
+  gapIncrement: number,
+): TaxonomyRow[] {
   const groups = groupSiblingIndices(rows, level);
   let result = rows;
   for (const indices of groups.values()) {
-    result = assignGroupCodes(result, indices, level);
+    result = assignGroupCodes(result, indices, level, codeRestriction, gapIncrement);
   }
   return result;
 }
 
 /** The only implemented Auto Code scheme so far — see the file-level comment for the full rule.
  * Only ever fills genuinely blank codes; a taxonomy with some codes already entered keeps them
- * exactly as they are. */
-export function autoCodeAlphaNumeric(rows: TaxonomyRow[], paddingChar: string): TaxonomyRow[] {
+ * exactly as they are. `gapIncrement` (1 or 2) only applies when `codeRestriction` isn't
+ * "Numeric Only" — see isFixedGapRestriction. */
+export function autoCodeAlphaNumeric(
+  rows: TaxonomyRow[],
+  paddingChar: string,
+  codeRestriction: CodeRestriction,
+  gapIncrement: number,
+): TaxonomyRow[] {
   const maxLevel = maxLevelUsed(rows);
   let result = rows;
   for (let level = 0; level <= maxLevel; level++) {
-    result = assignLevelCodes(result, level);
+    result = assignLevelCodes(result, level, codeRestriction, gapIncrement);
   }
   result = fillCodesDown(result);
   result = padCodes(result, paddingChar);
@@ -231,8 +266,14 @@ export function autoCodeAlphaNumeric(rows: TaxonomyRow[], paddingChar: string): 
  * then carry ancestor codes down and pad the trailing columns for the whole taxonomy — both of
  * those are already safe/idempotent, touching only genuinely blank cells, so running them
  * unscoped here doesn't risk anything outside the column that was actually asked for. */
-export function fillMissingCodesAtLevel(rows: TaxonomyRow[], level: number, paddingChar: string): TaxonomyRow[] {
-  let result = assignLevelCodes(rows, level);
+export function fillMissingCodesAtLevel(
+  rows: TaxonomyRow[],
+  level: number,
+  paddingChar: string,
+  codeRestriction: CodeRestriction,
+  gapIncrement: number,
+): TaxonomyRow[] {
+  let result = assignLevelCodes(rows, level, codeRestriction, gapIncrement);
   result = fillCodesDown(result);
   result = padCodes(result, paddingChar);
   return result;
@@ -298,13 +339,20 @@ function fillOrderedGaps(rows: TaxonomyRow[], indices: number[], level: number):
  * column. Returns `rows` unchanged (same reference) when nothing else in the group is blank, OR
  * when every blank run turned out to have no room to fill safely, so a caller can cheaply tell
  * "nothing to re-render" from "group filled" by reference equality. */
-export function fillRestOfGroup(rows: TaxonomyRow[], rowId: string, level: number, paddingChar: string): TaxonomyRow[] {
+export function fillRestOfGroup(
+  rows: TaxonomyRow[],
+  rowId: string,
+  level: number,
+  paddingChar: string,
+  codeRestriction: CodeRestriction,
+  gapIncrement: number,
+): TaxonomyRow[] {
   const rowIndex = rows.findIndex((r) => r.id === rowId);
   if (rowIndex === -1) return rows;
   const groups = groupSiblingIndices(rows, level);
   const indices = [...groups.values()].find((g) => g.includes(rowIndex));
   if (!indices || !indices.some((i) => i !== rowIndex && !rows[i].codes[level])) return rows;
-  const filled = assignGroupCodes(rows, indices, level);
+  const filled = assignGroupCodes(rows, indices, level, codeRestriction, gapIncrement);
   if (filled === rows) return rows;
   let result = fillCodesDown(filled);
   result = padCodes(result, paddingChar);

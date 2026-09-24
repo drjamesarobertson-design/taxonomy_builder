@@ -19,10 +19,38 @@ just means whatever comes next, not a different process or a rewrite.
 
 ---
 
-## Current status (as of PR #151, 2026-09-23)
+## Current status (as of PR #151, 2026-09-23, plus later rounds below)
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
+
+- **CSV Import — "Separate Out Code Elements"** (James's ask): a second CSV
+  import entry point, alongside the existing "Import CSV", for files from
+  another system that carry one composite/concatenated code per row (e.g.
+  "2111") instead of this app's own one-character-per-column layout.
+  Recognised by a "Code"/"Description" header pair (csvImport.ts's
+  `parseCompositeCodeCsv`, widened past those two literal spellings the same
+  way the existing import paths already widen their own header matching).
+  Splits each row's code into one character per detected level and works out
+  its own deepest level from wherever it stops before trailing "."
+  padding — the same "." convention every other import path already treats
+  as the universal blank marker. A new setup dialog
+  (`SeparateCodeElementsSetup.tsx`, reusing SettingsModal's own delimiter-
+  position editing pattern) then collects where — if anywhere — a delimiter
+  should sit between the new code columns, before handing off into the
+  existing title/table-name/purpose confirm step
+  (`CsvImportConfirm`/`handleCsvImportConfirm`) unchanged.
+- **Auto Code Gap Increment** (James's ask): a new per-taxonomy setting
+  (`settings.autoCodeGapIncrement`, 1 or 2, default 2) controlling Auto
+  Code's and Fill Missing Codes' gap-coding step for Alpha and Alpha Numeric
+  Code Restrictions — a fixed step ("1, 3, 5, 7, 9, B, D..." for a gap of 2,
+  his own example, continuing past "9" straight into letters exactly as
+  `CODE_SLOTS` already orders them) rather than the previous adaptive
+  `floor(8 / count)` spread, which produced a different gap for almost every
+  group size. Numeric Only keeps the previous adaptive rule (only nine
+  digits are available there, no room for a fixed step to still cover a
+  typical group). Editable on the Settings screen; older project files
+  default to 2 via `storage.ts`'s migration.
 
 - The core grid — code columns, delimiter columns, description columns,
   colour coding, ALL CAPS/Proper Case, per Section 4.
