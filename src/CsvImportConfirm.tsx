@@ -6,6 +6,7 @@ export interface CsvImportFields {
   tableName: string;
   purpose: string;
   maxDescriptionLength: number;
+  dropCodes: boolean;
 }
 
 interface CsvImportConfirmProps {
@@ -31,6 +32,12 @@ export default function CsvImportConfirm({ parsed, defaultTitle, onConfirm, onCa
   const [maxDescriptionLengthText, setMaxDescriptionLengthText] = useState(
     String(Math.max(40, longestDescription + parsed.numLevels + 4)),
   );
+  // James's ask: a way to bring in just the headings/descriptions from a source file and start
+  // coding fresh, when the source's own codes aren't worth carrying over (e.g. from a different
+  // system's own scheme). Row/level structure — which description lands in which column — is
+  // still read from the file's codes as usual; this only blanks the actual code values afterward
+  // (App.tsx's handleCsvImportConfirm), leaving every cell ready for manual or Auto Code entry.
+  const [dropCodes, setDropCodes] = useState(false);
 
   function handleConfirm() {
     if (!title.trim() || !tableName.trim()) return;
@@ -39,6 +46,7 @@ export default function CsvImportConfirm({ parsed, defaultTitle, onConfirm, onCa
       tableName: tableName.trim(),
       purpose: purpose.trim(),
       maxDescriptionLength: Math.max(1, Number(maxDescriptionLengthText) || 40),
+      dropCodes,
     });
   }
 
@@ -72,6 +80,10 @@ export default function CsvImportConfirm({ parsed, defaultTitle, onConfirm, onCa
             value={maxDescriptionLengthText}
             onChange={(e) => setMaxDescriptionLengthText(e.target.value)}
           />
+        </label>
+        <label className="checkbox-label">
+          <input type="checkbox" checked={dropCodes} onChange={(e) => setDropCodes(e.target.checked)} />
+          Descriptions only — drop the file's codes and start coding fresh
         </label>
         <div className="confirm-dialog-actions">
           <button type="button" onClick={onCancel}>
