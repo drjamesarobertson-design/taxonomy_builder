@@ -7,6 +7,7 @@ import {
   exportDiscreteXlsx,
   exportConcatenatedCsv,
   exportConcatenatedXlsx,
+  exportSingleColumnCsv,
   exportLockedXlsx,
   exportIncrementCsv,
   isChangedSinceLock,
@@ -260,6 +261,15 @@ export default function App() {
   useEffect(() => {
     if (suffixModeChoice) suffixModeDialogRef.current?.focus();
   }, [suffixModeChoice]);
+
+  // James's ask: "Single Column" export — one combined "Code_Description" (or "Code-Description")
+  // value per posting-level row, for pasting into another tool. A separate, self-contained flow
+  // from the discrete/concatenated one above (its own joiner choice, no suffix-mode step — this
+  // format never has suffix columns to begin with) rather than folded into that existing mode
+  // union, to avoid touching its already-intricate threading. Padding substitution is still
+  // offered, same trigger (project.settings.paddingChar === '.') as every other CSV export.
+  const [showSingleColumnJoinerDialog, setShowSingleColumnJoinerDialog] = useState(false);
+  const [singleColumnPaddingChoice, setSingleColumnPaddingChoice] = useState<{ joiner: '_' | '-' } | null>(null);
 
   // Item 3: "Export Block" from the grid's own right-click menu, scoped to a selected row
   // range rather than the whole table (the toolbar's "Create Block" button).
@@ -1437,6 +1447,40 @@ export default function App() {
     proceedPastSuffixChoice(mode, excludeDelimiters);
   }
 
+  async function performSingleColumnExport(joiner: '_' | '-', paddingOverride?: string) {
+    if (!project) return;
+    const { project: versioned, usedFolder, cancelled } = await exportSingleColumnCsv(
+      project,
+      joiner,
+      paddingOverride ? { paddingOverride } : undefined,
+    );
+    setSingleColumnPaddingChoice(null);
+    if (cancelled) return; // backed out of the Save As dialog — nothing happened
+    setProject(versioned);
+    if (usedFolder) peekExportFolderName().then(setExportFolderName);
+    else setExportFolderName(null);
+  }
+
+  function proceedSingleColumnExport(joiner: '_' | '-') {
+    if (!project) return;
+    setShowSingleColumnJoinerDialog(false);
+    if (project.settings.paddingChar === '.') {
+      setSingleColumnPaddingChoice({ joiner });
+    } else {
+      performSingleColumnExport(joiner);
+    }
+  }
+
+  function runSingleColumnExport() {
+    if (!project) return;
+    setExportChoice(null);
+    if (hasBlankCodeGaps(project.rows)) {
+      setBlankCodeWarning({ action: () => setShowSingleColumnJoinerDialog(true) });
+      return;
+    }
+    setShowSingleColumnJoinerDialog(true);
+  }
+
   async function performCreateBlock() {
     if (!project) return;
     const { project: versioned, usedFolder, cancelled } = await exportBlock(project);
@@ -2476,6 +2520,9 @@ export default function App() {
                   <button type="button" onClick={() => runExport('discrete', true)}>
                     Discrete Columns (No Delimiter)
                   </button>
+                  <button type="button" onClick={runSingleColumnExport}>
+                    Single Column…
+                  </button>
                 </>
               )}
               <button type="button" onClick={() => setExportChoice(null)}>
@@ -2528,6 +2575,58 @@ export default function App() {
                   const { mode, excludeDelimiters, suffixMode } = paddingSubstituteChoice;
                   setPaddingSubstituteChoice(null);
                   performExport(mode, undefined, excludeDelimiters, suffixMode);
+                }}
+              >
+                Keep "."
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSingleColumnJoinerDialog && (
+        <div className="validation-overlay" onClick={() => setShowSingleColumnJoinerDialog(false)}>
+          <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <p>Join the code to the description with an underscore or a dash?</p>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setShowSingleColumnJoinerDialog(false)}>
+                Cancel
+              </button>
+              <button type="button" onClick={() => proceedSingleColumnExport('-')}>
+                Dash (1234-Description)
+              </button>
+              <button type="button" onClick={() => proceedSingleColumnExport('_')}>
+                Underscore (1234_Description)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {singleColumnPaddingChoice && (
+        <div className="validation-overlay" onClick={() => setSingleColumnPaddingChoice(null)}>
+          <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <p>
+              It is strongly recommended NOT to use "0" unless the target software absolutely
+              blocks "." and after detailed technical assessment "." is simply not permissible.
+              Note that "0" makes use of the taxonomy less effective in analysis and manipulation
+              of the content.
+            </p>
+            <div className="confirm-dialog-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  const { joiner } = singleColumnPaddingChoice;
+                  performSingleColumnExport(joiner, '0');
+                }}
+              >
+                Replace with "0"
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const { joiner } = singleColumnPaddingChoice;
+                  performSingleColumnExport(joiner);
                 }}
               >
                 Keep "."

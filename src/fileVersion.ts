@@ -10,6 +10,7 @@ export type FileVersionKey =
   | 'discrete-xlsx'
   | 'concatenated-csv'
   | 'concatenated-xlsx'
+  | 'single-column-csv'
   | 'block-json'
   | 'library'
   | 'locked-xlsx'
