@@ -324,6 +324,21 @@ export default function App() {
   // Exit) can clean up the PREVIOUS one before applying a new one — a plain ref rather than
   // state, since it's a direct DOM side effect, not something that drives a render.
   const highlightedCellIdRef = useRef<string | null>(null);
+  // The id of whatever grid cell most recently received a genuine pointer mousedown — the audit
+  // blur-recheck effect (below) uses this to tell "the user just deliberately clicked into a
+  // different cell" apart from a blur caused by Tab/keyboard navigation or jumpToAuditIssue's own
+  // programmatic focus, neither of which fires mousedown at all. Checking the blur event's own
+  // relatedTarget isn't enough on its own — for an ordinary Tab-driven transition it reports
+  // whatever the browser's native tab order lands on next (often some unrelated intervening
+  // row), which looks identical to a deliberate click from relatedTarget alone.
+  const lastMouseDownIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    function handleMouseDown(e: MouseEvent) {
+      lastMouseDownIdRef.current = (e.target as HTMLElement | null)?.id ?? null;
+    }
+    document.addEventListener('mousedown', handleMouseDown, true);
+    return () => document.removeEventListener('mousedown', handleMouseDown, true);
+  }, []);
 
   // Auto Code (James's ask): a general-purpose numeric-first gap-coding action, independent of
   // the Simple Taxonomy wizard's own mnemonic Suggest Codes — usable any time, on any taxonomy,
@@ -885,6 +900,14 @@ export default function App() {
     fromIndex: number,
     rows: TaxonomyRow[] = project?.rows ?? [],
     accepted: ReadonlySet<string> = audit?.accepted ?? new Set<string>(),
+    /** The rowId focus is actually headed to, straight from the triggering blur event's own
+     * relatedTarget — not read back from document.activeElement, whose value at the moment a
+     * blur handler runs is inconsistent across browsers (sometimes still the old element,
+     * sometimes already document.body, before settling on the new one). Only the blur-triggered
+     * recheck below ever has a real answer for this; every other caller (Clear Error's own
+     * auto-fixes, Accept, Resume) leaves it undefined, so they keep unconditionally jumping to
+     * wherever the walk lands next, exactly as before. */
+    focusHeadingToRowId?: string | null,
   ) {
     if (!project || !audit) return;
     const rawFresh = findAuditIssues(rows, project.settings.properCaseOnly, project.settings.paddingChar);
@@ -926,8 +949,27 @@ export default function App() {
 
     if (next < audit.originalRowIds.length && firstIssueByRow.has(audit.originalRowIds[next])) {
       const nextIssue = firstIssueByRow.get(audit.originalRowIds[next]) ?? null;
+      // James's report: stuck on a row the hard-duplicate block had just rejected a fix for,
+      // wanting to blank out OTHER rows by hand instead — but the moment he clicked into one,
+      // blurring the still-broken flagged cell, this re-check found the exact same issue still
+      // current and (unconditionally, before this check) re-jumped to it anyway, snapping focus
+      // straight back before he could type anything, making every other cell look uneditable
+      // while Audit was open, not just the flagged one. But a flat "same issue as before, so
+      // never re-jump" check went too far the other way: a real transition to a genuinely new
+      // row's issue can still land focus one column off (e.g. a stray browser/Grid tab-navigation
+      // target briefly winning the race against jumpToAuditIssue's own focus) — skipping the
+      // correction there left the walkthrough visibly on the wrong cell of the RIGHT row. The
+      // distinction that actually matters is which row focus is actually HEADED to (the
+      // triggering blur event's own relatedTarget, threaded through as focusHeadingToRowId —
+      // reading document.activeElement here instead is unreliable, since its value at the exact
+      // moment a blur handler runs varies by browser): only treat it as a deliberate manual edit
+      // elsewhere — and leave it alone — when focus is headed to a DIFFERENT row's cell than the
+      // one this issue is about; anything else (no hint at all, or focus staying within this
+      // same row) still gets jumpToAuditIssue's usual correction.
+      const focusIsOnADifferentRow =
+        !!focusHeadingToRowId && !!nextIssue && focusHeadingToRowId !== nextIssue.rowId;
       setAudit({ ...audit, accepted, cursor: next, currentIssue: nextIssue, status: 'issue' });
-      jumpToAuditIssue(nextIssue);
+      if (!focusIsOnADifferentRow) jumpToAuditIssue(nextIssue);
       return;
     }
 
@@ -1117,7 +1159,14 @@ export default function App() {
           handleSettingsAndRowsChange(project.settings, rows);
         }
       }
-      advanceAudit(audit!.cursor, rows);
+      // Only trust relatedTarget as "the user deliberately went here" when it's ALSO the most
+      // recent genuine mousedown target — see lastMouseDownIdRef's own comment for why
+      // relatedTarget alone can't tell a real click apart from an ordinary Tab landing somewhere
+      // incidental.
+      const relatedId = (e.relatedTarget as HTMLElement | null)?.id ?? '';
+      const wasDeliberateClick = relatedId !== '' && relatedId === lastMouseDownIdRef.current;
+      const focusHeadingToRowId = wasDeliberateClick ? (relatedId.match(/^(?:code|desc)-\d+-(.+)$/)?.[1] ?? null) : null;
+      advanceAudit(audit!.cursor, rows, undefined, focusHeadingToRowId);
     }
     document.addEventListener('focusout', handleFocusOut);
     return () => document.removeEventListener('focusout', handleFocusOut);
