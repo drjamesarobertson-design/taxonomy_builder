@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
+import Tooltip from './Tooltip';
+import type { HelpTextMap } from './helpText';
 
 export type AuditOrigin = 'standalone' | 'lock' | 'lockUpdates' | 'export-csv';
 export type AuditStatus = 'checking' | 'clean' | 'issue' | 'resuming';
@@ -40,6 +42,7 @@ interface AuditPanelProps {
    * Lock/Export-triggered audits handle their own "what next" step once clean (App.tsx). */
   onLockFromClean: () => void;
   onExportCsvFromClean: () => void;
+  helpText: HelpTextMap;
 }
 
 const DEFAULT_POSITION = { top: 88, left: 900 };
@@ -63,6 +66,7 @@ export default function AuditPanel({
   onResume,
   onLockFromClean,
   onExportCsvFromClean,
+  helpText,
 }: AuditPanelProps) {
   const [position, setPosition] = useState(DEFAULT_POSITION);
   const dragState = useRef<{ startX: number; startY: number; startTop: number; startLeft: number } | null>(null);
@@ -124,15 +128,21 @@ export default function AuditPanel({
             <p>Audit complete — no issues found. This taxonomy is ready to Lock.</p>
             {origin === 'standalone' && (
               <div className="audit-panel-actions">
-                <button type="button" onClick={onExit}>
-                  Close
-                </button>
-                <button type="button" onClick={onExportCsvFromClean}>
-                  Export to CSV
-                </button>
-                <button type="button" onClick={onLockFromClean}>
-                  Lock Taxonomy
-                </button>
+                <Tooltip field="btnAuditClose" helpText={helpText}>
+                  <button type="button" onClick={onExit}>
+                    Close
+                  </button>
+                </Tooltip>
+                <Tooltip field="btnAuditExportCsvFromClean" helpText={helpText}>
+                  <button type="button" onClick={onExportCsvFromClean}>
+                    Export to CSV
+                  </button>
+                </Tooltip>
+                <Tooltip field="btnAuditLockFromClean" helpText={helpText}>
+                  <button type="button" onClick={onLockFromClean}>
+                    Lock Taxonomy
+                  </button>
+                </Tooltip>
               </div>
             )}
           </>
@@ -145,31 +155,39 @@ export default function AuditPanel({
             </p>
             <p>{message}</p>
             <div className="audit-panel-actions">
-              <button type="button" onClick={onExit}>
-                Exit Audit
-              </button>
-              {(currentIssueKind === 'otherNotLast' || currentIssueKind === 'oversized' || currentIssueKind === 'outlier') && (
-                <button type="button" onClick={onAccept}>
-                  Accept
+              <Tooltip field="btnAuditExit" helpText={helpText}>
+                <button type="button" onClick={onExit}>
+                  Exit Audit
                 </button>
+              </Tooltip>
+              {(currentIssueKind === 'otherNotLast' || currentIssueKind === 'oversized' || currentIssueKind === 'outlier') && (
+                <Tooltip field="btnAuditAccept" helpText={helpText}>
+                  <button type="button" onClick={onAccept}>
+                    Accept
+                  </button>
+                </Tooltip>
               )}
               {status === 'issue' && currentIssueKind !== 'otherNotLast' && (
-                <button type="button" onClick={onClearError}>
-                  {currentIssueKind === 'auto'
-                    ? 'Fix Automatically'
-                    : currentIssueKind === 'toggleCase'
-                      ? 'Fix and Resume Audit'
-                      : currentIssueKind === 'oversized'
-                        ? 'Split'
-                        : currentIssueKind === 'outlier'
-                          ? 'Edit'
-                          : 'Clear Error'}
-                </button>
+                <Tooltip field="btnAuditClearError" helpText={helpText}>
+                  <button type="button" onClick={onClearError}>
+                    {currentIssueKind === 'auto'
+                      ? 'Fix Automatically'
+                      : currentIssueKind === 'toggleCase'
+                        ? 'Fix and Resume Audit'
+                        : currentIssueKind === 'oversized'
+                          ? 'Split'
+                          : currentIssueKind === 'outlier'
+                            ? 'Edit'
+                            : 'Clear Error'}
+                  </button>
+                </Tooltip>
               )}
               {status === 'resuming' && (
-                <button type="button" onClick={onResume}>
-                  Resume Audit
-                </button>
+                <Tooltip field="btnAuditResume" helpText={helpText}>
+                  <button type="button" onClick={onResume}>
+                    Resume Audit
+                  </button>
+                </Tooltip>
               )}
             </div>
           </>

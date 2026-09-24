@@ -15,11 +15,14 @@ import {
   suggestMnemonicCodes,
 } from './guidance';
 import { codeInputId } from './domIds';
+import Tooltip from './Tooltip';
+import type { HelpTextMap } from './helpText';
 
 interface GuidanceBannerProps {
   project: TaxonomyProject;
   onSettingsAndRowsChange: (settings: TaxonomySettings, rows: TaxonomyRow[]) => void;
   onExitGuidance: () => void;
+  helpText: HelpTextMap;
 }
 
 // The Simple Taxonomy guided wizard's on-screen driver: stage instructions, the "Next Step"
@@ -28,7 +31,7 @@ interface GuidanceBannerProps {
 // stage's Numeric/Alpha + mnemonic-suggestion prompts. Column visibility itself is Grid.tsx's
 // concern (driven by the same `settings.guidance` this component reads); this just drives the
 // stage machine and hands Grid whatever new settings/rows a transition produces.
-export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExitGuidance }: GuidanceBannerProps) {
+export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExitGuidance, helpText }: GuidanceBannerProps) {
   const [confirmOverride, setConfirmOverride] = useState<{ message: string; onConfirm: () => void } | null>(null);
   // James's ask: asked at the end of every description column (not just after the first) so
   // the wizard supports more than two columns — see resolveAnotherColumn below.
@@ -292,31 +295,43 @@ export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExi
       </div>
       <div className="guidance-banner-actions">
         {stage === 'headings' && (
-          <button type="button" onClick={handleHeadingsNext} disabled={headingCount === 0}>
-            Next Step →
-          </button>
+          <Tooltip field="btnGuidanceNextStep" helpText={helpText}>
+            <button type="button" onClick={handleHeadingsNext} disabled={headingCount === 0}>
+              Next Step →
+            </button>
+          </Tooltip>
         )}
         {stage === 'subItems' && (
-          <button type="button" onClick={handleSubItemsNext}>
-            Next Step →
-          </button>
+          <Tooltip field="btnGuidanceNextStep" helpText={helpText}>
+            <button type="button" onClick={handleSubItemsNext}>
+              Next Step →
+            </button>
+          </Tooltip>
         )}
         {stage === 'coding' && !codingPrompt && (
           <>
-            <button type="button" onClick={handleFillCodes}>
-              Fill Codes
-            </button>
-            <button type="button" onClick={handlePadCodes}>
-              Pad Codes
-            </button>
-            <button type="button" onClick={finishCoding}>
-              Finish
-            </button>
+            <Tooltip field="btnGuidanceFillCodes" helpText={helpText}>
+              <button type="button" onClick={handleFillCodes}>
+                Fill Codes
+              </button>
+            </Tooltip>
+            <Tooltip field="btnGuidancePadCodes" helpText={helpText}>
+              <button type="button" onClick={handlePadCodes}>
+                Pad Codes
+              </button>
+            </Tooltip>
+            <Tooltip field="btnGuidanceFinish" helpText={helpText}>
+              <button type="button" onClick={finishCoding}>
+                Finish
+              </button>
+            </Tooltip>
           </>
         )}
-        <button type="button" className="guidance-exit-btn" onClick={onExitGuidance}>
-          Exit Guidance
-        </button>
+        <Tooltip field="btnGuidanceExit" helpText={helpText}>
+          <button type="button" className="guidance-exit-btn" onClick={onExitGuidance}>
+            Exit Guidance
+          </button>
+        </Tooltip>
       </div>
 
       {confirmOverride && (

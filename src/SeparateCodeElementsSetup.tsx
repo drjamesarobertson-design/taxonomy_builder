@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import type { ParsedCompositeCsv } from './csvImport';
+import Tooltip from './Tooltip';
+import type { HelpTextMap } from './helpText';
 
 const CODE_DELIMITER_OPTIONS = ['-', '_', '+', '=', '/'];
 
@@ -7,6 +9,7 @@ interface SeparateCodeElementsSetupProps {
   parsed: ParsedCompositeCsv;
   onConfirm: (delimiterPositions: number[], codeDelimiterChar: string) => void;
   onCancel: () => void;
+  helpText: HelpTextMap;
 }
 
 // James's ask: "Separate Out Code Elements" — once csvImport.ts's parseCompositeCodeCsv has
@@ -15,7 +18,7 @@ interface SeparateCodeElementsSetupProps {
 // new code columns — before handing off to the same title/table-name/purpose confirm step every
 // other CSV import already uses. Same delimiter-position editing UI as SettingsModal's own
 // "Code Delimiters" fieldset, reused here rather than duplicated with different behaviour.
-export default function SeparateCodeElementsSetup({ parsed, onConfirm, onCancel }: SeparateCodeElementsSetupProps) {
+export default function SeparateCodeElementsSetup({ parsed, onConfirm, onCancel, helpText }: SeparateCodeElementsSetupProps) {
   const [delimiterPositions, setDelimiterPositions] = useState<number[]>([]);
   const [codeDelimiterChar, setCodeDelimiterChar] = useState('-');
 
@@ -73,26 +76,34 @@ export default function SeparateCodeElementsSetup({ parsed, onConfirm, onCancel 
                       onChange={(e) => updateDelimiter(index, Number(e.target.value))}
                     />
                   </div>
-                  <button type="button" className="delimiter-remove-btn" onClick={() => removeDelimiter(index)}>
-                    Remove
-                  </button>
+                  <Tooltip field="btnRemoveDelimiter" helpText={helpText}>
+                    <button type="button" className="delimiter-remove-btn" onClick={() => removeDelimiter(index)}>
+                      Remove
+                    </button>
+                  </Tooltip>
                 </div>
               ))}
               {delimiterPositions.length < parsed.numLevels - 1 && (
-                <button type="button" onClick={addDelimiter}>
-                  + Insert {delimiterPositions.length > 0 ? 'Further ' : ''}Delimiter
-                </button>
+                <Tooltip field="btnInsertDelimiter" helpText={helpText}>
+                  <button type="button" onClick={addDelimiter}>
+                    + Insert {delimiterPositions.length > 0 ? 'Further ' : ''}Delimiter
+                  </button>
+                </Tooltip>
               )}
             </fieldset>
           </>
         )}
         <div className="confirm-dialog-actions">
-          <button type="button" onClick={onCancel}>
-            Cancel
-          </button>
-          <button type="button" onClick={() => onConfirm(delimiterPositions, codeDelimiterChar)}>
-            Continue
-          </button>
+          <Tooltip field="btnSeparateCodeCancel" helpText={helpText}>
+            <button type="button" onClick={onCancel}>
+              Cancel
+            </button>
+          </Tooltip>
+          <Tooltip field="btnSeparateCodeContinue" helpText={helpText}>
+            <button type="button" onClick={() => onConfirm(delimiterPositions, codeDelimiterChar)}>
+              Continue
+            </button>
+          </Tooltip>
         </div>
       </div>
     </div>

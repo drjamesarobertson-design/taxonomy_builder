@@ -568,6 +568,44 @@ export function buildSeparatedCsv(
   return { numLevels: parsed.numLevels, delimiterPositions, codeDelimiterChar, suffixes: [], rows };
 }
 
+// James's ask: "Multi-Column Description Table Without Code" -- his HDD folder-structure export
+// (no header row, no code columns at all): one column per hierarchy level, and each row has
+// exactly ONE populated cell, whose column position IS that row's level (matching indentation by
+// position rather than by any marker). Neither existing path fits this shape: the headerless
+// code-column detector (parseHeaderlessCsv) has no code columns to anchor on at all, and the
+// headered description-only path (tryParseDescriptionOnlyCsv) requires "Level 1"/"L1" column
+// headers this file doesn't have. Recognised structurally instead, the same way
+// parseHeaderlessCsv recognises its own shape: no header assumed, every row is data.
+export function parseMultiColumnDescriptionCsv(text: string): ParsedDiscreteCsv | { error: string } {
+  const table = parseCsvTable(text);
+  if (table.length === 0) return { error: 'This file is empty.' };
+  const numCols = Math.max(...table.map((r) => r.length));
+  if (numCols > MAX_LEVELS) {
+    return { error: `This file has ${numCols} columns, more than this tool supports (${MAX_LEVELS}).` };
+  }
+
+  const dataRows: string[][] = [];
+  for (let i = 0; i < table.length; i++) {
+    const row = table[i];
+    const populated: number[] = [];
+    for (let c = 0; c < numCols; c++) {
+      if ((row[c] ?? '').trim() !== '') populated.push(c);
+    }
+    if (populated.length === 0) continue; // a blank line -- skip rather than error
+    if (populated.length > 1) {
+      return {
+        error: `Row ${i + 1} has more than one populated column (expected exactly one per row, at the position matching its level in the hierarchy) — this doesn't look like a Multi-Column Description Table Without Code file.`,
+      };
+    }
+    dataRows.push(row);
+  }
+  if (dataRows.length === 0) return { error: 'No data rows found in this file.' };
+
+  const numLevels = numCols;
+  const descCols = Array.from({ length: numLevels }, (_, i) => i);
+  return buildResult(dataRows, numLevels, [], descCols, [], '-', [], []);
+}
+
 export function readFileAsText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

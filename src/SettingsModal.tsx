@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { TaxonomyProject, TaxonomyRow } from './types';
 import { MAX_LEVELS } from './types';
 import HelpIcon from './HelpIcon';
+import Tooltip from './Tooltip';
 import type { HelpTextMap } from './helpText';
 
 export interface SettingsFields {
@@ -205,15 +206,19 @@ export default function SettingsModal({ project, onSave, onClose, helpText }: Se
                   onChange={(e) => updateDelimiter(index, Number(e.target.value))}
                 />
               </div>
-              <button type="button" className="delimiter-remove-btn" onClick={() => removeDelimiter(index)}>
-                Remove
-              </button>
+              <Tooltip field="btnRemoveDelimiter" helpText={helpText}>
+                <button type="button" className="delimiter-remove-btn" onClick={() => removeDelimiter(index)}>
+                  Remove
+                </button>
+              </Tooltip>
             </div>
           ))}
           {delimiterPositions.length < Math.max(1, Number(numLevelsText) || project.settings.numLevels) - 1 && (
-            <button type="button" onClick={addDelimiter}>
-              + Insert {delimiterPositions.length > 0 ? 'Further ' : ''}Delimiter
-            </button>
+            <Tooltip field="btnInsertDelimiter" helpText={helpText}>
+              <button type="button" onClick={addDelimiter}>
+                + Insert {delimiterPositions.length > 0 ? 'Further ' : ''}Delimiter
+              </button>
+            </Tooltip>
           )}
         </fieldset>
         <label>
@@ -259,12 +264,16 @@ export default function SettingsModal({ project, onSave, onClose, helpText }: Se
           rows. Start a new taxonomy if you need to change those.
         </p>
         <div className="confirm-dialog-actions">
-          <button type="button" onClick={onClose}>
-            Cancel
-          </button>
-          <button type="button" onClick={handleSave}>
-            Save
-          </button>
+          <Tooltip field="btnSettingsCancel" helpText={helpText}>
+            <button type="button" onClick={onClose}>
+              Cancel
+            </button>
+          </Tooltip>
+          <Tooltip field="btnSettingsSave" helpText={helpText}>
+            <button type="button" onClick={handleSave}>
+              Save
+            </button>
+          </Tooltip>
         </div>
       </div>
     </div>

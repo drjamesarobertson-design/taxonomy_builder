@@ -10,6 +10,7 @@ import type { LibraryCategory, LibraryEntry, LibraryExportBundle } from './libra
 import { saveExportFile } from './exportFolder';
 import type { HelpTextMap } from './helpText';
 import { useMenuTooltip, MenuTooltipPortal } from './menuTooltip';
+import Tooltip from './Tooltip';
 
 interface LibrarySidebarProps {
   entries: LibraryEntry[];
@@ -277,9 +278,11 @@ export default function LibrarySidebar({
   if (collapsed) {
     return (
       <div className="library-sidebar library-sidebar-collapsed">
-        <button type="button" className="library-collapse-toggle" onClick={() => setCollapsed(false)} title="Show Library">
-          ▶ Library
-        </button>
+        <Tooltip field="btnLibShowToggle" helpText={helpText}>
+          <button type="button" className="library-collapse-toggle" onClick={() => setCollapsed(false)}>
+            ▶ Library
+          </button>
+        </Tooltip>
       </div>
     );
   }
@@ -383,36 +386,37 @@ export default function LibrarySidebar({
     <div className="library-sidebar">
       <div className="library-header">
         <h2>Library</h2>
-        <button type="button" className="library-collapse-toggle" onClick={() => setCollapsed(true)} title="Hide Library">
-          ◀
-        </button>
+        <Tooltip field="btnLibHideToggle" helpText={helpText}>
+          <button type="button" className="library-collapse-toggle" onClick={() => setCollapsed(true)}>
+            ◀
+          </button>
+        </Tooltip>
       </div>
       <div className="library-transfer-buttons">
-        <button
-          type="button"
-          className="library-transfer-button"
-          onClick={openExportPicker}
-          disabled={entries.length === 0}
-          title="Save a selection of Library taxonomies to a file — for backup, moving to a new machine, or sharing a demo/sample set"
-        >
-          Export…
-        </button>
-        <button
-          type="button"
-          className="library-transfer-button"
-          onClick={() => importFileInputRef.current?.click()}
-          title="Add taxonomies from a Library export file into this Library"
-        >
-          Import…
-        </button>
-        <button
-          type="button"
-          className="library-transfer-button"
-          onClick={onCheckForNewSamples}
-          title="Check for starter sample taxonomies added since you last checked"
-        >
-          Check for New Samples
-        </button>
+        <Tooltip field="btnLibExport" helpText={helpText}>
+          <button
+            type="button"
+            className="library-transfer-button"
+            onClick={openExportPicker}
+            disabled={entries.length === 0}
+          >
+            Export…
+          </button>
+        </Tooltip>
+        <Tooltip field="btnLibImport" helpText={helpText}>
+          <button
+            type="button"
+            className="library-transfer-button"
+            onClick={() => importFileInputRef.current?.click()}
+          >
+            Import…
+          </button>
+        </Tooltip>
+        <Tooltip field="btnLibCheckNewSamples" helpText={helpText}>
+          <button type="button" className="library-transfer-button" onClick={onCheckForNewSamples}>
+            Check for New Samples
+          </button>
+        </Tooltip>
         <input
           ref={importFileInputRef}
           type="file"
@@ -558,9 +562,11 @@ export default function LibrarySidebar({
               <button type="button" onClick={() => setMoveCategoryTarget(null)}>
                 Cancel
               </button>
-              <button type="button" onClick={confirmMoveToCategory}>
-                Move
-              </button>
+              <Tooltip field="btnLibMoveToCategoryConfirm" helpText={helpText}>
+                <button type="button" onClick={confirmMoveToCategory}>
+                  Move
+                </button>
+              </Tooltip>
             </div>
           </div>
         </div>,
@@ -601,9 +607,11 @@ export default function LibrarySidebar({
               <button type="button" onClick={() => setShowExportPicker(false)}>
                 Cancel
               </button>
-              <button type="button" disabled={exportSelection.size === 0} onClick={confirmExport}>
-                Export {exportSelection.size} {exportSelection.size === 1 ? 'Taxonomy' : 'Taxonomies'}
-              </button>
+              <Tooltip field="btnLibExportConfirm" helpText={helpText}>
+                <button type="button" disabled={exportSelection.size === 0} onClick={confirmExport}>
+                  Export {exportSelection.size} {exportSelection.size === 1 ? 'Taxonomy' : 'Taxonomies'}
+                </button>
+              </Tooltip>
             </div>
           </div>
         </div>,
@@ -660,9 +668,11 @@ export default function LibrarySidebar({
                   <button type="button" onClick={() => setPendingImport(null)}>
                     Cancel
                   </button>
-                  <button type="button" disabled={importSelection.size === 0} onClick={confirmImport}>
-                    Import {importSelection.size} {importSelection.size === 1 ? 'Taxonomy' : 'Taxonomies'}
-                  </button>
+                  <Tooltip field="btnLibImportConfirm" helpText={helpText}>
+                    <button type="button" disabled={importSelection.size === 0} onClick={confirmImport}>
+                      Import {importSelection.size} {importSelection.size === 1 ? 'Taxonomy' : 'Taxonomies'}
+                    </button>
+                  </Tooltip>
                 </div>
               </div>
             </div>
@@ -730,9 +740,11 @@ export default function LibrarySidebar({
                     {newSampleCandidates.length === 0 ? 'Close' : 'Cancel'}
                   </button>
                   {newSampleCandidates.length > 0 && (
-                    <button type="button" disabled={newSampleSelection.size === 0} onClick={confirmImportNewSamples}>
-                      Add {newSampleSelection.size} {newSampleSelection.size === 1 ? 'Sample' : 'Samples'}
-                    </button>
+                    <Tooltip field="btnLibAddNewSamplesConfirm" helpText={helpText}>
+                      <button type="button" disabled={newSampleSelection.size === 0} onClick={confirmImportNewSamples}>
+                        Add {newSampleSelection.size} {newSampleSelection.size === 1 ? 'Sample' : 'Samples'}
+                      </button>
+                    </Tooltip>
                   )}
                 </div>
               </div>
