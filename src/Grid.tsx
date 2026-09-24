@@ -17,6 +17,7 @@ import { fillMissingCodesAtLevel } from './autoCode';
 import type { TaxonomyBlock } from './blockTransfer';
 import { parseBlockFile } from './blockTransfer';
 import type { HelpTextMap } from './helpText';
+import { useMenuTooltip, MenuTooltipPortal } from './menuTooltip';
 
 interface GridProps {
   settings: TaxonomySettings;
@@ -148,6 +149,14 @@ export default function Grid({
   const [anchorRowId, setAnchorRowId] = useState<string | null>(null);
   const [anchorLevel, setAnchorLevel] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const { tooltip: menuTooltip, showTooltip: showMenuTooltip, hideTooltip: hideMenuTooltip } = useMenuTooltip();
+  // Closing the menu (e.g. a click elsewhere) doesn't itself fire the <li>'s onMouseLeave —
+  // without this the last-hovered item's tooltip could stay stuck on screen after the menu
+  // it belonged to is gone.
+  useEffect(() => {
+    if (!contextMenu) hideMenuTooltip();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contextMenu]);
   const [validationError, setValidationError] = useState<string | null>(null);
   // An optional action to run once the validation-error dialog above is dismissed — e.g.
   // Check Ascending Order jumping the cursor to the first offending cell, so the user lands
@@ -2425,7 +2434,7 @@ export default function Grid({
   // from public/help-text.csv, the same mechanism as the setup screens' field-level help icons.
   function handleGridMenuHelp(field: 'gridCodeMenuHelp' | 'gridDescMenuHelp' | 'gridSuffixMenuHelp') {
     setContextMenu(null);
-    showValidationError(helpText[field]?.trim() || 'No help text has been added for this menu yet.');
+    showValidationError(helpText[field]?.helpText?.trim() || 'No help text has been added for this menu yet.');
   }
 
   // code/description column pair at the far right. Always safe (Section 6.1: new columns start
@@ -3423,48 +3432,101 @@ export default function Grid({
               order-related actions at the top, rather than dropped silently. */}
           {contextMenu.kind === 'desc' && (
             <>
-              <li onClick={handleToggleCase}>Toggle Case</li>
-              <li onClick={handleAlphaSort}>Alpha Sort</li>
-              <li onClick={() => requestPromoteDemote('promote')}>Promote</li>
-              <li onClick={() => requestPromoteDemote('demote')}>Demote</li>
-              <li className="context-menu-separator" onClick={handleAddColumnClick}>
+              <li onClick={handleToggleCase} onMouseEnter={showMenuTooltip('menuDescToggleCase')} onMouseLeave={hideMenuTooltip}>
+                Toggle Case
+              </li>
+              <li onClick={handleAlphaSort} onMouseEnter={showMenuTooltip('menuDescAlphaSort')} onMouseLeave={hideMenuTooltip}>
+                Alpha Sort
+              </li>
+              <li
+                onClick={() => requestPromoteDemote('promote')}
+                onMouseEnter={showMenuTooltip('menuDescPromote')}
+                onMouseLeave={hideMenuTooltip}
+              >
+                Promote
+              </li>
+              <li
+                onClick={() => requestPromoteDemote('demote')}
+                onMouseEnter={showMenuTooltip('menuDescDemote')}
+                onMouseLeave={hideMenuTooltip}
+              >
+                Demote
+              </li>
+              <li
+                className="context-menu-separator"
+                onClick={handleAddColumnClick}
+                onMouseEnter={showMenuTooltip('menuAddColumn')}
+                onMouseLeave={hideMenuTooltip}
+              >
                 Add Column
               </li>
-              <li onClick={handleDeleteColumnClick}>Delete Column</li>
+              <li onClick={handleDeleteColumnClick} onMouseEnter={showMenuTooltip('menuDeleteColumn')} onMouseLeave={hideMenuTooltip}>
+                Delete Column
+              </li>
               <li
                 className="context-menu-separator"
                 onClick={() => {
                   setAddRowOnDownArrow((v) => !v);
                   setContextMenu(null);
                 }}
+                onMouseEnter={showMenuTooltip('menuAddRowOnDownArrow')}
+                onMouseLeave={hideMenuTooltip}
               >
                 {addRowOnDownArrow ? '✓ ' : ''}Add Row on Down Arrow
               </li>
-              <li onClick={handleCopyStart}>Copy Rows</li>
-              <li onClick={handleMoveStart}>Move</li>
-              <li onClick={() => handleInsertRow('above')}>
+              <li onClick={handleCopyStart} onMouseEnter={showMenuTooltip('menuDescCopyRows')} onMouseLeave={hideMenuTooltip}>
+                Copy Rows
+              </li>
+              <li onClick={handleMoveStart} onMouseEnter={showMenuTooltip('menuDescMove')} onMouseLeave={hideMenuTooltip}>
+                Move
+              </li>
+              <li
+                onClick={() => handleInsertRow('above')}
+                onMouseEnter={showMenuTooltip('menuInsertRowAbove')}
+                onMouseLeave={hideMenuTooltip}
+              >
                 {pendingInsertCount() > 1 ? `Insert ${pendingInsertCount()} Rows Above` : 'Insert Row Above'}
               </li>
-              <li onClick={() => handleInsertRow('below')}>
+              <li
+                onClick={() => handleInsertRow('below')}
+                onMouseEnter={showMenuTooltip('menuInsertRowBelow')}
+                onMouseLeave={hideMenuTooltip}
+              >
                 {pendingInsertCount() > 1 ? `Insert ${pendingInsertCount()} Rows Below` : 'Insert Row Below'}
               </li>
-              <li onClick={handleDeleteRowFromMenu}>Delete Row</li>
-              <li onClick={handleMarkAsDelete}>Mark as Delete</li>
+              <li onClick={handleDeleteRowFromMenu} onMouseEnter={showMenuTooltip('menuDeleteRow')} onMouseLeave={hideMenuTooltip}>
+                Delete Row
+              </li>
+              <li onClick={handleMarkAsDelete} onMouseEnter={showMenuTooltip('menuDescMarkAsDelete')} onMouseLeave={hideMenuTooltip}>
+                Mark as Delete
+              </li>
               {selection && selection.rowIds.size > 0 && (
-                <li className="context-menu-separator" onClick={handleExportBlockMenuClick}>
+                <li
+                  className="context-menu-separator"
+                  onClick={handleExportBlockMenuClick}
+                  onMouseEnter={showMenuTooltip('menuExportBlock')}
+                  onMouseLeave={hideMenuTooltip}
+                >
                   Export Block
                 </li>
               )}
               <li
                 className={selection && selection.rowIds.size > 0 ? undefined : 'context-menu-separator'}
                 onClick={handleImportBlockMenuClick}
+                onMouseEnter={showMenuTooltip('menuImportBlock')}
+                onMouseLeave={hideMenuTooltip}
               >
                 Import Block
               </li>
-              <li className="context-menu-separator" onClick={handleOpenFind}>
+              <li
+                className="context-menu-separator"
+                onClick={handleOpenFind}
+                onMouseEnter={showMenuTooltip('menuDescFind')}
+                onMouseLeave={hideMenuTooltip}
+              >
                 Find…
               </li>
-              <li onClick={handleOpenNoteEditor}>
+              <li onClick={handleOpenNoteEditor} onMouseEnter={showMenuTooltip('menuDescNote')} onMouseLeave={hideMenuTooltip}>
                 {rows.find((r) => r.id === contextMenu.rowId)?.note ? 'Edit Note' : 'Add Note'}
               </li>
               <li onClick={() => handleGridMenuHelp('gridDescMenuHelp')}>Help</li>
@@ -3472,30 +3534,83 @@ export default function Grid({
           )}
           {contextMenu.kind === 'code' && (
             <>
-              <li onClick={handleCheckAscendingOrder}>Check Ascending Order</li>
-              <li onClick={handleAlphaSortByCode}>Alpha Sort</li>
-              <li onClick={handleCopyCodesBlock}>Copy Codes</li>
-              {codeClipboard && <li onClick={handlePasteCodesBlock}>Paste Codes</li>}
-              <li onClick={handleDeleteCodes}>Delete Codes</li>
-              <li onClick={handleClearAllCodes}>Clear Codes and Start Again</li>
-              <li className="context-menu-separator" onClick={handleReplicateAbove}>
+              <li
+                onClick={handleCheckAscendingOrder}
+                onMouseEnter={showMenuTooltip('menuCheckAscendingOrder')}
+                onMouseLeave={hideMenuTooltip}
+              >
+                Check Ascending Order
+              </li>
+              <li onClick={handleAlphaSortByCode} onMouseEnter={showMenuTooltip('menuCodeAlphaSort')} onMouseLeave={hideMenuTooltip}>
+                Alpha Sort
+              </li>
+              <li onClick={handleCopyCodesBlock} onMouseEnter={showMenuTooltip('menuCopyCodes')} onMouseLeave={hideMenuTooltip}>
+                Copy Codes
+              </li>
+              {codeClipboard && (
+                <li onClick={handlePasteCodesBlock} onMouseEnter={showMenuTooltip('menuPasteCodes')} onMouseLeave={hideMenuTooltip}>
+                  Paste Codes
+                </li>
+              )}
+              <li onClick={handleDeleteCodes} onMouseEnter={showMenuTooltip('menuDeleteCodes')} onMouseLeave={hideMenuTooltip}>
+                Delete Codes
+              </li>
+              <li onClick={handleClearAllCodes} onMouseEnter={showMenuTooltip('menuClearAllCodes')} onMouseLeave={hideMenuTooltip}>
+                Clear Codes and Start Again
+              </li>
+              <li
+                className="context-menu-separator"
+                onClick={handleReplicateAbove}
+                onMouseEnter={showMenuTooltip('menuReplicateAbove')}
+                onMouseLeave={hideMenuTooltip}
+              >
                 Replicate Codes Above
               </li>
-              <li onClick={handleReplicateBelow}>Replicate Codes Below</li>
-              <li onClick={handleFillMissingCodes}>Fill Missing Codes</li>
-              <li className="context-menu-separator" onClick={handleAddColumnClick}>
+              <li onClick={handleReplicateBelow} onMouseEnter={showMenuTooltip('menuReplicateBelow')} onMouseLeave={hideMenuTooltip}>
+                Replicate Codes Below
+              </li>
+              <li
+                onClick={handleFillMissingCodes}
+                onMouseEnter={showMenuTooltip('menuFillMissingCodes')}
+                onMouseLeave={hideMenuTooltip}
+              >
+                Fill Missing Codes
+              </li>
+              <li
+                className="context-menu-separator"
+                onClick={handleAddColumnClick}
+                onMouseEnter={showMenuTooltip('menuAddColumn')}
+                onMouseLeave={hideMenuTooltip}
+              >
                 Add Column
               </li>
-              <li onClick={handleDeleteColumnClick}>Delete Column</li>
-              {contextMenu.level === 0 && numLevels === 1 && <li onClick={handleOpenWidthOfCol1}>Width of Col 1…</li>}
+              <li onClick={handleDeleteColumnClick} onMouseEnter={showMenuTooltip('menuDeleteColumn')} onMouseLeave={hideMenuTooltip}>
+                Delete Column
+              </li>
+              {contextMenu.level === 0 && numLevels === 1 && (
+                <li
+                  onClick={handleOpenWidthOfCol1}
+                  onMouseEnter={showMenuTooltip('menuWidthOfCol1')}
+                  onMouseLeave={hideMenuTooltip}
+                >
+                  Width of Col 1…
+                </li>
+              )}
               {selection && selection.rowIds.size > 0 && (
-                <li className="context-menu-separator" onClick={handleExportBlockMenuClick}>
+                <li
+                  className="context-menu-separator"
+                  onClick={handleExportBlockMenuClick}
+                  onMouseEnter={showMenuTooltip('menuExportBlock')}
+                  onMouseLeave={hideMenuTooltip}
+                >
                   Export Block
                 </li>
               )}
               <li
                 className={selection && selection.rowIds.size > 0 ? undefined : 'context-menu-separator'}
                 onClick={handleImportBlockMenuClick}
+                onMouseEnter={showMenuTooltip('menuImportBlock')}
+                onMouseLeave={hideMenuTooltip}
               >
                 Import Block
               </li>
@@ -3505,22 +3620,45 @@ export default function Grid({
                   setAddRowOnDownArrow((v) => !v);
                   setContextMenu(null);
                 }}
+                onMouseEnter={showMenuTooltip('menuAddRowOnDownArrow')}
+                onMouseLeave={hideMenuTooltip}
               >
                 {addRowOnDownArrow ? '✓ ' : ''}Add Row on Down Arrow
               </li>
-              <li onClick={() => handleInsertRow('above')}>
+              <li
+                onClick={() => handleInsertRow('above')}
+                onMouseEnter={showMenuTooltip('menuInsertRowAbove')}
+                onMouseLeave={hideMenuTooltip}
+              >
                 {pendingInsertCount() > 1 ? `Insert ${pendingInsertCount()} Rows Above` : 'Insert Row Above'}
               </li>
-              <li onClick={() => handleInsertRow('below')}>
+              <li
+                onClick={() => handleInsertRow('below')}
+                onMouseEnter={showMenuTooltip('menuInsertRowBelow')}
+                onMouseLeave={hideMenuTooltip}
+              >
                 {pendingInsertCount() > 1 ? `Insert ${pendingInsertCount()} Rows Below` : 'Insert Row Below'}
               </li>
-              <li onClick={handleDeleteRowFromMenu}>Delete Row</li>
-              <li className="context-menu-separator" onClick={handleGoToTop}>
+              <li onClick={handleDeleteRowFromMenu} onMouseEnter={showMenuTooltip('menuDeleteRow')} onMouseLeave={hideMenuTooltip}>
+                Delete Row
+              </li>
+              <li
+                className="context-menu-separator"
+                onClick={handleGoToTop}
+                onMouseEnter={showMenuTooltip('menuGoToTop')}
+                onMouseLeave={hideMenuTooltip}
+              >
                 Go to Top
               </li>
-              <li onClick={handleGoToEnd}>Go to End</li>
-              <li onClick={handleOpenGoToLine}>Go to Line…</li>
-              <li onClick={handleOpenGoToCode}>Go to Code…</li>
+              <li onClick={handleGoToEnd} onMouseEnter={showMenuTooltip('menuGoToEnd')} onMouseLeave={hideMenuTooltip}>
+                Go to End
+              </li>
+              <li onClick={handleOpenGoToLine} onMouseEnter={showMenuTooltip('menuGoToLine')} onMouseLeave={hideMenuTooltip}>
+                Go to Line…
+              </li>
+              <li onClick={handleOpenGoToCode} onMouseEnter={showMenuTooltip('menuGoToCode')} onMouseLeave={hideMenuTooltip}>
+                Go to Code…
+              </li>
               <li className="context-menu-separator" onClick={() => handleGridMenuHelp('gridCodeMenuHelp')}>
                 Help
               </li>
@@ -3528,7 +3666,13 @@ export default function Grid({
           )}
           {contextMenu.kind === 'suffix' && (
             <>
-              <li onClick={handleDuplicateSuffixToSelection}>Duplicate to Selected Rows</li>
+              <li
+                onClick={handleDuplicateSuffixToSelection}
+                onMouseEnter={showMenuTooltip('menuSuffixDuplicate')}
+                onMouseLeave={hideMenuTooltip}
+              >
+                Duplicate to Selected Rows
+              </li>
               <li onClick={() => handleGridMenuHelp('gridSuffixMenuHelp')}>Help</li>
               <li
                 className="context-menu-separator"
@@ -3536,20 +3680,33 @@ export default function Grid({
                   setAddRowOnDownArrow((v) => !v);
                   setContextMenu(null);
                 }}
+                onMouseEnter={showMenuTooltip('menuAddRowOnDownArrow')}
+                onMouseLeave={hideMenuTooltip}
               >
                 {addRowOnDownArrow ? '✓ ' : ''}Add Row on Down Arrow
               </li>
-              <li onClick={() => handleInsertRow('above')}>
+              <li
+                onClick={() => handleInsertRow('above')}
+                onMouseEnter={showMenuTooltip('menuInsertRowAbove')}
+                onMouseLeave={hideMenuTooltip}
+              >
                 {pendingInsertCount() > 1 ? `Insert ${pendingInsertCount()} Rows Above` : 'Insert Row Above'}
               </li>
-              <li onClick={() => handleInsertRow('below')}>
+              <li
+                onClick={() => handleInsertRow('below')}
+                onMouseEnter={showMenuTooltip('menuInsertRowBelow')}
+                onMouseLeave={hideMenuTooltip}
+              >
                 {pendingInsertCount() > 1 ? `Insert ${pendingInsertCount()} Rows Below` : 'Insert Row Below'}
               </li>
-              <li onClick={handleDeleteRowFromMenu}>Delete Row</li>
+              <li onClick={handleDeleteRowFromMenu} onMouseEnter={showMenuTooltip('menuDeleteRow')} onMouseLeave={hideMenuTooltip}>
+                Delete Row
+              </li>
             </>
           )}
         </ul>
       )}
+      <MenuTooltipPortal tooltip={menuTooltip} helpText={helpText} />
 
       {confirmDialog && (
         <div

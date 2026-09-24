@@ -8,9 +8,12 @@ import {
 } from './library';
 import type { LibraryCategory, LibraryEntry, LibraryExportBundle } from './library';
 import { saveExportFile } from './exportFolder';
+import type { HelpTextMap } from './helpText';
+import { useMenuTooltip, MenuTooltipPortal } from './menuTooltip';
 
 interface LibrarySidebarProps {
   entries: LibraryEntry[];
+  helpText: HelpTextMap;
   onRename: (id: string, title: string) => void;
   onReorder: (category: LibraryCategory, orderedIds: string[]) => void;
   onMoveToWorkArea: (entry: LibraryEntry) => void;
@@ -46,6 +49,7 @@ interface ContextMenuState {
 // entry back into the grid.
 export default function LibrarySidebar({
   entries,
+  helpText,
   onRename,
   onReorder,
   onMoveToWorkArea,
@@ -60,6 +64,11 @@ export default function LibrarySidebar({
   const [collapsed, setCollapsed] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const { tooltip: menuTooltip, showTooltip: showMenuTooltip, hideTooltip: hideMenuTooltip } = useMenuTooltip();
+  useEffect(() => {
+    if (!contextMenu) hideMenuTooltip();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contextMenu]);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -477,38 +486,57 @@ export default function LibrarySidebar({
                   setContextMenu(null);
                   onMoveToWorkArea(entry);
                 }}
+                onMouseEnter={showMenuTooltip('libMenuMoveToWorkArea')}
+                onMouseLeave={hideMenuTooltip}
               >
                 Move to Work Area
               </li>
-              <li onClick={() => startRename(entry)}>Edit Title</li>
+              <li onClick={() => startRename(entry)} onMouseEnter={showMenuTooltip('libMenuEditTitle')} onMouseLeave={hideMenuTooltip}>
+                Edit Title
+              </li>
               <li
                 className={isFirst ? 'context-menu-disabled' : undefined}
                 onClick={() => !isFirst && moveWithinCategory(entry, 'up')}
+                onMouseEnter={showMenuTooltip('libMenuMoveUp')}
+                onMouseLeave={hideMenuTooltip}
               >
                 Move Up
               </li>
               <li
                 className={isLast ? 'context-menu-disabled' : undefined}
                 onClick={() => !isLast && moveWithinCategory(entry, 'down')}
+                onMouseEnter={showMenuTooltip('libMenuMoveDown')}
+                onMouseLeave={hideMenuTooltip}
               >
                 Move Down
               </li>
-              <li onClick={() => startMoveToCategory(entry)}>Move to Category…</li>
+              <li
+                onClick={() => startMoveToCategory(entry)}
+                onMouseEnter={showMenuTooltip('libMenuMoveToCategory')}
+                onMouseLeave={hideMenuTooltip}
+              >
+                Move to Category…
+              </li>
               <li
                 className="context-menu-separator"
                 onClick={() => {
                   setContextMenu(null);
                   onSetStarterSample(entry.id, !entry.isStarterSample);
                 }}
+                onMouseEnter={showMenuTooltip('libMenuStarterSample')}
+                onMouseLeave={hideMenuTooltip}
               >
                 {entry.isStarterSample ? 'Remove Starter Sample' : 'Mark as Starter Sample'}
               </li>
-              <li onClick={() => onRemove(entry)}>Remove from Library</li>
+              <li onClick={() => onRemove(entry)} onMouseEnter={showMenuTooltip('libMenuRemove')} onMouseLeave={hideMenuTooltip}>
+                Remove from Library
+              </li>
             </ul>
           );
         })(),
         document.body,
       )}
+      <MenuTooltipPortal tooltip={menuTooltip} helpText={helpText} />
 
     {moveCategoryTarget &&
       createPortal(

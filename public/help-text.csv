@@ -1,23 +1,83 @@
-Field,Label,HelpText
-title,Title,The title that you want to appear in the Library or that appears on the input prompt in the ERP or other software
-tableName,Table Name,The target filename for the ERP or other software
-purpose,Purpose,Any information you want to record about the table
-maxDescriptionLength,Maximum ERP Description Field Length,The maximum description length that is permitted by the software for this particular table
-numLevels,Number of Code Columns,"Your best estimate of the number of columns required for the table, you can add and remove tables in the worksheet"
-column1CodeLength,Column 1 Code Length,"How many characters column 1's own code may hold -- 1 to 5, defaulting to 1 like every other column. Only offered once Limit to Single Code Column is checked -- a multi-character code only makes sense for a flat, single-column list."
-properCaseOnly,Proper Case Throughout,"When checked, every description stays in Proper Case for this taxonomy -- the usual ALL CAPS convention for structural (parent) entries, and its related prompts, are skipped entirely."
-singleCodeColumn,Limit to Single Code Column,"For a genuinely flat list with no hierarchy at all -- e.g. Reason Codes -- rather than a multi-level taxonomy. Skips straight from headings to coding with no ""Another Description Column?"" prompt, keeps every entry in Proper Case (there are no headings to mark ALL CAPS), and is the only case where Column 1 Code Length can be raised above 1 character."
-paddingChar,Pad codes with trailing,The padding character defaults to period (fullstop) but can be changed to 0 -- 0 is NOT recommended
-codeDelimiterChar,Delimit codes with,Code delimiter defaults to dash (-) but offers other options for aesthetic reasons and software constraints
-delimiterPositions,Code Delimiters,"Specify the location of delimiters, default is after every three code characters which is optimum for human interpretation and anotation"
-indentToggle,Replace leading space with other ASCII character?,"Descriptions are padded with spaces or the character you enter here, many software systems will strip leading spaces in which case underscore (_) is the next best choice"
-indentChar,Leading Pad Character,This is the delimiter on Concatenated Exports
-suffixCount,Description Suffixes required (0 to 6),"The number of suffix fields on the table, in most cases this would be one field but in the case of complex Charts of Accounts may be more"
-suffixWidth,Suffix Width,"The number of characters, this is per suffx, typically 3 or 4 characters is recommened"
-suffixDelimiter,Delimiter before this suffix,"The delimiter before each suffix, typically a dash (-)"
-suffixMode,Constant or Editable,"In many cases, particulary a block for a component of coding in the Chart of Accounts the suffix might be constant for a table, in other cases, it may be a unique text string to add intelligence about the hiearchy to the table entries"
-suffixConstantValue,Constant Value,"Where the Suffix is constant, the text to be entered"
-gridCodeMenuHelp,Code Cell Right-Click Menu,The Code menu provides a wide range of functionality to manipulate the codes -- Note that in preparing a taxonomy the procedure is first to build the description hierarchy to a point where it full describes the subject of the taxonomy and only then build the codes -- it may take several iterations to get the codes to the right stanard
-gridDescMenuHelp,Description Cell Right-Click Menu,The Description menu provies a wide range of functionality to manipulate the descriptions -- Note that in preparing a taxonomy the procesure is first to build the description hierarchy and only then build the codes -- the descriptions should be indented with no more than nine rows in any segment of the hieararchy based on Millers Law which states that the average human being can quickly grasp seven plus or minus two items of information so limiting the descriptions to a maximum of nine at any level makes the codes easy to read and action -- if  you find you are going over nine then step back and see if there are two levels present and if you come in under five then review and see whether you can regroup somehow
-gridSuffixMenuHelp,Suffix Cell Right-Click Menu,The Suffixes are for classification information to make long lists easier to interpret -- Suffixes can be fixed within a table or segments of a table or can be variable and unique to distinguish different elements of the code scheme
-worksheetGuidance,Worksheet Guidance,"The Worksheet is designed to help users quickly and accurately build a Precision Taxonomy, look at the help on the Code and Description right click menus for more guidance"
+Field,Label,HelpText,VideoUrl
+title,Title,The title that you want to appear in the Library or that appears on the input prompt in the ERP or other software,
+tableName,Table Name,The target filename for the ERP or other software,
+purpose,Purpose,Any information you want to record about the table,
+maxDescriptionLength,Maximum ERP Description Field Length,The maximum description length that is permitted by the software for this particular table,
+numLevels,Number of Code Columns,"Your best estimate of the number of columns required for the table, you can add and remove tables in the worksheet",
+column1CodeLength,Column 1 Code Length,"How many characters column 1's own code may hold -- 1 to 5, defaulting to 1 like every other column. Only offered once Limit to Single Code Column is checked -- a multi-character code only makes sense for a flat, single-column list.",
+properCaseOnly,Proper Case Throughout,"When checked, every description stays in Proper Case for this taxonomy -- the usual ALL CAPS convention for structural (parent) entries, and its related prompts, are skipped entirely.",
+singleCodeColumn,Limit to Single Code Column,"For a genuinely flat list with no hierarchy at all -- e.g. Reason Codes -- rather than a multi-level taxonomy. Skips straight from headings to coding with no ""Another Description Column?"" prompt, keeps every entry in Proper Case (there are no headings to mark ALL CAPS), and is the only case where Column 1 Code Length can be raised above 1 character.",
+paddingChar,Pad codes with trailing,The padding character defaults to period (fullstop) but can be changed to 0 -- 0 is NOT recommended,
+codeDelimiterChar,Delimit codes with,Code delimiter defaults to dash (-) but offers other options for aesthetic reasons and software constraints,
+delimiterPositions,Code Delimiters,"Specify the location of delimiters, default is after every three code characters which is optimum for human interpretation and anotation",
+indentToggle,Replace leading space with other ASCII character?,"Descriptions are padded with spaces or the character you enter here, many software systems will strip leading spaces in which case underscore (_) is the next best choice",
+indentChar,Leading Pad Character,This is the delimiter on Concatenated Exports,
+suffixCount,Description Suffixes required (0 to 6),"The number of suffix fields on the table, in most cases this would be one field but in the case of complex Charts of Accounts may be more",
+suffixWidth,Suffix Width,"The number of characters, this is per suffx, typically 3 or 4 characters is recommened",
+suffixDelimiter,Delimiter before this suffix,"The delimiter before each suffix, typically a dash (-)",
+suffixMode,Constant or Editable,"In many cases, particulary a block for a component of coding in the Chart of Accounts the suffix might be constant for a table, in other cases, it may be a unique text string to add intelligence about the hiearchy to the table entries",
+suffixConstantValue,Constant Value,"Where the Suffix is constant, the text to be entered",
+autoCodeGapIncrement,Auto Code Gap Increment,"When Auto Code fills in codes automatically, this sets whether it counts up by 1 (no gaps) or by 2 (leaves a gap after every entry, e.g. 1, 3, 5), so there is room to insert new entries later without recoding everything else.",
+gridCodeMenuHelp,Code Cell Right-Click Menu,The Code menu provides a wide range of functionality to manipulate the codes -- Note that in preparing a taxonomy the procedure is first to build the description hierarchy to a point where it full describes the subject of the taxonomy and only then build the codes -- it may take several iterations to get the codes to the right stanard,
+gridDescMenuHelp,Description Cell Right-Click Menu,The Description menu provies a wide range of functionality to manipulate the descriptions -- Note that in preparing a taxonomy the procesure is first to build the description hierarchy and only then build the codes -- the descriptions should be indented with no more than nine rows in any segment of the hieararchy based on Millers Law which states that the average human being can quickly grasp seven plus or minus two items of information so limiting the descriptions to a maximum of nine at any level makes the codes easy to read and action -- if  you find you are going over nine then step back and see if there are two levels present and if you come in under five then review and see whether you can regroup somehow,
+gridSuffixMenuHelp,Suffix Cell Right-Click Menu,The Suffixes are for classification information to make long lists easier to interpret -- Suffixes can be fixed within a table or segments of a table or can be variable and unique to distinguish different elements of the code scheme,
+worksheetGuidance,Worksheet Guidance,"The Worksheet is designed to help users quickly and accurately build a Precision Taxonomy, look at the help on the Code and Description right click menus for more guidance",
+btnUndo,Undo,Undo the last action.,
+btnRedo,Redo,Redo the action you just undid.,
+btnSettings,Settings,"Open this taxonomy's settings -- title, table name, purpose, maximum description length, code delimiter and other configuration.",
+btnChooseFolder,Choose Folder,Choose the folder on your computer where this taxonomy's project file is saved and loaded from.,
+btnSaveToFile,Save to File,Save the current taxonomy to its project file.,
+btnExportCsv,Export CSV,Export the current grid to a CSV file.,
+btnExportExcel,Export Excel,"Export the current grid to an XLSX file, preserving the colour coding and ALL CAPS / Proper Case formatting.",
+btnCreateBlock,Create Block,Create a new block within this taxonomy.,
+btnAddToLibrary,Add to Library,Save a copy of this taxonomy into your Library for reuse later.,
+btnLoadFromFile,Load from File,Open a previously saved taxonomy project file.,
+btnImportCsv,Import CSV,"Import taxonomy data from a CSV file -- either ERP Doctor's own delimited format, or a third party file with concatenated/composite codes.",
+btnLockTaxonomy,Lock Taxonomy,"Lock the taxonomy once it is complete, preventing further structural changes.",
+btnUnlockTaxonomy,Unlock Taxonomy,Unlock a previously locked taxonomy so it can be edited again.,
+btnAutoCode,Auto Code,Automatically allocate codes to every entry that doesn't have one yet.,
+btnFormatDescriptions,Format Descriptions,Apply the ALL CAPS / Proper Case convention and standard abbreviations across all descriptions.,
+btnAuditTaxonomy,Audit Taxonomy,Run a structured check over the taxonomy and walk through any issues found.,
+btnBackToMenu,Back to Menu,Return to the main menu without losing your work.,
+btnNewTaxonomy,New Taxonomy,Start building a brand new taxonomy from scratch.,
+btnLogOut,Log Out,Sign out of your account.,
+btnHelp,Help,Open the Help page with a searchable list of every help topic in the app.,
+menuDescToggleCase,Toggle Case,"Switch the selected entry (or a selected block of sibling rows) between Proper Case and ALL CAPS. This never affects child entries in other columns.",
+menuDescAlphaSort,Alpha Sort,Sort the selected sibling entries alphabetically by description -- each entry carries its children with it.,
+menuDescPromote,Promote,"Move the selected entry, and all of its descendants, one level to the left. The description moves with it; codes for every affected row are blanked and must be recoded at the new level.",
+menuDescDemote,Demote,"Move the selected entry, and all of its descendants, one level to the right. The description moves with it; codes for every affected row are blanked and must be recoded at the new level.",
+menuAddColumn,Add Column,Add another level (a new code column and matching description column) to the right of this one.,
+menuDeleteColumn,Delete Column,Delete this level's code and description columns.,
+menuAddRowOnDownArrow,Add Row on Down Arrow,"When switched on, pressing the Down arrow key past the last row automatically inserts a new row rather than doing nothing.",
+menuDescCopyRows,Copy Rows,Copy the selected entry (and its children) so it can be pasted elsewhere.,
+menuDescMove,Move,Move the selected entry (and its children) to a different position in the taxonomy.,
+menuInsertRowAbove,Insert Row Above,Insert a new, empty entry directly above this row.,
+menuInsertRowBelow,Insert Row Below,Insert a new, empty entry directly below this row.,
+menuDeleteRow,Delete Row,"Delete this entry. If it has children, you'll be warned before they are deleted with it.",
+menuDescMarkAsDelete,Mark as Delete,Flag this entry for deletion without removing it immediately.,
+menuExportBlock,Export Block,Export just the selected block of rows rather than the whole taxonomy.,
+menuImportBlock,Import Block,Import rows from a file into this position in the taxonomy.,
+menuDescFind,Find…,Search the taxonomy for matching descriptions.,
+menuDescNote,Add/Edit Note,"Add a note to this entry, or edit the note it already has. A small indicator shows on any row with a note.",
+menuCheckAscendingOrder,Check Ascending Order,"Check that every code in this column sorts in ascending order, and jump to the first entry that breaks it, if any.",
+menuCodeAlphaSort,Alpha Sort,Sort the selected sibling codes into ascending order.,
+menuCopyCodes,Copy Codes,Copy the codes in the selected range so they can be pasted elsewhere.,
+menuPasteCodes,Paste Codes,Paste the previously copied codes into the selected range.,
+menuDeleteCodes,Delete Codes,Delete the codes in the selected range without affecting their descriptions.,
+menuClearAllCodes,Clear Codes and Start Again,Clear every code in this column so you can recode it from scratch.,
+menuReplicateAbove,Replicate Codes Above,Copy this code upward to fill in the codes above it.,
+menuReplicateBelow,Replicate Codes Below,Copy this code downward to fill in the codes below it.,
+menuFillMissingCodes,Fill Missing Codes,"Patch any gaps left in this column's codes, for example after an insert, promote or demote.",
+menuWidthOfCol1,Width of Col 1…,"Set how many characters column 1's own code may hold. Only available for single-column taxonomies.",
+menuGoToTop,Go to Top,Jump to the first row in this column.,
+menuGoToEnd,Go to End,Jump to the last row in this column.,
+menuGoToLine,Go to Line…,Jump directly to a specific row number.,
+menuGoToCode,Go to Code…,Jump directly to a row by typing its code.,
+menuSuffixDuplicate,Duplicate to Selected Rows,Copy this suffix value to every other row currently selected.,
+libMenuMoveToWorkArea,Move to Work Area,Bring this Library taxonomy back into the working grid so you can open and edit it.,
+libMenuEditTitle,Edit Title,Rename this Library entry.,
+libMenuMoveUp,Move Up,Move this entry up within its Library heading.,
+libMenuMoveDown,Move Down,Move this entry down within its Library heading.,
+libMenuMoveToCategory,Move to Category…,Move this entry to a different Library heading.,
+libMenuStarterSample,Mark/Remove as Starter Sample,"Mark this entry as a starter sample so new subscribers receive a copy automatically, or remove that flag.",
+libMenuRemove,Remove from Library,Remove this entry from your Library. This does not delete any project file you've saved elsewhere.,
