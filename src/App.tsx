@@ -15,7 +15,7 @@ import {
 import { exportBlock } from './blockTransfer';
 import { chooseExportFolder, peekExportFolderName, supportsFileSystemAccess } from './exportFolder';
 import { hasBlankCodeGaps, findAuditIssues } from './codeValidation';
-import { padCodes } from './guidance';
+import { padTrailingCodes } from './guidance';
 import { toggleCase } from './caseUtils';
 import type { AuditIssue } from './codeValidation';
 import { codeInputId, descInputId } from './domIds';
@@ -299,6 +299,12 @@ export default function App() {
   } | null>(null);
   // The "Audit — Y/N" prompt (default Yes) shown before Export to CSV specifically.
   const [csvAuditPrompt, setCsvAuditPrompt] = useState(false);
+  // James's report: on a long walkthrough (his real file's 19-20 issues), an accidental or
+  // exploratory click on "Exit Audit" dropped straight out of the whole thing with no way back
+  // to exactly where he was — "really need a pop-up 'Exit Audit? Please Confirm'". Gates the
+  // actual exit (performAuditExit) behind one extra confirm, same validation-overlay/-dialog
+  // pattern as every other confirm in this app.
+  const [auditExitConfirm, setAuditExitConfirm] = useState(false);
   // Where the panel should re-anchor to (near the cell App.tsx just jumped to) — null while
   // there's no cell for the current state (checking/clean/auto-fixable). Set only by
   // jumpToAuditIssue below.
@@ -910,9 +916,15 @@ export default function App() {
     if (issue.kind === 'auto') {
       // Padding-symmetry: the grid itself refuses to let a code character be typed into a
       // column beyond a row's own level, so there's no cell to jump to and no manual fix —
-      // apply the same whole-taxonomy padCodes sweep Fill Codes/Pad Codes already use elsewhere,
-      // then immediately re-check and advance rather than waiting on a Resume Audit click.
-      const paddedRows = padCodes(project.rows, project.settings.paddingChar);
+      // apply padTrailingCodes (guidance.ts) to fill in trailing padding only, then immediately
+      // re-check and advance rather than waiting on a Resume Audit click. Deliberately NOT the
+      // broader padCodes Fill Codes/Pad Codes use elsewhere — that one also pads an ancestor
+      // column with nothing to inherit, which is only safe there because it always runs right
+      // after fillCodesDown. Called standalone here, it would silently paper over a genuinely
+      // incomplete code (the SEPARATE issue codeCompletion already catches) instead of leaving
+      // it for the user to actually fill in — exactly what made "Fix Automatically" look stuck
+      // on James's real file, which still had plenty of headings never coded at all.
+      const paddedRows = padTrailingCodes(project.rows, project.settings.paddingChar);
       handleSettingsAndRowsChange(project.settings, paddedRows);
       advanceAudit(audit.cursor, paddedRows);
       return;
@@ -959,11 +971,24 @@ export default function App() {
     advanceAudit(audit.cursor);
   }
 
-  // Exit Audit: always closes the panel. For Lock/Lock updates it's genuinely a dead end —
-  // "mandatory, no bypass" (James) — locking simply doesn't happen. For Export to CSV, Audit was
-  // only ever advisory (the Y/N prompt before it), so exiting mid-walkthrough still lets the
-  // export proceed rather than losing the work of getting there.
+  // Exit Audit click: confirm first (James's ask) rather than dropping straight out — see
+  // auditExitConfirm above. performAuditExit (below) is the actual exit, run once confirmed.
+  // Also doubles as the clean state's own "Close" button (AuditPanel), which skips the confirm
+  // — nothing's left outstanding to lose at that point, so asking would just be friction.
   function handleAuditExit() {
+    if (!audit) return;
+    if (audit.status === 'clean') {
+      performAuditExit();
+      return;
+    }
+    setAuditExitConfirm(true);
+  }
+
+  // The actual exit, gated behind auditExitConfirm. For Lock/Lock updates it's genuinely a dead
+  // end — "mandatory, no bypass" (James) — locking simply doesn't happen. For Export to CSV,
+  // Audit was only ever advisory (the Y/N prompt before it), so exiting mid-walkthrough still
+  // lets the export proceed rather than losing the work of getting there.
+  function performAuditExit() {
     if (!audit) return;
     const origin = audit.origin;
     setAudit(null);
@@ -2446,6 +2471,28 @@ export default function App() {
                 }}
               >
                 Yes, Audit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {auditExitConfirm && (
+        <div className="validation-overlay" onClick={() => setAuditExitConfirm(false)}>
+          <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <p>Exit Audit? Any issues not yet fixed will need a fresh Audit run to find again.</p>
+            <div className="confirm-dialog-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuditExitConfirm(false);
+                  performAuditExit();
+                }}
+              >
+                Exit Audit
+              </button>
+              <button type="button" onClick={() => setAuditExitConfirm(false)}>
+                Cancel
               </button>
             </div>
           </div>
