@@ -144,6 +144,24 @@
   padding: 0.15rem 0;
 }
 
+/* "Check for New Samples" (James's ask): each candidate shows its title plus its own Purpose
+   text (captured at creation, Section 5) as a lightweight description — no separate description
+   field needed. */
+.library-new-sample-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+
+.library-new-sample-title {
+  font-weight: 600;
+}
+
+.library-new-sample-purpose {
+  color: #666;
+  font-style: italic;
+}
+
 .library-export-checklist-item-preview {
   text-align: left;
   max-height: 12rem;

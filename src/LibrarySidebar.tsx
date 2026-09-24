@@ -17,6 +17,13 @@ interface LibrarySidebarProps {
   onRemove: (entry: LibraryEntry) => void;
   onImport: (bundle: LibraryExportBundle) => void;
   onSetStarterSample: (id: string, isStarterSample: boolean) => void;
+  /** "Refresh Library" (James's ask): null while the dialog is closed; an array (possibly
+   * empty) once onCheckForNewSamples has resolved, listing every starter sample this account
+   * doesn't already have a copy of. */
+  newSampleCandidates: LibraryEntry[] | null;
+  onCheckForNewSamples: () => void;
+  onImportNewSamples: (ids: string[]) => void;
+  onCloseNewSamples: () => void;
 }
 
 interface ContextMenuState {
@@ -45,6 +52,10 @@ export default function LibrarySidebar({
   onRemove,
   onImport,
   onSetStarterSample,
+  newSampleCandidates,
+  onCheckForNewSamples,
+  onImportNewSamples,
+  onCloseNewSamples,
 }: LibrarySidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -65,6 +76,13 @@ export default function LibrarySidebar({
   // Which entries (by index into pendingImport.entries) are ticked in the import checklist —
   // James's ask: let him check the contents before committing, same as Export's own picker.
   const [importSelection, setImportSelection] = useState<Set<number>>(new Set());
+  // "Refresh Library": which of newSampleCandidates are ticked, same Select-All-by-default
+  // convention as the other two checklists above. Reset (to select-all) every time a fresh
+  // candidates list arrives, so a stale selection from a previous check never carries over.
+  const [newSampleSelection, setNewSampleSelection] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (newSampleCandidates) setNewSampleSelection(new Set(newSampleCandidates.map((e) => e.id)));
+  }, [newSampleCandidates]);
   // "View locked Taxonomies" (James's ask): a plain display filter, local to this component —
   // narrows every heading's list down to locked entries only, without touching what's actually
   // stored or how any other Library action works.
@@ -234,6 +252,19 @@ export default function LibrarySidebar({
     setPendingImport(null);
   }
 
+  function toggleNewSampleSelection(id: string) {
+    setNewSampleSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function confirmImportNewSamples() {
+    onImportNewSamples([...newSampleSelection]);
+  }
+
   if (collapsed) {
     return (
       <div className="library-sidebar library-sidebar-collapsed">
@@ -364,6 +395,14 @@ export default function LibrarySidebar({
           title="Add taxonomies from a Library export file into this Library"
         >
           Import…
+        </button>
+        <button
+          type="button"
+          className="library-transfer-button"
+          onClick={onCheckForNewSamples}
+          title="Check for starter sample taxonomies added since you last checked"
+        >
+          Check for New Samples
         </button>
         <input
           ref={importFileInputRef}
@@ -596,6 +635,77 @@ export default function LibrarySidebar({
                   <button type="button" disabled={importSelection.size === 0} onClick={confirmImport}>
                     Import {importSelection.size} {importSelection.size === 1 ? 'Taxonomy' : 'Taxonomies'}
                   </button>
+                </div>
+              </div>
+            </div>
+          );
+        })(),
+        document.body,
+      )}
+
+    {newSampleCandidates &&
+      createPortal(
+        (() => {
+          const byCategory = new Map<LibraryCategory, LibraryEntry[]>();
+          newSampleCandidates.forEach((e) => {
+            const list = byCategory.get(e.category) ?? [];
+            list.push(e);
+            byCategory.set(e.category, list);
+          });
+          return (
+            <div className="validation-overlay" onClick={onCloseNewSamples}>
+              <div className="validation-dialog library-export-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+                {newSampleCandidates.length === 0 ? (
+                  <p>No new starter samples right now — you already have every one that's been marked.</p>
+                ) : (
+                  <>
+                    <p>New starter sample taxonomies are available. Choose which to add to your Library:</p>
+                    <div className="library-export-select-all">
+                      <button
+                        type="button"
+                        onClick={() => setNewSampleSelection(new Set(newSampleCandidates.map((e) => e.id)))}
+                      >
+                        Select All
+                      </button>
+                      <button type="button" onClick={() => setNewSampleSelection(new Set())}>
+                        Select None
+                      </button>
+                    </div>
+                    <div className="library-export-checklist">
+                      {LIBRARY_CATEGORIES.filter((category) => (byCategory.get(category)?.length ?? 0) > 0).map(
+                        (category) => (
+                          <div key={category} className="library-export-checklist-group">
+                            <h4>{category}</h4>
+                            {byCategory.get(category)!.map((entry) => (
+                              <label key={entry.id} className="library-export-checklist-item library-new-sample-item">
+                                <input
+                                  type="checkbox"
+                                  checked={newSampleSelection.has(entry.id)}
+                                  onChange={() => toggleNewSampleSelection(entry.id)}
+                                />
+                                <span>
+                                  <span className="library-new-sample-title">{entry.project.title || '(untitled)'}</span>
+                                  {entry.project.purpose && (
+                                    <span className="library-new-sample-purpose"> — {entry.project.purpose}</span>
+                                  )}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        ),
+                      )}
+                    </div>
+                  </>
+                )}
+                <div className="confirm-dialog-actions">
+                  <button type="button" onClick={onCloseNewSamples}>
+                    {newSampleCandidates.length === 0 ? 'Close' : 'Cancel'}
+                  </button>
+                  {newSampleCandidates.length > 0 && (
+                    <button type="button" disabled={newSampleSelection.size === 0} onClick={confirmImportNewSamples}>
+                      Add {newSampleSelection.size} {newSampleSelection.size === 1 ? 'Sample' : 'Samples'}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

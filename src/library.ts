@@ -58,6 +58,13 @@ export interface LibraryEntry {
    * select policy in that same migration is what lets a brand-new account — which owns nothing
    * yet — read these specific rows across every other account in order to copy them. */
   isStarterSample: boolean;
+  /** James's ask: lets a subscriber check for and pull in starter samples marked AFTER their
+   * first sign-in, not just whatever existed at that moment. Set only when this entry is itself
+   * a copy of a starter sample (seedStarterSamplesForNewAccount or importSelectedStarterSamples,
+   * below) — the id of the sample it was copied from. null for an entry built any other way
+   * (New Taxonomy, Import CSV, Load from File, ...). Never used to keep a copy in sync with its
+   * original after the fact — only to answer "have I already got this one?" */
+  sourceSampleId: string | null;
 }
 
 interface LibraryRow {
@@ -68,6 +75,7 @@ interface LibraryRow {
   project: TaxonomyProject;
   updated_at: string;
   is_starter_sample: boolean;
+  source_sample_id: string | null;
 }
 
 const TABLE_NAME = 'library_entries';
@@ -80,6 +88,7 @@ function rowToEntry(row: LibraryRow): LibraryEntry {
     project: row.project,
     updatedAt: row.updated_at,
     isStarterSample: row.is_starter_sample,
+    sourceSampleId: row.source_sample_id,
   };
 }
 
@@ -158,6 +167,7 @@ async function putEntry(entry: LibraryEntry): Promise<void> {
     project: entry.project,
     updated_at: entry.updatedAt,
     is_starter_sample: entry.isStarterSample,
+    source_sample_id: entry.sourceSampleId,
   });
   if (error) throw new Error(error.message);
 }
@@ -185,8 +195,14 @@ function nextOrder(entries: LibraryEntry[], category: LibraryCategory): number {
 /** Saves a snapshot of `project` as a brand-new Library entry under `category`. A newly added
  * entry never starts flagged as a starter sample — that's a deliberate, separate action
  * (setStarterSample) on an entry someone's decided is genuinely ready to hand to new
- * subscribers, not the default for everyday work. */
-export async function addLibraryEntry(project: TaxonomyProject, category: LibraryCategory): Promise<LibraryEntry> {
+ * subscribers, not the default for everyday work. `sourceSampleId` is only ever passed by
+ * seedStarterSamplesForNewAccount/importSelectedStarterSamples, below — every other caller
+ * leaves it null (an entry built any other way isn't a copy of anything). */
+export async function addLibraryEntry(
+  project: TaxonomyProject,
+  category: LibraryCategory,
+  sourceSampleId: string | null = null,
+): Promise<LibraryEntry> {
   const entries = await listLibraryEntries();
   const entry: LibraryEntry = {
     id: crypto.randomUUID(),
@@ -195,6 +211,7 @@ export async function addLibraryEntry(project: TaxonomyProject, category: Librar
     project,
     updatedAt: new Date().toISOString(),
     isStarterSample: false,
+    sourceSampleId,
   };
   await putEntry(entry);
   return entry;
@@ -235,6 +252,7 @@ export async function setLibraryCategoryOrder(category: LibraryCategory, ordered
         project: existing.project,
         updated_at: existing.updatedAt,
         is_starter_sample: existing.isStarterSample,
+        source_sample_id: existing.sourceSampleId,
       };
     })
     .filter((r): r is NonNullable<typeof r> => r !== null);
@@ -325,13 +343,49 @@ export async function migrateLegacyLocalLibrary(): Promise<number> {
 export async function seedStarterSamplesForNewAccount(): Promise<number> {
   const cloud = await listLibraryEntries();
   if (cloud.length > 0) return 0;
-  const { data, error } = await supabase.from(TABLE_NAME).select('*').eq('is_starter_sample', true);
-  if (error) throw new Error(error.message);
-  const samples = (data as LibraryRow[]).map(rowToEntry);
+  const samples = await listAllStarterSamples();
   for (const sample of samples) {
-    await addLibraryEntry(migrateProjectData(sample.project), sample.category);
+    await addLibraryEntry(migrateProjectData(sample.project), sample.category, sample.id);
   }
   return samples.length;
+}
+
+async function listAllStarterSamples(): Promise<LibraryEntry[]> {
+  const { data, error } = await supabase.from(TABLE_NAME).select('*').eq('is_starter_sample', true);
+  if (error) throw new Error(error.message);
+  return (data as LibraryRow[]).map(rowToEntry);
+}
+
+/** James's ask: "Refresh Library" — after the initial seeding above (a one-time copy at first
+ * sign-in, not a live sync — see seedStarterSamplesForNewAccount's own comment), a subscriber can
+ * check for starter samples marked SINCE then. A sample counts as already-had the moment ANY of
+ * the signed-in user's own entries carries its id as their sourceSampleId — including one they've
+ * since edited beyond recognition, but deliberately not one they've deleted outright (a deleted
+ * copy is treated as "never had it," so it can be offered again; James can always re-star it if
+ * that's not what someone wants). */
+export async function listNewStarterSamples(): Promise<LibraryEntry[]> {
+  const [mine, samples] = await Promise.all([listLibraryEntries(), listAllStarterSamples()]);
+  const alreadyHave = new Set(mine.map((e) => e.sourceSampleId).filter((id): id is string => id !== null));
+  return samples.filter((s) => !alreadyHave.has(s.id));
+}
+
+/** Copies the chosen subset of `listNewStarterSamples()`'s own results into the signed-in user's
+ * Library, each as an ordinary, fully-owned entry (fresh id, isStarterSample reset to false, same
+ * as the initial seeding). Returns how many were actually added — a sample id that's vanished (no
+ * longer flagged, or deleted) since the list was fetched is silently skipped rather than failing
+ * the whole batch, since the list the user ticked boxes against may be slightly stale by the time
+ * they click Import. */
+export async function importSelectedStarterSamples(ids: string[]): Promise<number> {
+  const samples = await listAllStarterSamples();
+  const byId = new Map(samples.map((s) => [s.id, s]));
+  let added = 0;
+  for (const id of ids) {
+    const sample = byId.get(id);
+    if (!sample) continue;
+    await addLibraryEntry(migrateProjectData(sample.project), sample.category, sample.id);
+    added++;
+  }
+  return added;
 }
 
 // Export/Import Library: James's request for a way to (a) carry his Library to a new machine —
