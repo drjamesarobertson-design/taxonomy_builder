@@ -2489,6 +2489,11 @@ export default function Grid({
   function handleOpenWidthOfCol1() {
     if (!contextMenu) return;
     setContextMenu(null);
+    // James's ask: a multi-character column 1 only makes sense for a genuinely flat, single-
+    // column list — with a second code column already in the taxonomy, column 1 needs to stay
+    // exactly one character like every other column. The context menu item itself is already
+    // hidden once numLevels > 1; this is a defensive backstop, not the only guard.
+    if (numLevels !== 1) return;
     setWidthOfCol1Dialog({ value: column1CodeLength });
   }
 
@@ -3482,7 +3487,7 @@ export default function Grid({
                 Add Column
               </li>
               <li onClick={handleDeleteColumnClick}>Delete Column</li>
-              {contextMenu.level === 0 && <li onClick={handleOpenWidthOfCol1}>Width of Col 1…</li>}
+              {contextMenu.level === 0 && numLevels === 1 && <li onClick={handleOpenWidthOfCol1}>Width of Col 1…</li>}
               {selection && selection.rowIds.size > 0 && (
                 <li className="context-menu-separator" onClick={handleExportBlockMenuClick}>
                   Export Block
