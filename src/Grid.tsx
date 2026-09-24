@@ -883,6 +883,40 @@ export default function Grid({
         return v !== '' && v !== padValueForColumn(level) && v === char;
       });
       if (collides) {
+        // James's report: stuck here with no way forward — the row above (a completely
+        // different segment) made "7" look like the obvious next value, but this row's actual
+        // siblings already reach up to "7" themselves, and there's no Override for an exact
+        // duplicate (rightly — two identical rightmost codes can never both be valid). Same
+        // "suggest an actual valid code" treatment the softer ascending-order check already
+        // gives (James's own earlier ask, on hitting that one first) rather than leaving him to
+        // work out by hand which of the group's remaining slots is actually free.
+        const { upper, lower } = findOrderBounds(editIndex, level, char);
+        const suggestion =
+          maxCharsHere === 1
+            ? // "0" is excluded even though it's a technically-valid character in range: suggesting
+              // it collides with the SEPARATE "0 is discouraged" confirmation (below) — that one's
+              // own onConfirm/onSuggest wrapper unconditionally clears whatever confirmDialog is
+              // showing right after running, so a suggestion click that tries to open IT immediately
+              // gets wiped out again before the user can act on it, silently dropping the edit
+              // instead of applying anything. Section 4.4's own guidance ("ideally start at 1
+              // rather than 0") already makes "0" a worse suggestion than the very next character
+              // up, so skipping it here is no real loss.
+              (validCodesInRange(upper, lower).find(
+                (c) => c !== paddingChar && c !== '0' && isAllowedByCodeRestriction(c, codeRestriction),
+              ) ?? null)
+            : null;
+        if (suggestion) {
+          setConfirmDialog({
+            message: `Ending codes within a code block delimited by "." at start and end must be unique. Did you mean "${suggestion}"?`,
+            confirmLabel: `Use "${suggestion}"`,
+            cancelLabel: 'Cancel',
+            onConfirm: () => {
+              updateCode(rowId, level, suggestion, options);
+              focusCodeInputAtEnd(rowId, level);
+            },
+          });
+          return;
+        }
         showValidationError(
           'Ending codes within a code block delimited by "." at start and end must be unique, please change one of these codes',
         );
@@ -928,7 +962,11 @@ export default function Grid({
         // majority of real columns) is single-character anyway.
         const suggestion =
           maxCharsHere === 1
-            ? (validCodesInRange(upper, lower).find((c) => c !== paddingChar && isAllowedByCodeRestriction(c, codeRestriction)) ?? null)
+            ? // "0" excluded — see the rightmost-duplicate block's own version of this same find()
+              // above for why suggesting it is actively broken, not just discouraged.
+              (validCodesInRange(upper, lower).find(
+                (c) => c !== paddingChar && c !== '0' && isAllowedByCodeRestriction(c, codeRestriction),
+              ) ?? null)
             : null;
         // Section 4.4/6.7's ascending-order rule is a hard rule everywhere else, but James
         // asked for an escape hatch here specifically — mid-restructure, a user may know a
