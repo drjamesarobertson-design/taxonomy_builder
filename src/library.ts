@@ -51,6 +51,13 @@ export interface LibraryEntry {
   order: number;
   project: TaxonomyProject;
   updatedAt: string;
+  /** James's ask: entries flagged here are copied into every new subscriber's own Library the
+   * first time they sign in (seedStarterSamplesForNewAccount, below) — toggled per entry via
+   * LibrarySidebar's right-click menu. Only the entry's own owner can set this (ordinary
+   * owner-only update policy, supabase/0003_add_starter_sample_flag.sql); a second, separate
+   * select policy in that same migration is what lets a brand-new account — which owns nothing
+   * yet — read these specific rows across every other account in order to copy them. */
+  isStarterSample: boolean;
 }
 
 interface LibraryRow {
@@ -60,12 +67,20 @@ interface LibraryRow {
   entry_order: number;
   project: TaxonomyProject;
   updated_at: string;
+  is_starter_sample: boolean;
 }
 
 const TABLE_NAME = 'library_entries';
 
 function rowToEntry(row: LibraryRow): LibraryEntry {
-  return { id: row.id, category: row.category as LibraryCategory, order: row.entry_order, project: row.project, updatedAt: row.updated_at };
+  return {
+    id: row.id,
+    category: row.category as LibraryCategory,
+    order: row.entry_order,
+    project: row.project,
+    updatedAt: row.updated_at,
+    isStarterSample: row.is_starter_sample,
+  };
 }
 
 /** Every Library operation is scoped to the signed-in user's own account — Row Level Security
@@ -142,8 +157,18 @@ async function putEntry(entry: LibraryEntry): Promise<void> {
     entry_order: entry.order,
     project: entry.project,
     updated_at: entry.updatedAt,
+    is_starter_sample: entry.isStarterSample,
   });
   if (error) throw new Error(error.message);
+}
+
+/** James's ask: toggles whether this entry is copied into every new subscriber's own Library on
+ * their first sign-in. Owner-only, same as every other Library write (RLS). */
+export async function setStarterSample(id: string, isStarterSample: boolean): Promise<void> {
+  const entries = await listLibraryEntries();
+  const existing = entries.find((e) => e.id === id);
+  if (!existing) throw new Error('This Library entry no longer exists.');
+  await putEntry({ ...existing, isStarterSample, updatedAt: new Date().toISOString() });
 }
 
 export async function deleteLibraryEntry(id: string): Promise<void> {
@@ -157,7 +182,10 @@ function nextOrder(entries: LibraryEntry[], category: LibraryCategory): number {
   return inScope.length === 0 ? 0 : Math.max(...inScope.map((e) => e.order)) + 1;
 }
 
-/** Saves a snapshot of `project` as a brand-new Library entry under `category`. */
+/** Saves a snapshot of `project` as a brand-new Library entry under `category`. A newly added
+ * entry never starts flagged as a starter sample — that's a deliberate, separate action
+ * (setStarterSample) on an entry someone's decided is genuinely ready to hand to new
+ * subscribers, not the default for everyday work. */
 export async function addLibraryEntry(project: TaxonomyProject, category: LibraryCategory): Promise<LibraryEntry> {
   const entries = await listLibraryEntries();
   const entry: LibraryEntry = {
@@ -166,6 +194,7 @@ export async function addLibraryEntry(project: TaxonomyProject, category: Librar
     order: nextOrder(entries, category),
     project,
     updatedAt: new Date().toISOString(),
+    isStarterSample: false,
   };
   await putEntry(entry);
   return entry;
@@ -205,6 +234,7 @@ export async function setLibraryCategoryOrder(category: LibraryCategory, ordered
         entry_order: index,
         project: existing.project,
         updated_at: existing.updatedAt,
+        is_starter_sample: existing.isStarterSample,
       };
     })
     .filter((r): r is NonNullable<typeof r> => r !== null);
@@ -263,6 +293,28 @@ export async function migrateLegacyLocalLibrary(): Promise<number> {
     await addLibraryEntry(migrateProjectData(entry.project), entry.category);
   }
   return local.length;
+}
+
+/** James's ask: every new subscriber's own Library starts with a curated set of sample
+ * taxonomies, for training purposes — copied in the first time they sign in. Reads every entry
+ * flagged `isStarterSample` across every account (0003's second select policy is what makes that
+ * readable at all for a brand-new account that owns nothing yet), and copies each one into the
+ * CURRENT user's own Library as an ordinary, fully-owned entry (fresh id, isStarterSample reset
+ * to false — a subscriber's own copy is theirs to edit or delete freely, not a live link back to
+ * the original). Called on every app startup (App.tsx), after migrateLegacyLocalLibrary — only
+ * acts when the cloud Library is still empty at that point, so an existing subscriber (or one
+ * who just had their old local Library brought across) is never seeded on top of what they
+ * already have. Returns how many entries were seeded, or 0. */
+export async function seedStarterSamplesForNewAccount(): Promise<number> {
+  const cloud = await listLibraryEntries();
+  if (cloud.length > 0) return 0;
+  const { data, error } = await supabase.from(TABLE_NAME).select('*').eq('is_starter_sample', true);
+  if (error) throw new Error(error.message);
+  const samples = (data as LibraryRow[]).map(rowToEntry);
+  for (const sample of samples) {
+    await addLibraryEntry(migrateProjectData(sample.project), sample.category);
+  }
+  return samples.length;
 }
 
 // Export/Import Library: James's request for a way to (a) carry his Library to a new machine —
