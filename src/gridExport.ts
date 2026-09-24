@@ -150,6 +150,41 @@ function buildConcatenatedGrid(
   return { header: ['Code', 'Description'], rows };
 }
 
+// James's ask: a single text column, one value per posting-level row, in the form
+// "1234_Description" (or "1234-Description") — meant for pasting straight into another tool
+// (a folder-naming scheme, a filing hierarchy) rather than for re-import here. Reuses the same
+// code-with-delimiters logic as the Concatenated export (fixed-width, including trailing padding
+// characters and the taxonomy's own configured "-" delimiter positions — "include delimiter if
+// there is a delimiter in the table"), just joined to the description with the caller's chosen
+// separator instead of living in its own column. No indent padding and no suffix columns — this
+// is deliberately a flat, single value per row.
+function buildSingleColumnGrid(project: TaxonomyProject, joiner: string): { header: string[]; rows: string[][] } {
+  const { delimiterPositions, codeDelimiterChar } = project.settings;
+  const rows: string[][] = [];
+  for (const row of project.rows) {
+    const level = levelOf(row);
+    if (level === -1) continue;
+    const code = joinCodeWithDelimiters(row.codes, delimiterPositions, codeDelimiterChar || '-');
+    const description = row.descriptions[level] ?? '';
+    rows.push([`${code}${joiner}${description}`]);
+  }
+  return { header: [`Code${joiner}Description`], rows };
+}
+
+export async function exportSingleColumnCsv(
+  project: TaxonomyProject,
+  joiner: '_' | '-',
+  options?: { paddingOverride?: string },
+): Promise<{ project: TaxonomyProject; usedFolder: boolean; cancelled: boolean }> {
+  const { project: versioned, versionLabel } = bumpFileVersion(project, 'single-column-csv');
+  const { header, rows } = buildSingleColumnGrid(withPaddingSubstitution(project, options?.paddingOverride), joiner);
+  const csv = [header, ...rows].map((line) => line.map(csvEscape).join(',')).join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const descriptor = joiner === '_' ? 'Single Column Underscore' : 'Single Column Dash';
+  const { usedFolder, cancelled } = await saveExportFile(blob, exportFilename(project, descriptor, 'csv', versionLabel));
+  return { project: cancelled ? project : versioned, usedFolder, cancelled };
+}
+
 // Excel has no equivalent of the on-screen grid's text-overflow-into-the-next-cell trick, so
 // the closest match to "the column looks as wide as it needs to be, same as the grid" is an
 // auto-fit: each column sized to its own longest value (header included), clamped to a
