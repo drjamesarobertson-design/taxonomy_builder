@@ -56,6 +56,8 @@ import {
   deleteLibraryEntry,
   importLibraryBundle,
   migrateLegacyLocalLibrary,
+  seedStarterSamplesForNewAccount,
+  setStarterSample,
 } from './library';
 import type { LibraryCategory, LibraryEntry, LibraryExportBundle } from './library';
 import { bumpFileVersion } from './fileVersion';
@@ -512,8 +514,14 @@ export default function App() {
   // one-time ride across — migrateLegacyLocalLibrary itself no-ops once the cloud Library already
   // has anything in it, so this is safe to run on every startup, not just the first.
   useEffect(() => {
+    // Chained, not parallel: seedStarterSamplesForNewAccount only acts while the cloud Library is
+    // still empty, so it has to run AFTER migrateLegacyLocalLibrary has had its own chance to
+    // fill it from this browser's old local copy — an existing subscriber's local data always
+    // wins over the starter samples, never the other way round.
     migrateLegacyLocalLibrary()
       .catch((err) => console.error('Legacy Library migration failed:', err))
+      .then(() => seedStarterSamplesForNewAccount())
+      .catch((err) => console.error('Starter sample seeding failed:', err))
       .finally(refreshLibrary);
   }, []);
 
@@ -612,6 +620,10 @@ export default function App() {
 
   function handleImportLibrary(bundle: LibraryExportBundle) {
     importLibraryBundle(bundle).then(refreshLibrary).catch(reportLibraryError);
+  }
+
+  function handleSetStarterSample(id: string, isStarterSample: boolean) {
+    setStarterSample(id, isStarterSample).then(refreshLibrary).catch(reportLibraryError);
   }
 
   function handleRemoveLibraryEntry() {
@@ -1819,6 +1831,7 @@ export default function App() {
         onMoveToWorkArea={handleMoveToWorkArea}
         onRemove={setLibraryRemoveTarget}
         onImport={handleImportLibrary}
+        onSetStarterSample={handleSetStarterSample}
       />
       <div className="app">
       <div className="app-sticky-top">

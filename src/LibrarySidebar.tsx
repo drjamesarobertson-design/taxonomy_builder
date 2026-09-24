@@ -16,6 +16,7 @@ interface LibrarySidebarProps {
   onMoveToWorkArea: (entry: LibraryEntry) => void;
   onRemove: (entry: LibraryEntry) => void;
   onImport: (bundle: LibraryExportBundle) => void;
+  onSetStarterSample: (id: string, isStarterSample: boolean) => void;
 }
 
 interface ContextMenuState {
@@ -36,7 +37,15 @@ interface ContextMenuState {
 // headings), and a right-click "Move to Category" / "Move Up" / "Move Down" for when dragging
 // isn't convenient — plus inline title editing and a right-click "Move to Work Area" to bring an
 // entry back into the grid.
-export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToWorkArea, onRemove, onImport }: LibrarySidebarProps) {
+export default function LibrarySidebar({
+  entries,
+  onRename,
+  onReorder,
+  onMoveToWorkArea,
+  onRemove,
+  onImport,
+  onSetStarterSample,
+}: LibrarySidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -310,6 +319,11 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
             ) : (
               <span className="library-entry-title">{entry.project.title || '(untitled)'}</span>
             )}
+            {entry.isStarterSample && (
+              <span className="library-starter-sample-icon" title="Starter Sample — copied into every new subscriber's own Library">
+                ⭐
+              </span>
+            )}
           </li>
           );
         })}
@@ -441,9 +455,16 @@ export default function LibrarySidebar({ entries, onRename, onReorder, onMoveToW
                 Move Down
               </li>
               <li onClick={() => startMoveToCategory(entry)}>Move to Category…</li>
-              <li className="context-menu-separator" onClick={() => onRemove(entry)}>
-                Remove from Library
+              <li
+                className="context-menu-separator"
+                onClick={() => {
+                  setContextMenu(null);
+                  onSetStarterSample(entry.id, !entry.isStarterSample);
+                }}
+              >
+                {entry.isStarterSample ? 'Remove Starter Sample' : 'Mark as Starter Sample'}
               </li>
+              <li onClick={() => onRemove(entry)}>Remove from Library</li>
             </ul>
           );
         })(),

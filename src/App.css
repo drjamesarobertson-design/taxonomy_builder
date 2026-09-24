@@ -260,6 +260,15 @@
   opacity: 0.85;
 }
 
+/* James's ask: a small, discreet marker on any entry flagged as a Starter Sample (copied into
+   every new subscriber's own Library) -- sits after the title rather than in the fixed-width
+   left-hand icon column above, since only a small minority of entries carry it. */
+.library-starter-sample-icon {
+  flex-shrink: 0;
+  margin-left: 0.25rem;
+  font-size: 0.8rem;
+}
+
 .library-rename-input {
   flex: 1;
   min-width: 0;
