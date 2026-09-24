@@ -1056,7 +1056,13 @@ export default function Grid({
     // time the user gets to the second row its "old value" already reads as that placeholder,
     // not blank, even though they haven't typed anything into it themselves yet. Comparing the
     // segment's distinct-value count before and after this edit sidesteps that entirely.
-    if (char !== '' && !isPadding && !options?.skipItemCountWarning) {
+    // James's report: entering a code Audit had just jumped him to tripped this live 7+/9+
+    // coaching dialog instead — updateCode returns early before the value is ever committed, so
+    // the edit silently didn't register at all. His own follow-up: "for Audit ONLY more than 9
+    // entries is an issue" — Audit already has its own dedicated 'oversized' check (>9,
+    // codeValidation.ts) for exactly this, run fresh on every issue; this live 7+/9+ coaching is
+    // for ordinary typing outside Audit and just gets in the way of an Audit-driven fix.
+    if (char !== '' && !isPadding && !options?.skipItemCountWarning && !auditActive) {
       const countBefore = countSegmentCodes(editIndex, level, rows);
       const count = countSegmentCodes(editIndex, level, updated);
       // >= rather than === so a segment that already had 9+ entries (imported, or built up
