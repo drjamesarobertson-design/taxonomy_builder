@@ -189,6 +189,23 @@ export default function App() {
     defaultTitle: string;
   } | null>(null);
 
+  // James's ask: fold both CSV import entry points under one "Import CSV" button, which opens a
+  // small dropdown to choose the file's actual shape — "ERP Doctor Delimited Format" (this app's
+  // own one-character-per-column layout, handleImportCsvClick) or "Third Party Concatenated
+  // Codes" (one combined code per row, handleSeparateCodeCsvClick) — rather than two separate,
+  // similarly-labelled toolbar buttons.
+  const [showImportCsvMenu, setShowImportCsvMenu] = useState(false);
+  const importCsvMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showImportCsvMenu) return;
+    const close = (e: MouseEvent) => {
+      if (!importCsvMenuRef.current?.contains(e.target as Node)) setShowImportCsvMenu(false);
+    };
+    window.addEventListener('click', close);
+    return () => window.removeEventListener('click', close);
+  }, [showImportCsvMenu]);
+
   // Bumped every time a genuinely new or freshly-loaded project replaces the current one (never
   // on an ordinary edit) — passed to Grid as its React key, so Grid remounts cleanly instead of
   // carrying over stale internal state (selection, the one-time capitalization notice, etc.)
@@ -1868,24 +1885,36 @@ export default function App() {
               </button>
             )}
             {project && (
-              <button
-                type="button"
-                className="toolbar-alt"
-                onClick={handleImportCsvClick}
-                title="Import a taxonomy from a Discrete Columns CSV"
-              >
-                Import CSV
-              </button>
-            )}
-            {project && (
-              <button
-                type="button"
-                className="toolbar-alt"
-                onClick={handleSeparateCodeCsvClick}
-                title="Import a CSV with one composite/concatenated code per row, splitting each character into its own code column"
-              >
-                Separate Out Code Elements
-              </button>
+              <div className="lock-menu-wrapper" ref={importCsvMenuRef}>
+                <button
+                  type="button"
+                  className="toolbar-alt"
+                  onClick={() => setShowImportCsvMenu((v) => !v)}
+                  title="Import a taxonomy from a CSV file"
+                >
+                  Import CSV ▾
+                </button>
+                {showImportCsvMenu && (
+                  <ul className="context-menu lock-menu">
+                    <li
+                      onClick={() => {
+                        setShowImportCsvMenu(false);
+                        handleImportCsvClick();
+                      }}
+                    >
+                      ERP Doctor Delimited Format
+                    </li>
+                    <li
+                      onClick={() => {
+                        setShowImportCsvMenu(false);
+                        handleSeparateCodeCsvClick();
+                      }}
+                    >
+                      Third Party Concatenated Codes
+                    </li>
+                  </ul>
+                )}
+              </div>
             )}
             {project && <span className="toolbar-divider" />}
             {project && (
@@ -2104,16 +2133,35 @@ export default function App() {
             <button type="button" onClick={handleLoadClick}>
               Load from File
             </button>
-            <button type="button" onClick={handleImportCsvClick} title="Import a taxonomy from a Discrete Columns CSV">
-              Import CSV
-            </button>
-            <button
-              type="button"
-              onClick={handleSeparateCodeCsvClick}
-              title="Import a CSV with one composite/concatenated code per row, splitting each character into its own code column"
-            >
-              Separate Out Code Elements
-            </button>
+            <div className="lock-menu-wrapper" ref={importCsvMenuRef}>
+              <button
+                type="button"
+                onClick={() => setShowImportCsvMenu((v) => !v)}
+                title="Import a taxonomy from a CSV file"
+              >
+                Import CSV ▾
+              </button>
+              {showImportCsvMenu && (
+                <ul className="context-menu lock-menu">
+                  <li
+                    onClick={() => {
+                      setShowImportCsvMenu(false);
+                      handleImportCsvClick();
+                    }}
+                  >
+                    ERP Doctor Delimited Format
+                  </li>
+                  <li
+                    onClick={() => {
+                      setShowImportCsvMenu(false);
+                      handleSeparateCodeCsvClick();
+                    }}
+                  >
+                    Third Party Concatenated Codes
+                  </li>
+                </ul>
+              )}
+            </div>
             <button
               type="button"
               onClick={() => setShowLoadFromLibrary(true)}
