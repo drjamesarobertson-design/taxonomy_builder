@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { HelpTextMap } from './helpText';
+import { saveExportFile } from './exportFolder';
 
 interface HelpPageProps {
   helpText: HelpTextMap;
@@ -12,6 +13,23 @@ interface HelpPageProps {
 // HelpIcon on the setup screens, so James only ever writes a given field's wording once.
 export default function HelpPage({ helpText, onClose }: HelpPageProps) {
   const [query, setQuery] = useState('');
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  // James's report: unable to get help-text.csv out of the app any other way. Same
+  // save-picker-with-download-fallback every other Export button already uses (exportFolder.ts)
+  // -- known to work for him, so this is the most reliable path rather than a new mechanism.
+  async function handleDownloadCsv() {
+    setDownloadError(null);
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}help-text.csv`);
+      if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
+      const text = await res.text();
+      const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
+      await saveExportFile(blob, 'help-text.csv');
+    } catch {
+      setDownloadError('Could not download help-text.csv. Please try again, or ask for it to be sent another way.');
+    }
+  }
 
   const entries = useMemo(
     () =>
@@ -72,7 +90,11 @@ export default function HelpPage({ helpText, onClose }: HelpPageProps) {
             ))
           )}
         </div>
+        {downloadError && <p className="help-page-empty">{downloadError}</p>}
         <div className="confirm-dialog-actions">
+          <button type="button" onClick={handleDownloadCsv}>
+            Download Help CSV
+          </button>
           <button type="button" onClick={onClose}>
             Close
           </button>

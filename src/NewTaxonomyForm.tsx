@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { DEFAULT_SETTINGS, MAX_LEVELS } from './types';
 import type { SuffixField } from './types';
 import HelpIcon from './HelpIcon';
+import Tooltip from './Tooltip';
 import type { HelpTextMap } from './helpText';
 
 interface NewTaxonomyFormProps {
@@ -250,15 +251,19 @@ export default function NewTaxonomyForm({ onCreate, helpText }: NewTaxonomyFormP
                 onChange={(e) => updateDelimiter(index, Number(e.target.value))}
               />
             </div>
-            <button type="button" className="delimiter-remove-btn" onClick={() => removeDelimiter(index)}>
-              Remove
-            </button>
+            <Tooltip field="btnRemoveDelimiter" helpText={helpText}>
+              <button type="button" className="delimiter-remove-btn" onClick={() => removeDelimiter(index)}>
+                Remove
+              </button>
+            </Tooltip>
           </div>
         ))}
         {delimiterPositions.length < numLevels - 1 && (
-          <button type="button" onClick={addDelimiter}>
-            + Insert {delimiterPositions.length > 0 ? 'Further ' : ''}Delimiter
-          </button>
+          <Tooltip field="btnInsertDelimiter" helpText={helpText}>
+            <button type="button" onClick={addDelimiter}>
+              + Insert {delimiterPositions.length > 0 ? 'Further ' : ''}Delimiter
+            </button>
+          </Tooltip>
         )}
       </fieldset>
 
@@ -360,7 +365,9 @@ export default function NewTaxonomyForm({ onCreate, helpText }: NewTaxonomyFormP
       </fieldset>
 
       <div className="form-actions">
-        <button type="submit">Create Taxonomy</button>
+        <Tooltip field="btnCreateTaxonomySubmit" helpText={helpText}>
+          <button type="submit">Create Taxonomy</button>
+        </Tooltip>
       </div>
 
       {showConfirm && (
@@ -376,12 +383,16 @@ export default function NewTaxonomyForm({ onCreate, helpText }: NewTaxonomyFormP
               {suffixes.length > 0 && <li>Description Suffixes: {suffixes.length}</li>}
             </ul>
             <div className="confirm-dialog-actions">
-              <button type="button" onClick={() => setShowConfirm(false)}>
-                Edit
-              </button>
-              <button type="button" onClick={handleConfirmCreate}>
-                Accept
-              </button>
+              <Tooltip field="btnEditSettingsConfirm" helpText={helpText}>
+                <button type="button" onClick={() => setShowConfirm(false)}>
+                  Edit
+                </button>
+              </Tooltip>
+              <Tooltip field="btnAcceptSettingsConfirm" helpText={helpText}>
+                <button type="button" onClick={handleConfirmCreate}>
+                  Accept
+                </button>
+              </Tooltip>
             </div>
           </div>
         </div>

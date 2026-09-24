@@ -9,6 +9,8 @@
 
 import { CUBIC_BUSINESS_MODEL_WORKFLOW_LEVELS, WORKFLOW_LEVELS } from './types';
 import type { WorkflowLevel } from './types';
+import Tooltip from './Tooltip';
+import type { HelpTextMap } from './helpText';
 
 interface WorkflowMenuProps {
   onChooseNew: (level: WorkflowLevel) => void;
@@ -24,6 +26,13 @@ interface WorkflowMenuProps {
    * for the eventual full software). */
   onLoadGLAnalyser: () => void;
   onOpenGLBuilder: () => void;
+  helpText: HelpTextMap;
+}
+
+// One tooltip field per fixed WORKFLOW_LEVELS entry — "workflowLevelSimpleTaxonomy",
+// "workflowLevelAdvancedComplexityTaxonomy", etc.
+function workflowLevelField(level: WorkflowLevel): string {
+  return `workflowLevel${level.replace(/[^a-zA-Z0-9]/g, '')}`;
 }
 
 export default function WorkflowMenu({
@@ -33,14 +42,17 @@ export default function WorkflowMenu({
   onResume,
   onLoadGLAnalyser,
   onOpenGLBuilder,
+  helpText,
 }: WorkflowMenuProps) {
   return (
     <section className="workflow-menu">
       <h2>What would you like to do?</h2>
       {resumeTitle && onResume && (
-        <button type="button" className="workflow-resume-btn" onClick={onResume}>
-          ▶ Resume Work in Progress — "{resumeTitle}"
-        </button>
+        <Tooltip field="btnResumeWorkInProgress" helpText={helpText}>
+          <button type="button" className="workflow-resume-btn" onClick={onResume}>
+            ▶ Resume Work in Progress — "{resumeTitle}"
+          </button>
+        </Tooltip>
       )}
       <div className="workflow-menu-columns">
         <div className="workflow-menu-column">
@@ -60,9 +72,11 @@ export default function WorkflowMenu({
               return (
                 <div key={level} className="workflow-level-item">
                   {isFirstCubicLevel && <span className="workflow-level-group-heading">Cubic Business Model</span>}
-                  <button type="button" onClick={() => onChooseNew(level)}>
-                    {level}
-                  </button>
+                  <Tooltip field={workflowLevelField(level)} helpText={helpText}>
+                    <button type="button" onClick={() => onChooseNew(level)}>
+                      {level}
+                    </button>
+                  </Tooltip>
                 </div>
               );
             })}
@@ -74,9 +88,11 @@ export default function WorkflowMenu({
             Load a saved project file, import a CSV, or open one already saved in your Library
             on the left.
           </p>
-          <button type="button" className="workflow-existing-btn" onClick={onChooseExisting}>
-            Work on an Existing Taxonomy
-          </button>
+          <Tooltip field="btnWorkOnExisting" helpText={helpText}>
+            <button type="button" className="workflow-existing-btn" onClick={onChooseExisting}>
+              Work on an Existing Taxonomy
+            </button>
+          </Tooltip>
 
           <div className="workflow-level-item">
             <h3>Load GL Analyser</h3>
@@ -85,9 +101,11 @@ export default function WorkflowMenu({
               Divisions, Locations, Functions and Chart of Accounts Tables from existing data
               tables
             </p>
-            <button type="button" className="workflow-existing-btn" onClick={onLoadGLAnalyser}>
-              Load GL Analyser
-            </button>
+            <Tooltip field="btnLoadGLAnalyser" helpText={helpText}>
+              <button type="button" className="workflow-existing-btn" onClick={onLoadGLAnalyser}>
+                Load GL Analyser
+              </button>
+            </Tooltip>
           </div>
 
           <div className="workflow-level-item">
@@ -96,9 +114,11 @@ export default function WorkflowMenu({
               Build Cubic Business Model Chart of Accounts – being upgraded -- facility pending --
               contact us if interested
             </p>
-            <button type="button" className="workflow-existing-btn" onClick={onOpenGLBuilder}>
-              GL Builder
-            </button>
+            <Tooltip field="btnOpenGLBuilder" helpText={helpText}>
+              <button type="button" className="workflow-existing-btn" onClick={onOpenGLBuilder}>
+                GL Builder
+              </button>
+            </Tooltip>
           </div>
         </div>
       </div>

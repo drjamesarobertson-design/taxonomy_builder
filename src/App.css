@@ -871,6 +871,11 @@ body.app-dark-theme .taxonomy-meta .purpose {
   z-index: 4000;
 }
 
+.app-tooltip-popup-logo {
+  width: 22rem;
+  max-width: 70vw;
+}
+
 .app-tooltip-video-link {
   display: inline-block;
   margin-top: 0.4rem;

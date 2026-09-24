@@ -1,5 +1,8 @@
 import { useState } from 'react';
 import type { ParsedDiscreteCsv } from './csvImport';
+import HelpIcon from './HelpIcon';
+import Tooltip from './Tooltip';
+import type { HelpTextMap } from './helpText';
 
 export interface CsvImportFields {
   title: string;
@@ -14,6 +17,7 @@ interface CsvImportConfirmProps {
   defaultTitle: string;
   onConfirm: (fields: CsvImportFields) => void;
   onCancel: () => void;
+  helpText: HelpTextMap;
 }
 
 // A CSV has no way to carry a taxonomy's title/table name/purpose (Section 5 step 1) or its
@@ -21,7 +25,7 @@ interface CsvImportConfirmProps {
 // suffix columns) is read straight off the file's own structure (csvImport.ts), so this only
 // asks for what the file genuinely can't tell us, with a summary of what was detected so the
 // import isn't a total leap of faith.
-export default function CsvImportConfirm({ parsed, defaultTitle, onConfirm, onCancel }: CsvImportConfirmProps) {
+export default function CsvImportConfirm({ parsed, defaultTitle, onConfirm, onCancel, helpText }: CsvImportConfirmProps) {
   const [title, setTitle] = useState(defaultTitle);
   const [tableName, setTableName] = useState(defaultTitle);
   const [purpose, setPurpose] = useState('');
@@ -62,18 +66,22 @@ export default function CsvImportConfirm({ parsed, defaultTitle, onConfirm, onCa
         </p>
         <label>
           Title
+          <HelpIcon field="title" helpText={helpText} />
           <input value={title} onChange={(e) => setTitle(e.target.value)} required />
         </label>
         <label>
           Table Name
+          <HelpIcon field="tableName" helpText={helpText} />
           <input value={tableName} onChange={(e) => setTableName(e.target.value)} required />
         </label>
         <label>
           Purpose
+          <HelpIcon field="purpose" helpText={helpText} />
           <textarea value={purpose} onChange={(e) => setPurpose(e.target.value)} rows={2} />
         </label>
         <label>
           Maximum ERP Description Field Length
+          <HelpIcon field="maxDescriptionLength" helpText={helpText} />
           <input
             type="number"
             min={1}
@@ -84,14 +92,19 @@ export default function CsvImportConfirm({ parsed, defaultTitle, onConfirm, onCa
         <label className="checkbox-label">
           <input type="checkbox" checked={dropCodes} onChange={(e) => setDropCodes(e.target.checked)} />
           Descriptions only — drop the file's codes and start coding fresh
+          <HelpIcon field="csvImportDropCodes" helpText={helpText} />
         </label>
         <div className="confirm-dialog-actions">
-          <button type="button" onClick={onCancel}>
-            Cancel
-          </button>
-          <button type="button" onClick={handleConfirm}>
-            Import
-          </button>
+          <Tooltip field="btnCsvImportCancel" helpText={helpText}>
+            <button type="button" onClick={onCancel}>
+              Cancel
+            </button>
+          </Tooltip>
+          <Tooltip field="btnCsvImportConfirm" helpText={helpText}>
+            <button type="button" onClick={handleConfirm}>
+              Import
+            </button>
+          </Tooltip>
         </div>
       </div>
     </div>

@@ -15,6 +15,7 @@ import {
 } from './gridExport';
 import { exportBlock } from './blockTransfer';
 import { chooseExportFolder, peekExportFolderName, supportsFileSystemAccess } from './exportFolder';
+import { supportsHddFolders, buildHddFolderPlan, createHddFolders } from './hddFolders';
 import { hasBlankCodeGaps, findAuditIssues } from './codeValidation';
 import { padTrailingCodes } from './guidance';
 import { toggleCase } from './caseUtils';
@@ -30,11 +31,12 @@ import { loadHelpText } from './helpText';
 import type { HelpTextMap } from './helpText';
 import Tooltip from './Tooltip';
 import HelpPage from './HelpPage';
+import { useMenuTooltip, MenuTooltipPortal } from './menuTooltip';
 import NewTaxonomyForm from './NewTaxonomyForm';
 import SimpleTaxonomySetup from './SimpleTaxonomySetup';
 import GuidanceBanner from './GuidanceBanner';
 import SettingsModal from './SettingsModal';
-import { parseDiscreteCsv, parseCompositeCodeCsv, buildSeparatedCsv, readFileAsText } from './csvImport';
+import { parseDiscreteCsv, parseCompositeCodeCsv, parseMultiColumnDescriptionCsv, buildSeparatedCsv, readFileAsText } from './csvImport';
 import type { ParsedCompositeCsv } from './csvImport';
 import SeparateCodeElementsSetup from './SeparateCodeElementsSetup';
 import type { ParsedDiscreteCsv } from './csvImport';
@@ -196,6 +198,13 @@ export default function App() {
     parsed: ParsedCompositeCsv;
     defaultTitle: string;
   } | null>(null);
+  // James's ask: a third CSV import shape -- "Multi-Column Description Table Without Code" --
+  // for a file like his HDD folder-structure export: no header, no code columns, one description
+  // column per level, exactly one populated cell per row at the position matching its level.
+  // Goes straight into the same pendingCsvImport/CsvImportConfirm flow as the plain import (no
+  // delimiter-setup step needed, since there are no codes to place delimiters around).
+  const multiColumnDescFileInputRef = useRef<HTMLInputElement>(null);
+  const [hddFoldersBusy, setHddFoldersBusy] = useState(false);
 
   // James's ask: fold both CSV import entry points under one "Import CSV" button, which opens a
   // small dropdown to choose the file's actual shape — "ERP Doctor Delimited Format" (this app's
@@ -311,6 +320,13 @@ export default function App() {
   // one), so they're only shown then.
   const [showLockMenu, setShowLockMenu] = useState(false);
   const lockMenuRef = useRef<HTMLDivElement>(null);
+  // Same custom-tooltip mechanism as Grid.tsx's and LibrarySidebar.tsx's right-click menus --
+  // covers this app's own two small dropdown menus (Import CSV ▾, Lock Taxonomy ▾).
+  const { tooltip: appMenuTooltip, showTooltip: showAppMenuTooltip, hideTooltip: hideAppMenuTooltip } = useMenuTooltip();
+  useEffect(() => {
+    if (!showImportCsvMenu && !showLockMenu) hideAppMenuTooltip();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showImportCsvMenu, showLockMenu]);
 
   useEffect(() => {
     if (!showLockMenu) return;
@@ -1189,6 +1205,48 @@ export default function App() {
     runAudit('standalone');
   }
 
+  // "HDD Folders" (James's ask): create real folders on the user's hard drive mirroring the
+  // current taxonomy's structure -- every row, not just the leaves, since a heading is a real
+  // folder too. File System Access API only (Chromium browsers); degrades to a clear message
+  // rather than a silent no-op on Firefox/Safari, same as "Choose Export Folder" already does.
+  async function handleHddFoldersClick() {
+    if (!project) return;
+    if (!supportsHddFolders()) {
+      alert(
+        'HDD Folders needs a Chromium-based browser (Chrome or Edge) to create folders on your computer — it isn\'t available in this browser.',
+      );
+      return;
+    }
+    const plan = buildHddFolderPlan(project.rows);
+    if (plan.length === 0) {
+      alert('There are no entries in this taxonomy yet to create folders for.');
+      return;
+    }
+    let root: FileSystemDirectoryHandle;
+    try {
+      root = await window.showDirectoryPicker!({ id: 'taxonomy-builder-hdd-folders', mode: 'readwrite' });
+    } catch {
+      return; // user cancelled the picker
+    }
+    if (
+      !confirm(
+        `This will create ${plan.length} folder${plan.length === 1 ? '' : 's'} inside "${root.name}", mirroring the current taxonomy structure. Existing folders with the same names are reused, not overwritten. Continue?`,
+      )
+    ) {
+      return;
+    }
+    setHddFoldersBusy(true);
+    setLoadError(null);
+    try {
+      const result = await createHddFolders(root, plan);
+      alert(`Created ${result.created} folder${result.created === 1 ? '' : 's'} inside "${root.name}".`);
+    } catch (err) {
+      setLoadError(err instanceof Error ? `Could not finish creating folders: ${err.message}` : 'Could not finish creating folders.');
+    } finally {
+      setHddFoldersBusy(false);
+    }
+  }
+
   // The "Audit — Y/N" prompt before Export to CSV (default Yes). Export to Excel is deliberately
   // not gated by this at all — James: CSV feeds other software (needs to be complete), Excel is
   // for review/inspection (doesn't).
@@ -1676,6 +1734,37 @@ export default function App() {
     setPendingCsvImport({ parsed: discrete, defaultTitle });
   }
 
+  function handleMultiColumnDescCsvClick() {
+    // Same Lock Taxonomy / existing-content guards as the other two CSV import paths above.
+    if (project?.settings.locked) {
+      alert('This taxonomy is locked and cannot be replaced by a CSV import. Unlock it first if this is genuinely necessary.');
+      return;
+    }
+    if (project && hasAnyContent(project.rows) && !confirm('This will clear the existing table content — proceed?')) {
+      return;
+    }
+    multiColumnDescFileInputRef.current?.click();
+  }
+
+  async function handleMultiColumnDescFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const text = await readFileAsText(file);
+      const parsed = parseMultiColumnDescriptionCsv(text);
+      if ('error' in parsed) {
+        setLoadError(parsed.error);
+        return;
+      }
+      setLoadError(null);
+      const defaultTitle = file.name.replace(/\.csv$/i, '');
+      setPendingCsvImport({ parsed, defaultTitle });
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Could not read this file.');
+    }
+  }
+
   function handleSaveSettings(fields: SettingsFields) {
     if (!project) return;
     // Number of code columns can move either way here — SettingsModal only ever submits a
@@ -2026,6 +2115,8 @@ export default function App() {
                         setShowImportCsvMenu(false);
                         handleImportCsvClick();
                       }}
+                      onMouseEnter={showAppMenuTooltip('menuImportErpDoctor')}
+                      onMouseLeave={hideAppMenuTooltip}
                     >
                       ERP Doctor Delimited Format
                     </li>
@@ -2034,8 +2125,20 @@ export default function App() {
                         setShowImportCsvMenu(false);
                         handleSeparateCodeCsvClick();
                       }}
+                      onMouseEnter={showAppMenuTooltip('menuImportThirdParty')}
+                      onMouseLeave={hideAppMenuTooltip}
                     >
                       Third Party Concatenated Codes
+                    </li>
+                    <li
+                      onClick={() => {
+                        setShowImportCsvMenu(false);
+                        handleMultiColumnDescCsvClick();
+                      }}
+                      onMouseEnter={showAppMenuTooltip('menuImportMultiColumnDesc')}
+                      onMouseLeave={hideAppMenuTooltip}
+                    >
+                      Multi-Column Description Table Without Code
                     </li>
                   </ul>
                 )}
@@ -2057,6 +2160,8 @@ export default function App() {
                           setShowLockMenu(false);
                           handleLockTaxonomy();
                         }}
+                        onMouseEnter={showAppMenuTooltip('menuLockTaxonomy')}
+                        onMouseLeave={hideAppMenuTooltip}
                       >
                         Lock Taxonomy
                       </li>
@@ -2068,6 +2173,8 @@ export default function App() {
                             setShowLockMenu(false);
                             handleExportLockedXlsx();
                           }}
+                          onMouseEnter={showAppMenuTooltip('menuExportLockedXlsx')}
+                          onMouseLeave={hideAppMenuTooltip}
                         >
                           Export Locked Taxonomy to Excel
                         </li>
@@ -2076,6 +2183,8 @@ export default function App() {
                             setShowLockMenu(false);
                             handleExportIncrementCsv();
                           }}
+                          onMouseEnter={showAppMenuTooltip('menuExportIncrementCsv')}
+                          onMouseLeave={hideAppMenuTooltip}
                         >
                           Export increment to CSV
                         </li>
@@ -2084,6 +2193,8 @@ export default function App() {
                             setShowLockMenu(false);
                             handleExportEntireLockedCsv();
                           }}
+                          onMouseEnter={showAppMenuTooltip('menuExportEntireLockedCsv')}
+                          onMouseLeave={hideAppMenuTooltip}
                         >
                           Export entire locked Taxonomy as CSV
                         </li>
@@ -2092,6 +2203,8 @@ export default function App() {
                             setShowLockMenu(false);
                             handleAddToLibraryClick();
                           }}
+                          onMouseEnter={showAppMenuTooltip('menuUpdateLockedInLibrary')}
+                          onMouseLeave={hideAppMenuTooltip}
                         >
                           Update locked Taxonomy in Library
                         </li>
@@ -2100,6 +2213,8 @@ export default function App() {
                             setShowLockMenu(false);
                             handleLockUpdates();
                           }}
+                          onMouseEnter={showAppMenuTooltip('menuLockUpdates')}
+                          onMouseLeave={hideAppMenuTooltip}
                         >
                           Lock updates
                         </li>
@@ -2136,6 +2251,14 @@ export default function App() {
               <Tooltip field="btnAuditTaxonomy" helpText={helpText}>
                 <button type="button" onClick={handleAuditTaxonomyClick}>
                   Audit Taxonomy
+                </button>
+              </Tooltip>
+            )}
+            {project && <span className="toolbar-divider" />}
+            {project && (
+              <Tooltip field="btnHddFolders" helpText={helpText}>
+                <button type="button" onClick={handleHddFoldersClick} disabled={hddFoldersBusy}>
+                  {hddFoldersBusy ? 'Creating Folders…' : 'HDD Folders'}
                 </button>
               </Tooltip>
             )}
@@ -2192,6 +2315,13 @@ export default function App() {
               style={{ display: 'none' }}
               onChange={handleSeparateCodeFileSelected}
             />
+            <input
+              ref={multiColumnDescFileInputRef}
+              type="file"
+              accept=".csv"
+              style={{ display: 'none' }}
+              onChange={handleMultiColumnDescFileSelected}
+            />
           </div>
           <Logo className="app-logo" />
         </div>
@@ -2211,6 +2341,7 @@ export default function App() {
           project={project}
           onSettingsAndRowsChange={handleSettingsAndRowsChange}
           onExitGuidance={handleExitGuidance}
+          helpText={helpText}
         />
       )}
       {project && !project.settings.guidance && (
@@ -2234,6 +2365,7 @@ export default function App() {
             onResume={handleResumeWorkInProgress}
             onLoadGLAnalyser={() => setShowGLAnalyserNotice(true)}
             onOpenGLBuilder={openGLBuilder}
+            helpText={helpText}
           />
           <footer className="app-footer">
             The ERP Doctor Taxonomy Builder is the Intellectual Property of the ERP Doctor and
@@ -2244,21 +2376,23 @@ export default function App() {
 
       {!project && signOnStage === 'existing' && (
         <>
-          <button type="button" className="sign-on-back-btn" onClick={() => setSignOnStage('menu')}>
-            ← Back
-          </button>
-          <section className="load-from-file-section">
-            <button type="button" onClick={handleLoadClick}>
-              Load from File
+          <Tooltip field="btnSignOnBack" helpText={helpText}>
+            <button type="button" className="sign-on-back-btn" onClick={() => setSignOnStage('menu')}>
+              ← Back
             </button>
-            <div className="lock-menu-wrapper" ref={importCsvMenuRef}>
-              <button
-                type="button"
-                onClick={() => setShowImportCsvMenu((v) => !v)}
-                title="Import a taxonomy from a CSV file"
-              >
-                Import CSV ▾
+          </Tooltip>
+          <section className="load-from-file-section">
+            <Tooltip field="btnLoadFromFile" helpText={helpText}>
+              <button type="button" onClick={handleLoadClick}>
+                Load from File
               </button>
+            </Tooltip>
+            <div className="lock-menu-wrapper" ref={importCsvMenuRef}>
+              <Tooltip field="btnImportCsv" helpText={helpText}>
+                <button type="button" onClick={() => setShowImportCsvMenu((v) => !v)}>
+                  Import CSV ▾
+                </button>
+              </Tooltip>
               {showImportCsvMenu && (
                 <ul className="context-menu lock-menu">
                   <li
@@ -2266,6 +2400,8 @@ export default function App() {
                       setShowImportCsvMenu(false);
                       handleImportCsvClick();
                     }}
+                    onMouseEnter={showAppMenuTooltip('menuImportErpDoctor')}
+                    onMouseLeave={hideAppMenuTooltip}
                   >
                     ERP Doctor Delimited Format
                   </li>
@@ -2274,20 +2410,34 @@ export default function App() {
                       setShowImportCsvMenu(false);
                       handleSeparateCodeCsvClick();
                     }}
+                    onMouseEnter={showAppMenuTooltip('menuImportThirdParty')}
+                    onMouseLeave={hideAppMenuTooltip}
                   >
                     Third Party Concatenated Codes
+                  </li>
+                  <li
+                    onClick={() => {
+                      setShowImportCsvMenu(false);
+                      handleMultiColumnDescCsvClick();
+                    }}
+                    onMouseEnter={showAppMenuTooltip('menuImportMultiColumnDesc')}
+                    onMouseLeave={hideAppMenuTooltip}
+                  >
+                    Multi-Column Description Table Without Code
                   </li>
                 </ul>
               )}
             </div>
-            <button
-              type="button"
-              onClick={() => setShowLoadFromLibrary(true)}
-              disabled={libraryEntries.length === 0}
-              title={libraryEntries.length === 0 ? 'Your Library is empty' : 'Open a taxonomy already saved in your Library'}
-            >
-              Load from Library
-            </button>
+            <Tooltip field="btnLoadFromLibrary" helpText={helpText}>
+              <button
+                type="button"
+                onClick={() => setShowLoadFromLibrary(true)}
+                disabled={libraryEntries.length === 0}
+                title={libraryEntries.length === 0 ? 'Your Library is empty' : undefined}
+              >
+                Load from Library
+              </button>
+            </Tooltip>
           </section>
           <footer className="app-footer">
             The ERP Doctor Taxonomy Builder is the Intellectual Property of the ERP Doctor and
@@ -2298,9 +2448,11 @@ export default function App() {
 
       {!project && signOnStage === 'new' && (
         <>
-          <button type="button" className="sign-on-back-btn" onClick={() => setSignOnStage('menu')}>
-            ← Back
-          </button>
+          <Tooltip field="btnSignOnBack" helpText={helpText}>
+            <button type="button" className="sign-on-back-btn" onClick={() => setSignOnStage('menu')}>
+              ← Back
+            </button>
+          </Tooltip>
           {chosenWorkflowLevel && chosenWorkflowLevel !== 'Simple Taxonomy' && (
             <p className="chosen-workflow-level">Creating a {chosenWorkflowLevel}</p>
           )}
@@ -2372,6 +2524,7 @@ export default function App() {
       )}
 
       {showHelpPage && <HelpPage helpText={helpText} onClose={() => setShowHelpPage(false)} />}
+      <MenuTooltipPortal tooltip={appMenuTooltip} helpText={helpText} />
 
       {showAutoCode && (
         <div className="validation-overlay" onClick={() => setShowAutoCode(false)}>
@@ -2392,9 +2545,11 @@ export default function App() {
               <button type="button" onClick={() => setShowAutoCode(false)}>
                 Cancel
               </button>
-              <button type="button" onClick={handleAutoCodeGenerate}>
-                Generate Codes
-              </button>
+              <Tooltip field="btnAutoCodeGenerate" helpText={helpText}>
+                <button type="button" onClick={handleAutoCodeGenerate}>
+                  Generate Codes
+                </button>
+              </Tooltip>
             </div>
           </div>
         </div>
@@ -2420,21 +2575,25 @@ export default function App() {
               <button type="button" onClick={() => setShowFormatDescriptions(false)}>
                 Cancel
               </button>
-              <button type="button" onClick={handleFormatEntireWorksheetClick}>
-                Format Entire Worksheet
-              </button>
-              <button
-                type="button"
-                onClick={handleFormatSelectedRange}
-                disabled={!gridSelectionRowIds || gridSelectionRowIds.size === 0}
-                title={
-                  !gridSelectionRowIds || gridSelectionRowIds.size === 0
-                    ? 'Select a row or range in the grid first'
-                    : undefined
-                }
-              >
-                Format Selected Range
-              </button>
+              <Tooltip field="btnFormatEntireWorksheet" helpText={helpText}>
+                <button type="button" onClick={handleFormatEntireWorksheetClick}>
+                  Format Entire Worksheet
+                </button>
+              </Tooltip>
+              <Tooltip field="btnFormatSelectedRange" helpText={helpText}>
+                <button
+                  type="button"
+                  onClick={handleFormatSelectedRange}
+                  disabled={!gridSelectionRowIds || gridSelectionRowIds.size === 0}
+                  title={
+                    !gridSelectionRowIds || gridSelectionRowIds.size === 0
+                      ? 'Select a row or range in the grid first'
+                      : undefined
+                  }
+                >
+                  Format Selected Range
+                </button>
+              </Tooltip>
             </div>
           </div>
         </div>
@@ -2451,9 +2610,11 @@ export default function App() {
               <button type="button" onClick={() => setFormatEntireConfirm(null)}>
                 Cancel
               </button>
-              <button type="button" onClick={handleFormatEntireWorksheetConfirm}>
-                Format Entire Worksheet
-              </button>
+              <Tooltip field="btnFormatEntireWorksheet" helpText={helpText}>
+                <button type="button" onClick={handleFormatEntireWorksheetConfirm}>
+                  Format Entire Worksheet
+                </button>
+              </Tooltip>
             </div>
           </div>
         </div>
@@ -2484,6 +2645,7 @@ export default function App() {
           defaultTitle={pendingCsvImport.defaultTitle}
           onConfirm={handleCsvImportConfirm}
           onCancel={() => setPendingCsvImport(null)}
+          helpText={helpText}
         />
       )}
 
@@ -2492,6 +2654,7 @@ export default function App() {
           parsed={pendingSeparateCodeImport.parsed}
           onConfirm={handleSeparateCodeSetupConfirm}
           onCancel={() => setPendingSeparateCodeImport(null)}
+          helpText={helpText}
         />
       )}
 
@@ -2519,28 +2682,38 @@ export default function App() {
                   not whichever button happened to render last. Cancel sits immediately before
                   it, at the end of the row rather than its old spot up front, without taking the
                   one "last" slot the default itself needs. */}
-              <button type="button" onClick={() => runExport('concatenated')}>
-                Concatenated
-              </button>
+              <Tooltip field="btnExportConcatenated" helpText={helpText}>
+                <button type="button" onClick={() => runExport('concatenated')}>
+                  Concatenated
+                </button>
+              </Tooltip>
               {exportChoice.format === 'csv' && (
                 <>
-                  <button type="button" onClick={() => runExport('concatenated', true)}>
-                    Concatenated (No Delimiter)
-                  </button>
-                  <button type="button" onClick={() => runExport('discrete', true)}>
-                    Discrete Columns (No Delimiter)
-                  </button>
-                  <button type="button" onClick={runSingleColumnExport}>
-                    Single Column…
-                  </button>
+                  <Tooltip field="btnExportConcatenatedNoDelimiter" helpText={helpText}>
+                    <button type="button" onClick={() => runExport('concatenated', true)}>
+                      Concatenated (No Delimiter)
+                    </button>
+                  </Tooltip>
+                  <Tooltip field="btnExportDiscreteNoDelimiter" helpText={helpText}>
+                    <button type="button" onClick={() => runExport('discrete', true)}>
+                      Discrete Columns (No Delimiter)
+                    </button>
+                  </Tooltip>
+                  <Tooltip field="btnExportSingleColumn" helpText={helpText}>
+                    <button type="button" onClick={runSingleColumnExport}>
+                      Single Column…
+                    </button>
+                  </Tooltip>
                 </>
               )}
               <button type="button" onClick={() => setExportChoice(null)}>
                 Cancel
               </button>
-              <button type="button" onClick={() => runExport('discrete')}>
-                Discrete Columns
-              </button>
+              <Tooltip field="btnExportDiscrete" helpText={helpText}>
+                <button type="button" onClick={() => runExport('discrete')}>
+                  Discrete Columns
+                </button>
+              </Tooltip>
             </div>
           </div>
         </div>
@@ -2778,9 +2951,11 @@ export default function App() {
               <button type="button" onClick={() => setShowLibraryCategoryPrompt(false)}>
                 Cancel
               </button>
-              <button type="button" onClick={confirmAddToLibrary}>
-                Add to Library
-              </button>
+              <Tooltip field="btnConfirmAddToLibrary" helpText={helpText}>
+                <button type="button" onClick={confirmAddToLibrary}>
+                  Add to Library
+                </button>
+              </Tooltip>
             </div>
           </div>
         </div>
@@ -2794,12 +2969,16 @@ export default function App() {
               <button type="button" onClick={() => setShowLibraryOverwritePrompt(false)}>
                 Cancel
               </button>
-              <button type="button" onClick={confirmOverwriteLibraryEntry}>
-                Overwrite
-              </button>
-              <button type="button" onClick={confirmNewLibraryVersion}>
-                New Version
-              </button>
+              <Tooltip field="btnLibraryOverwrite" helpText={helpText}>
+                <button type="button" onClick={confirmOverwriteLibraryEntry}>
+                  Overwrite
+                </button>
+              </Tooltip>
+              <Tooltip field="btnLibraryNewVersion" helpText={helpText}>
+                <button type="button" onClick={confirmNewLibraryVersion}>
+                  New Version
+                </button>
+              </Tooltip>
             </div>
           </div>
         </div>
@@ -2923,17 +3102,19 @@ export default function App() {
               <button type="button" onClick={() => setShowGLBuilder(false)} disabled={glBuilderExporting}>
                 Cancel
               </button>
-              <button
-                type="button"
-                onClick={handleGLBuilderExport}
-                disabled={
-                  glBuilderExporting ||
-                  !glBuilderSuffix.trim() ||
-                  GL_BUILDER_CATEGORIES.every(({ category }) => !glBuilderSelection[category])
-                }
-              >
-                {glBuilderExporting ? 'Exporting…' : 'Export'}
-              </button>
+              <Tooltip field="btnGLBuilderExport" helpText={helpText}>
+                <button
+                  type="button"
+                  onClick={handleGLBuilderExport}
+                  disabled={
+                    glBuilderExporting ||
+                    !glBuilderSuffix.trim() ||
+                    GL_BUILDER_CATEGORIES.every(({ category }) => !glBuilderSelection[category])
+                  }
+                >
+                  {glBuilderExporting ? 'Exporting…' : 'Export'}
+                </button>
+              </Tooltip>
             </div>
           </div>
         </div>
@@ -3010,6 +3191,7 @@ export default function App() {
             setAudit(null);
             setExportChoice({ format: 'csv' });
           }}
+          helpText={helpText}
         />
       )}
 

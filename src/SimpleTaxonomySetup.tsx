@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { DEFAULT_SETTINGS } from './types';
 import HelpIcon from './HelpIcon';
+import Tooltip from './Tooltip';
 import type { HelpTextMap } from './helpText';
 
 interface SimpleTaxonomySetupProps {
@@ -150,7 +151,9 @@ export default function SimpleTaxonomySetup({ onCreate, helpText }: SimpleTaxono
         </>
       )}
       <div className="form-actions">
-        <button type="submit">Start Building</button>
+        <Tooltip field="btnStartBuilding" helpText={helpText}>
+          <button type="submit">Start Building</button>
+        </Tooltip>
       </div>
     </form>
   );
