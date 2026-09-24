@@ -105,24 +105,38 @@ function spreadSlots(count: number, availableSlots = 8): string[] {
   return Array.from({ length: count }, (_, i) => CODE_SLOTS[i * gap]);
 }
 
-// Assigns gap-spaced codes to every row whose own code at `level` is still blank, one sibling
-// group at a time. A row that already holds a real code (typed in manually before Auto Code was
-// run) is left untouched, and its value is excluded from the slots handed to its still-blank
-// siblings so nothing collides with it. Any Other/Miscellaneous sibling in the group is coded
-// separately from — and after — its ordinary siblings, always landing on the last slot the
-// group actually needs ("9" whenever the rest fits in 1-8) — but ONLY when it's actually the
-// convention Section 5 describes: that row physically sitting last in the group already. James's
-// report on a real imported file: two "Other ..." rows sat in the MIDDLE of an 8-row sibling
-// group, not at the end, and got the reserved-high-slot treatment anyway ("9" and "A") — which
-// left ordinary siblings further down the same group with LOWER values ("6", "7"), breaking
-// Section 4.4's hard ascending-order rule. That rule always wins over the "Other near 9"
-// convention, which is cosmetic by comparison — so a group where any Other row isn't already
-// last falls back to one combined, strictly row-order spread across every sibling, ordinary and
-// Other alike, guaranteeing the codes it produces can never violate ascending order.
-// The actual per-group assignment — factored out of assignLevelCodes so the Audit walkthrough
-// (fillRestOfGroup, below) can run this same rule against just ONE sibling group, not sweep the
-// whole column, when the user has only just typed a code for one row in it.
+// Assigns codes to every row whose own code at `level` is still blank, one sibling group at a
+// time. Two genuinely different situations share this one entry point:
+//
+// - Greenfield — nothing in the group has a real code yet (Auto Code's own primary case: a
+//   taxonomy imported or built with no codes at all). Spreads every ordinary sibling evenly
+//   across 1-8 ("gap coding" — CLAUDE.md Section 4.4's "1, 3, 5..."), reserving "9" for a
+//   possible Other/Miscellaneous entry even when none is present yet — see the block below for
+//   the full rule, including when that reservation doesn't apply.
+// - Patch — the group already has at least one real code in it ("Fill Missing Codes"'s own
+//   stated everyday case: "a manual entry, Insert Row, Promote or Demote has left a FEW rows'
+//   own-level code blank, mid-taxonomy, while the REST of the column is already coded"). The
+//   greenfield spread above is computed purely from each blank's POSITION and the group's total
+//   COUNT, with no regard for what a nearby row already holds — James's real file turned up
+//   exactly the resulting bug: a row he'd just coded "4" handed its newly-inserted, still-blank
+//   followers values with no relation to it, sometimes even LOWER than "4", an outright
+//   ascending-order violation. fillOrderedGaps (below) instead walks the group in row order and
+//   fills each run of consecutive blanks as a plain continuation directly after the nearest
+//   coded row above it, never past a following coded row without room to fit — see its own
+//   comment for the full rule. No Other/Miscellaneous reservation in this branch: once any real
+//   code exists in the group, an Other/Miscellaneous row already has (or will get, in its own
+//   row-order turn) a real value like any other, so no special-casing is needed.
+//
+// Factored out of assignLevelCodes so the Audit walkthrough (fillRestOfGroup, below) can run
+// this same rule against just ONE sibling group, not sweep the whole column, when the user has
+// only just typed a code for one row in it.
 function assignGroupCodes(rows: TaxonomyRow[], indices: number[], level: number): TaxonomyRow[] {
+  if (indices.some((i) => rows[i].codes[level])) return fillOrderedGaps(rows, indices, level);
+
+  // Greenfield spread — see the block comment above. A row that already holds a real code can
+  // never reach here (the check above routes any such group to fillOrderedGaps instead), but
+  // `used`/the per-row `if (row.codes[level]) continue;` guards are kept exactly as they were so
+  // this branch's own logic doesn't need to assume that.
   const result = [...rows];
   const otherIndices = indices.filter((i) => isOtherOrMiscellaneousLabel(result[i].descriptions[level] ?? ''));
   const otherIndexSet = new Set(otherIndices);
@@ -182,20 +196,8 @@ function assignGroupCodes(rows: TaxonomyRow[], indices: number[], level: number)
   return result;
 }
 
-// Assigns gap-spaced codes to every row whose own code at `level` is still blank, one sibling
-// group at a time. A row that already holds a real code (typed in manually before Auto Code was
-// run) is left untouched, and its value is excluded from the slots handed to its still-blank
-// siblings so nothing collides with it. Any Other/Miscellaneous sibling in the group is coded
-// separately from — and after — its ordinary siblings, always landing on the last slot the
-// group actually needs ("9" whenever the rest fits in 1-8) — but ONLY when it's actually the
-// convention Section 5 describes: that row physically sitting last in the group already. James's
-// report on a real imported file: two "Other ..." rows sat in the MIDDLE of an 8-row sibling
-// group, not at the end, and got the reserved-high-slot treatment anyway ("9" and "A") — which
-// left ordinary siblings further down the same group with LOWER values ("6", "7"), breaking
-// Section 4.4's hard ascending-order rule. That rule always wins over the "Other near 9"
-// convention, which is cosmetic by comparison — so a group where any Other row isn't already
-// last falls back to one combined, strictly row-order spread across every sibling, ordinary and
-// Other alike, guaranteeing the codes it produces can never violate ascending order.
+// One call to assignGroupCodes (above — greenfield spread or order-respecting patch, whichever
+// this group actually needs) per sibling group in the column.
 function assignLevelCodes(rows: TaxonomyRow[], level: number): TaxonomyRow[] {
   const groups = groupSiblingIndices(rows, level);
   let result = rows;
@@ -243,26 +245,16 @@ function replaceCode(rows: TaxonomyRow[], idx: number, level: number, code: stri
   return next;
 }
 
-/** For fillRestOfGroup only — NOT reused by assignLevelCodes/Auto Code, deliberately: that one
- * spreads a whole still-blank group from scratch, position-and-count only, which is exactly
- * wrong here. James's real file turned up the gap: a row he'd just given code "4" had several
- * newly-inserted rows after it, still blank — assignGroupCodes' spread, computed purely from
- * each blank's POSITION and the group's total COUNT with no regard for "4" actually being there,
- * hands them values with no relation to it (independently verified: it can even hand a LATER row
- * a LOWER value than an EARLIER one, an outright ascending-order violation, whenever an existing
- * code doesn't line up with where that position-based spread expected it).
- *
- * This instead walks the group in row order and fills each run of consecutive blanks with a
- * plain, consecutive continuation directly after the nearest coded row above it (James's own
+/** assignGroupCodes' "patch" branch (see its own comment for when this runs instead of the
+ * greenfield spread): walks the group in row order and fills each run of consecutive blanks with
+ * a plain, consecutive continuation directly after the nearest coded row above it (James's own
  * example: a row just coded "4" should hand its blank followers "5", "6", "7") — never
  * independently of what's already there, and never past a following already-coded row: a run
  * with a real code both before AND after it only gets filled if there's actually room for one
  * character per blank between them (two already-adjacent codes like "4"/"5" leave none at all,
  * and forcing something in there would just as surely break ascending order the other way) —
- * left untouched otherwise, falling back to the ordinary one-row-at-a-time Audit walkthrough for
- * it. No gap-reservation, no Other/Miscellaneous handling: those are Auto Code's own concerns for
- * coding an entire fresh group at once, not for patching a few new rows into an already-real
- * sequence. */
+ * left untouched otherwise, falling back to the ordinary one-row-at-a-time Audit walkthrough (or,
+ * for "Fill Missing Codes", to being coded by hand) for it. */
 function fillOrderedGaps(rows: TaxonomyRow[], indices: number[], level: number): TaxonomyRow[] {
   let result = rows;
   let floorSlot = -1;
@@ -300,19 +292,19 @@ function fillOrderedGaps(rows: TaxonomyRow[], indices: number[], level: number):
  * one row at a time, so fixing the row it happens to be pointing at still left every other
  * member of that exact group to its own separate trip through the walkthrough. The one value
  * just typed for THIS row is enough to code the rest of its own immediate sibling group right
- * away (fillOrderedGaps, above — NOT assignGroupCodes/Auto Code's own spread, see its comment
- * for why), scoped to only THIS row's group, since a value entered for one row says nothing
- * about an unrelated group elsewhere in the same column. Returns `rows` unchanged (same
- * reference) when nothing else in the group is blank, OR when every blank run turned out to have
- * no room to fill safely, so a caller can cheaply tell "nothing to re-render" from "group filled"
- * by reference equality. */
+ * away — assignGroupCodes always takes its "patch" branch here (the row just typed into
+ * guarantees the group has at least one real code in it), scoped to only THIS row's group, since
+ * a value entered for one row says nothing about an unrelated group elsewhere in the same
+ * column. Returns `rows` unchanged (same reference) when nothing else in the group is blank, OR
+ * when every blank run turned out to have no room to fill safely, so a caller can cheaply tell
+ * "nothing to re-render" from "group filled" by reference equality. */
 export function fillRestOfGroup(rows: TaxonomyRow[], rowId: string, level: number, paddingChar: string): TaxonomyRow[] {
   const rowIndex = rows.findIndex((r) => r.id === rowId);
   if (rowIndex === -1) return rows;
   const groups = groupSiblingIndices(rows, level);
   const indices = [...groups.values()].find((g) => g.includes(rowIndex));
   if (!indices || !indices.some((i) => i !== rowIndex && !rows[i].codes[level])) return rows;
-  const filled = fillOrderedGaps(rows, indices, level);
+  const filled = assignGroupCodes(rows, indices, level);
   if (filled === rows) return rows;
   let result = fillCodesDown(filled);
   result = padCodes(result, paddingChar);
