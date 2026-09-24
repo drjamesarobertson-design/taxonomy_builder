@@ -859,9 +859,12 @@ export default function App() {
    * before (fixing one thing on a row can genuinely reveal a different, previously-unchecked
    * problem on that same row, e.g. a blank description also hides whatever's wrong with that
    * row's code) — skipping any row that's now fully clean, including as a side effect of fixing
-   * a different one (Fill Codes / Pad Codes can clear several rows in one action). Shared by
-   * both Resume Audit (fromIndex = current cursor — "does this row still have a problem?") and
-   * Skip (fromIndex = cursor + 1 — "don't check this row again, move on"). Takes `rows`
+   * a different one (Fill Codes / Pad Codes can clear several rows in one action). Every caller
+   * passes `fromIndex = audit.cursor` (the row just fixed or accepted) — there's no Skip to move
+   * `fromIndex` past a still-unresolved row (James's report: repeated Skips left row 54's
+   * incomplete code unresolved while the panel had moved on to row 61, hiding an earlier hard
+   * issue behind a later one — Tranche 1's hard checks aren't dismissible, per Section 6.7, so
+   * the walk can now only ever advance past a row once it's actually fixed). Takes `rows`
    * explicitly rather than reading `project.rows` from closure — a caller that just applied a
    * fix via setProject/handleSettingsAndRowsChange can't rely on `project` reflecting it yet in
    * that same tick (React batches the state update), so it passes the just-computed rows
@@ -976,11 +979,6 @@ export default function App() {
     }
     jumpToAuditIssue(issue);
     setAudit({ ...audit, status: 'resuming' });
-  }
-
-  function handleAuditSkip() {
-    if (!audit) return;
-    advanceAudit(audit.cursor + 1);
   }
 
   // Accept (Tranche 2's soft, override-able checks only — Section 6.7: "inform, never block"):
@@ -2577,7 +2575,6 @@ export default function App() {
           currentIssueKind={audit.currentIssue?.kind ?? null}
           anchor={auditAnchor}
           onClearError={handleAuditClearError}
-          onSkip={handleAuditSkip}
           onAccept={handleAuditAccept}
           onExit={handleAuditExit}
           onResume={handleAuditResume}
