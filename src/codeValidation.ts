@@ -119,8 +119,16 @@ export interface AuditIssue {
    *   Resume Audit without first doing this by hand (right-click -> Toggle Case) understandably
    *   read as "the fix isn't registering", when nothing had actually changed yet. One button
    *   ("Fix and Resume Audit") does both. Still a cell to jump to/highlight, unlike 'auto' —
-   *   the fix itself just doesn't require manual typing. */
-  kind: 'code' | 'desc' | 'auto' | 'toggleCase';
+   *   the fix itself just doesn't require manual typing.
+   * - 'otherNotLast' / 'oversized' / 'outlier' — Tranche 2's soft, override-able checks (Section
+   *   6.7: "inform, never block"). Each jumps to the relevant cell like 'desc' does, but its
+   *   resolution is "Accept" (dismiss this specific warning for the rest of this audit run,
+   *   without requiring an actual fix) rather than a mandatory "Clear Error" — 'oversized' and
+   *   'outlier' additionally offer an assisted "Split"/"Edit" action that's really just the same
+   *   jump-and-let-the-user-decide as 'desc', per James's own confirmation ("just jump to that
+   *   area, like Clear Error"). Unlike the hard kinds above, Skip has no role here — the choice
+   *   is between acting on it (jump, then judge for yourself) and Accepting it outright. */
+  kind: 'code' | 'desc' | 'auto' | 'toggleCase' | 'otherNotLast' | 'oversized' | 'outlier';
   message: string;
 }
 
@@ -181,13 +189,103 @@ export function findPaddingSymmetryIssues(
   return result;
 }
 
-/** The full Audit Taxonomy walkthrough's issue list — Tranche 1 of James's spec: the checks
- * Lock Taxonomy used to run (blank description, blank/incomplete code, ascending-order
- * violation, childless ALL CAPS heading), plus the two new structural checks above. Tranche 2
- * (the "Other" placement, oversized/undersized sibling groups, far-right outliers, description
- * length) is deliberately not here yet — a separate round, per James's own "two tranches"
- * agreement, since each of those carries its own assisted action (Split, Edit) rather than
- * just a jump-to-cell fix. */
+/** Groups row indices by immediate sibling set — same level, same immediate parent — in row
+ * order. Feeds the three Tranche 2 checks below, which all reason about "this entry's place
+ * among its siblings" rather than about the row in isolation. */
+function siblingGroups(rows: TaxonomyRow[]): number[][] {
+  const groups = new Map<string, number[]>();
+  for (let i = 0; i < rows.length; i++) {
+    const level = levelOf(rows[i]);
+    if (level === -1) continue;
+    const key = `${level}:${immediateParentIndex(rows, i)}`;
+    const g = groups.get(key);
+    if (g) g.push(i);
+    else groups.set(key, [i]);
+  }
+  return [...groups.values()];
+}
+
+/** Section 5, step 6: "the last entry at that level should be 'Other [category name]'" — the
+ * open-ended catch-all belongs at the end of its group, sequenced after everything it might
+ * otherwise be mistaken to duplicate. Flags any sibling whose description starts with the word
+ * "Other" but isn't the last member of its own group. Soft warning (James: "give a warning if
+ * Other is NOT at the end of a series") — no assisted action, just Accept once seen. */
+export function findOtherNotLastIssues(rows: TaxonomyRow[]): number[] {
+  const result: number[] = [];
+  for (const group of siblingGroups(rows)) {
+    if (group.length < 2) continue;
+    const lastIdx = group[group.length - 1];
+    for (const i of group) {
+      if (i === lastIdx) continue;
+      const level = levelOf(rows[i]);
+      const text = (rows[i].descriptions[level] ?? '').trim();
+      if (/^other\b/i.test(text)) result.push(i);
+    }
+  }
+  return result;
+}
+
+/** Section 3: "between five and nine sub-items" at every level. Lock/the item-count warning
+ * already flag this as entries are typed (GuidanceBanner); this is the same rule re-checked at
+ * Audit time, group by group, for anything that slipped through — e.g. imported wholesale via
+ * Import CSV, where nothing was ever typed one row at a time to trigger the live warning. James:
+ * "give a warning if more than nine in a series" — attaches to the first row of the oversized
+ * group, since that's the natural place to jump to before deciding how to split it. */
+export function findOversizedGroups(rows: TaxonomyRow[]): Array<{ rowIndex: number; count: number }> {
+  const result: Array<{ rowIndex: number; count: number }> = [];
+  for (const group of siblingGroups(rows)) {
+    if (group.length > 9) result.push({ rowIndex: group[0], count: group.length });
+  }
+  return result;
+}
+
+/** James: "give a warning if a series is one or more columns right of all the rest of the
+ * list" — one branch of the taxonomy reaching noticeably deeper than every other branch, so its
+ * codes end up longer than they need to be relative to the rest of the table. Compares each
+ * top-level (level 0) branch's own deepest reach against every other branch's; flags the branch
+ * only when it is the SINGLE deepest one with a clear margin over the next deepest — a level
+ * shared by two or more branches isn't "far right of all the rest," it's just how deep this
+ * taxonomy generally goes. Attaches to the deepest row actually found in that branch, the
+ * concrete cell "Edit" jumps to. Returns at most one result (the most extreme branch) — a first
+ * pass at this check; only meaningful with at least two top-level branches to compare. */
+export function findFarRightOutlierBranch(
+  rows: TaxonomyRow[],
+): { deepestRowIndex: number; depth: number } | null {
+  const branchStarts: number[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (levelOf(rows[i]) === 0) branchStarts.push(i);
+  }
+  if (branchStarts.length < 2) return null;
+
+  const branches = branchStarts.map((start, idx) => {
+    const end = idx + 1 < branchStarts.length ? branchStarts[idx + 1] : rows.length;
+    let depth = 0;
+    let deepestRowIndex = start;
+    for (let i = start; i < end; i++) {
+      const level = levelOf(rows[i]);
+      if (level > depth) {
+        depth = level;
+        deepestRowIndex = i;
+      }
+    }
+    return { depth, deepestRowIndex };
+  });
+
+  let maxIdx = 0;
+  for (let i = 1; i < branches.length; i++) {
+    if (branches[i].depth > branches[maxIdx].depth) maxIdx = i;
+  }
+  const secondDepth = Math.max(...branches.filter((_, i) => i !== maxIdx).map((b) => b.depth));
+  if (branches[maxIdx].depth > secondDepth) {
+    return { deepestRowIndex: branches[maxIdx].deepestRowIndex, depth: branches[maxIdx].depth };
+  }
+  return null;
+}
+
+/** The full Audit Taxonomy walkthrough's issue list — Tranche 1 of James's spec (blank
+ * description, blank/incomplete code, ascending-order violation, childless ALL CAPS heading,
+ * hierarchy skip, padding symmetry) plus Tranche 2's three soft, assisted-action checks above
+ * ("Other" placement, oversized sibling groups, far-right outlier branches). */
 export function findAuditIssues(
   rows: TaxonomyRow[],
   properCaseOnly: boolean,
@@ -253,6 +351,38 @@ export function findAuditIssues(
       level: violation.level,
       kind: 'code',
       message: `This code ("${violation.value}") is out of ascending order after row ${violation.prevRowIndex + 1} ("${violation.prevValue}") in this column.`,
+    });
+  }
+
+  const otherNotLast = findOtherNotLastIssues(rows);
+  for (const i of otherNotLast) {
+    issues.push({
+      rowId: rows[i].id,
+      level: levelOf(rows[i]),
+      kind: 'otherNotLast',
+      message:
+        'This "Other" entry isn\'t the last one in its group. By convention it belongs at the end, as the open-ended catch-all for whatever the rest of the group doesn\'t already cover.',
+    });
+  }
+
+  const oversizedGroups = findOversizedGroups(rows);
+  for (const { rowIndex, count } of oversizedGroups) {
+    issues.push({
+      rowId: rows[rowIndex].id,
+      level: levelOf(rows[rowIndex]),
+      kind: 'oversized',
+      message: `This group has ${count} entries — more than the recommended five to nine. Consider splitting it into two or more sub-categories.`,
+    });
+  }
+
+  const outlierBranch = findFarRightOutlierBranch(rows);
+  if (outlierBranch) {
+    issues.push({
+      rowId: rows[outlierBranch.deepestRowIndex].id,
+      level: outlierBranch.depth,
+      kind: 'outlier',
+      message:
+        'This branch runs one or more columns deeper than every other branch in the taxonomy. Explore whether it can be restructured to shorten its codes by a column or two.',
     });
   }
 
