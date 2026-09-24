@@ -40,6 +40,21 @@ further rounds of testing feedback. The tool currently supports, in full:
   should sit between the new code columns, before handing off into the
   existing title/table-name/purpose confirm step
   (`CsvImportConfirm`/`handleCsvImportConfirm`) unchanged.
+- **Library moved to per-account cloud storage** (James's ask): the Library sidebar
+  (`library.ts`) now stores its entries in Supabase (table `library_entries`,
+  `supabase/0002_create_library_entries.sql`), scoped per signed-in user via Row Level
+  Security, replacing the previous browser-local IndexedDB storage — each subscriber's
+  Library now follows them to any device and is genuinely private to their own account.
+  **Requires a one-time manual step**: `supabase/0002_create_library_entries.sql` must be
+  run once in Supabase's SQL Editor before this works — same precedent as
+  `0001_create_profiles.sql`. Until that's run, every Library read/write fails with a
+  clear, caught error (no crash — verified in this sandbox, which has no network route to
+  Supabase at all) and the app falls back to being fully usable minus the Library sidebar.
+  A one-time migration (`migrateLegacyLocalLibrary`, called on every app startup) copies
+  a browser's old local IndexedDB Library across to the signed-in user's cloud account the
+  first time it finds the cloud Library empty — never deletes the local copy, so it's a
+  safe no-op to re-run. Seeding new subscribers with a starter set of sample taxonomies on
+  signup is a deliberately separate, not-yet-built follow-on piece.
 - **Auto Code Gap Increment** (James's ask): a new per-taxonomy setting
   (`settings.autoCodeGapIncrement`, 1 or 2, default 2) controlling Auto
   Code's and Fill Missing Codes' gap-coding step for Alpha and Alpha Numeric
