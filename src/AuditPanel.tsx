@@ -14,10 +14,15 @@ interface AuditPanelProps {
   /** The current issue's kind (or null in checking/clean) — decides the primary action
    * button's label: "Clear Error" (code/desc, jump for a manual fix), "Fix Automatically"
    * (auto, no cell involved at all), "Fix and Resume Audit" (toggleCase — still a cell to
-   * look at, but the fix itself is one click, not manual typing), or one of Tranche 2's soft,
-   * override-able checks ('otherNotLast' / 'oversized' / 'outlier') — these swap "Skip" for
-   * "Accept" (Section 6.7: soft warnings inform, never block) and, for the two with an assisted
-   * action, add "Split" / "Edit" — which just jump to the cell, exactly like "Clear Error". */
+   * look at, but the fix itself is one click, not manual typing). These four are Tranche 1's
+   * hard, non-dismissible checks (Section 6.7) — no Skip/Accept for any of them, only the fix
+   * itself, so the walkthrough can never leave an earlier one of these behind unresolved while
+   * showing a later row (James's report: seven Skips in a row on "incomplete code" issues left
+   * row 54 still blank while the panel had moved on to row 61 — an earlier still-broken row
+   * effectively hidden from view). Tranche 2's soft, override-able checks ('otherNotLast' /
+   * 'oversized' / 'outlier') are the only ones with a dismissal option — "Accept" (Section 6.7:
+   * soft warnings inform, never block) — and, for the two with an assisted action, add
+   * "Split" / "Edit", which just jump to the cell, exactly like "Clear Error". */
   currentIssueKind: 'code' | 'desc' | 'auto' | 'toggleCase' | 'otherNotLast' | 'oversized' | 'outlier' | null;
   /** Where App.tsx just scrolled/focused the current issue's cell to, in viewport coordinates —
    * null while there's no cell for this state (checking/clean/auto-fixable). James's report:
@@ -28,7 +33,6 @@ interface AuditPanelProps {
    * one (the user can still drag it after that, same as before). */
   anchor: { top: number; left: number } | null;
   onClearError: () => void;
-  onSkip: () => void;
   onAccept: () => void;
   onExit: () => void;
   onResume: () => void;
@@ -54,7 +58,6 @@ export default function AuditPanel({
   currentIssueKind,
   anchor,
   onClearError,
-  onSkip,
   onAccept,
   onExit,
   onResume,
@@ -145,13 +148,9 @@ export default function AuditPanel({
               <button type="button" onClick={onExit}>
                 Exit Audit
               </button>
-              {currentIssueKind === 'otherNotLast' || currentIssueKind === 'oversized' || currentIssueKind === 'outlier' ? (
+              {(currentIssueKind === 'otherNotLast' || currentIssueKind === 'oversized' || currentIssueKind === 'outlier') && (
                 <button type="button" onClick={onAccept}>
                   Accept
-                </button>
-              ) : (
-                <button type="button" onClick={onSkip}>
-                  Skip
                 </button>
               )}
               {status === 'issue' && currentIssueKind !== 'otherNotLast' && (

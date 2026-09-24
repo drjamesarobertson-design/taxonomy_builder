@@ -136,8 +136,10 @@ export interface AuditIssue {
    *   without requiring an actual fix) rather than a mandatory "Clear Error" — 'oversized' and
    *   'outlier' additionally offer an assisted "Split"/"Edit" action that's really just the same
    *   jump-and-let-the-user-decide as 'desc', per James's own confirmation ("just jump to that
-   *   area, like Clear Error"). Unlike the hard kinds above, Skip has no role here — the choice
-   *   is between acting on it (jump, then judge for yourself) and Accepting it outright. */
+   *   area, like Clear Error"). The four hard kinds above have no dismissal option at all — no
+   *   Skip, no Accept — only their fix action, so the walkthrough can never advance past one of
+   *   them while it's still unresolved (James's report: repeated Skips left an earlier row's
+   *   incomplete code unaddressed while the panel had moved on several rows further down). */
   kind: 'code' | 'desc' | 'auto' | 'toggleCase' | 'otherNotLast' | 'oversized' | 'outlier';
   message: string;
 }

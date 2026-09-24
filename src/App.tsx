@@ -21,7 +21,7 @@ import type { AuditIssue } from './codeValidation';
 import { codeInputId, descInputId } from './domIds';
 import AuditPanel from './AuditPanel';
 import type { AuditOrigin } from './AuditPanel';
-import { AUTO_CODE_TYPES, IMPLEMENTED_AUTO_CODE_TYPES, autoCodeAlphaNumeric } from './autoCode';
+import { AUTO_CODE_TYPES, IMPLEMENTED_AUTO_CODE_TYPES, autoCodeAlphaNumeric, fillRestOfGroup } from './autoCode';
 import type { AutoCodeType } from './autoCode';
 import { FORMAT_MODES, applyFormatDescriptions, collectUnknownAbbreviationWords } from './formatDescriptions';
 import type { FormatMode } from './formatDescriptions';
@@ -59,6 +59,17 @@ import { bumpFileVersion } from './fileVersion';
 import './App.css';
 
 export default function App() {
+  // James's ask: a small, always-visible "PR #nnn" tag so he can confirm — from inside the app
+  // itself, without ever touching GitHub — that a refresh actually picked up the fix he was told
+  // to expect. VITE_PR_NUMBER is set at build time by the GitHub Pages deploy workflow, parsed
+  // straight from the merged commit's own message (deploy-pages.yml); it's genuinely absent in
+  // an ordinary local `npm run dev`, which is the only time "Local build" shows instead.
+  const buildInfoTag = (
+    <div className="build-info-tag" aria-hidden="true">
+      {import.meta.env.VITE_PR_NUMBER ? `PR #${import.meta.env.VITE_PR_NUMBER}` : 'Local build'}
+    </div>
+  );
+
   // Sign-on gate — real accounts via Supabase (auth.ts), which persists its own session in
   // this browser (survives reloads; only Log Out or clearing site data forgets it). The
   // initial session check is async, so `authChecked` gates rendering Login vs. the app itself
@@ -859,9 +870,12 @@ export default function App() {
    * before (fixing one thing on a row can genuinely reveal a different, previously-unchecked
    * problem on that same row, e.g. a blank description also hides whatever's wrong with that
    * row's code) — skipping any row that's now fully clean, including as a side effect of fixing
-   * a different one (Fill Codes / Pad Codes can clear several rows in one action). Shared by
-   * both Resume Audit (fromIndex = current cursor — "does this row still have a problem?") and
-   * Skip (fromIndex = cursor + 1 — "don't check this row again, move on"). Takes `rows`
+   * a different one (Fill Codes / Pad Codes can clear several rows in one action). Every caller
+   * passes `fromIndex = audit.cursor` (the row just fixed or accepted) — there's no Skip to move
+   * `fromIndex` past a still-unresolved row (James's report: repeated Skips left row 54's
+   * incomplete code unresolved while the panel had moved on to row 61, hiding an earlier hard
+   * issue behind a later one — Tranche 1's hard checks aren't dismissible, per Section 6.7, so
+   * the walk can now only ever advance past a row once it's actually fixed). Takes `rows`
    * explicitly rather than reading `project.rows` from closure — a caller that just applied a
    * fix via setProject/handleSettingsAndRowsChange can't rely on `project` reflecting it yet in
    * that same tick (React batches the state update), so it passes the just-computed rows
@@ -978,11 +992,6 @@ export default function App() {
     setAudit({ ...audit, status: 'resuming' });
   }
 
-  function handleAuditSkip() {
-    if (!audit) return;
-    advanceAudit(audit.cursor + 1);
-  }
-
   // Accept (Tranche 2's soft, override-able checks only — Section 6.7: "inform, never block"):
   // dismisses this one warning for the rest of the current audit run without requiring an actual
   // fix, then re-checks from the same position in case this row has another issue underneath it.
@@ -1087,9 +1096,28 @@ export default function App() {
     if (issue.kind !== 'code' && issue.kind !== 'desc') return;
     const targetId = issue.kind === 'code' ? codeInputId(issue.level, issue.rowId) : descInputId(issue.level, issue.rowId);
     function handleFocusOut(e: FocusEvent) {
-      if ((e.target as HTMLElement | null)?.id === targetId) {
-        advanceAudit(audit!.cursor);
+      if ((e.target as HTMLElement | null)?.id !== targetId || !project) return;
+      // James's ask, straight from the walkthrough: a whole run of siblings sharing the exact
+      // same blank code column ("a series") shouldn't mean one Audit trip per row — the value
+      // just typed for THIS row is enough to gap-code the rest of its own immediate sibling
+      // group right away, same rule Auto Code/Fill Missing Codes already use. Scoped to only
+      // THIS row's group (fillRestOfGroup), never the whole column, and a no-op (same rows
+      // reference back) for the ordinary case of one isolated blank code elsewhere. Gated on the
+      // row Audit was actually pointing at having a REAL value now, not merely "this cell lost
+      // focus" — jumpToAuditIssue's own focus+select of the NEXT issue's cell, immediately after
+      // this one, is itself a focus change that can end up re-entering this handler for a row
+      // nobody has typed into yet; without this check that spilled a full group-fill onto an
+      // entirely unrelated, still-blank sibling group elsewhere in the same column.
+      let rows = project.rows;
+      const editedRow = issue.kind === 'code' ? rows.find((r) => r.id === issue.rowId) : undefined;
+      if (issue.kind === 'code' && editedRow?.codes[issue.level]) {
+        const filled = fillRestOfGroup(rows, issue.rowId, issue.level, project.settings.paddingChar);
+        if (filled !== rows) {
+          rows = filled;
+          handleSettingsAndRowsChange(project.settings, rows);
+        }
       }
+      advanceAudit(audit!.cursor, rows);
     }
     document.addEventListener('focusout', handleFocusOut);
     return () => document.removeEventListener('focusout', handleFocusOut);
@@ -1598,13 +1626,24 @@ export default function App() {
 
   if (!authChecked) return null;
   if (passwordRecovery) {
-    return <ResetPassword onDone={() => setPasswordRecovery(false)} />;
+    return (
+      <>
+        <ResetPassword onDone={() => setPasswordRecovery(false)} />
+        {buildInfoTag}
+      </>
+    );
   }
   if (!authedEmail) {
-    return <Login onSuccess={setAuthedEmail} />;
+    return (
+      <>
+        <Login onSuccess={setAuthedEmail} />
+        {buildInfoTag}
+      </>
+    );
   }
 
   return (
+    <>
     <div className="app-shell">
       <LibrarySidebar
         entries={libraryEntries}
@@ -2577,7 +2616,6 @@ export default function App() {
           currentIssueKind={audit.currentIssue?.kind ?? null}
           anchor={auditAnchor}
           onClearError={handleAuditClearError}
-          onSkip={handleAuditSkip}
           onAccept={handleAuditAccept}
           onExit={handleAuditExit}
           onResume={handleAuditResume}
@@ -2621,5 +2659,7 @@ export default function App() {
       )}
       </div>
     </div>
+    {buildInfoTag}
+    </>
   );
 }
