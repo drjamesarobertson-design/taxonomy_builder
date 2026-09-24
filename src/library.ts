@@ -279,15 +279,32 @@ async function readLegacyEntries(): Promise<LibraryEntry[]> {
   }
 }
 
+// James's report (caught before he tried it, not after): this browser's old local IndexedDB
+// Library belongs to whichever account happened to be using this browser before cloud storage
+// existed — it isn't scoped to any one account. Gating migrateLegacyLocalLibrary purely on "is
+// THIS account's cloud Library empty" meant a second, different account signing into the SAME
+// browser (e.g. testing a brand-new subscriber signup right here) would also see an empty cloud
+// Library and walk off with a copy of the FIRST account's entire old local Library — not the
+// curated starter samples, someone else's real, possibly private, taxonomies. A plain
+// localStorage flag makes the offer happen at most once per browser, ever, regardless of which
+// account is signed in when it fires — exactly matching what "this browser's local data" can
+// actually mean once more than one account might use it.
+const LEGACY_MIGRATION_DONE_KEY = 'taxonomy-builder-legacy-library-migration-done';
+
 /** Brings this browser's old local Library across to the signed-in user's cloud account —
- * called once on startup (App.tsx), before the first `listLibraryEntries()`. Only acts when the
- * cloud Library is genuinely empty AND this browser has local entries to offer, so it never
- * overwrites or duplicates onto an account that already has cloud entries (including from a
- * previous run of this same migration). Returns how many entries were migrated, or 0. */
+ * called once on startup (App.tsx), before the first `listLibraryEntries()`. Only acts the FIRST
+ * time it's ever run on this browser (see LEGACY_MIGRATION_DONE_KEY above) — and even then, only
+ * when the cloud Library is genuinely empty AND this browser has local entries to offer. Returns
+ * how many entries were migrated, or 0. */
 export async function migrateLegacyLocalLibrary(): Promise<number> {
+  if (localStorage.getItem(LEGACY_MIGRATION_DONE_KEY) === '1') return 0;
   const cloud = await listLibraryEntries();
-  if (cloud.length > 0) return 0;
+  if (cloud.length > 0) {
+    localStorage.setItem(LEGACY_MIGRATION_DONE_KEY, '1');
+    return 0;
+  }
   const local = await readLegacyEntries();
+  localStorage.setItem(LEGACY_MIGRATION_DONE_KEY, '1');
   if (local.length === 0) return 0;
   for (const entry of local) {
     await addLibraryEntry(migrateProjectData(entry.project), entry.category);
