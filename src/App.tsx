@@ -291,6 +291,11 @@ export default function App() {
     cursor: number;
     currentIssue: AuditIssue | null;
     status: 'checking' | 'clean' | 'issue' | 'resuming';
+    // Tranche 2's soft, override-able checks (otherNotLast/oversized/outlier — Section 6.7:
+    // "inform, never block") are "Accept"-ed rather than fixed. Keys are `${rowId}:${kind}`,
+    // scoped to this one audit run — a fresh run re-surfaces anything still true, since
+    // accepting one is a judgement call for right now, not a standing suppression.
+    accepted: ReadonlySet<string>;
   } | null>(null);
   // The "Audit — Y/N" prompt (default Yes) shown before Export to CSV specifically.
   const [csvAuditPrompt, setCsvAuditPrompt] = useState(false);
@@ -731,6 +736,12 @@ export default function App() {
     runAudit('lock');
   }
 
+  /** Identifies one issue for the Accept set — a row can only ever carry one issue of a given
+   * kind at a time, so rowId+kind is a stable, sufficient key across repeated fresh checks. */
+  function auditIssueKey(issue: AuditIssue): string {
+    return `${issue.rowId}:${issue.kind}`;
+  }
+
   /** Every distinct rowId carrying >=1 issue, in row order — the fixed "N" denominator for
    * "Issue X of N", and the list `advanceAudit` walks. */
   function rowsWithIssues(issues: AuditIssue[]): string[] {
@@ -800,7 +811,7 @@ export default function App() {
     const issues = findAuditIssues(project.rows, project.settings.properCaseOnly, project.settings.paddingChar);
     const originalRowIds = rowsWithIssues(issues);
     const firstIssue = issues[0] ?? null;
-    setAudit({ origin, originalRowIds, cursor: 0, currentIssue: firstIssue, status: 'checking' });
+    setAudit({ origin, originalRowIds, cursor: 0, currentIssue: firstIssue, status: 'checking', accepted: new Set() });
     setTimeout(() => {
       setAudit((current) => {
         if (!current || current.origin !== origin) return current;
@@ -823,9 +834,16 @@ export default function App() {
    * that same tick (React batches the state update), so it passes the just-computed rows
    * straight through instead of reading the still-stale `project`. Always jumps to (or clears,
    * on reaching clean) wherever it lands — see jumpToAuditIssue. */
-  function advanceAudit(fromIndex: number, rows: TaxonomyRow[] = project?.rows ?? []) {
+  function advanceAudit(
+    fromIndex: number,
+    rows: TaxonomyRow[] = project?.rows ?? [],
+    accepted: ReadonlySet<string> = audit?.accepted ?? new Set<string>(),
+  ) {
     if (!project || !audit) return;
-    const fresh = findAuditIssues(rows, project.settings.properCaseOnly, project.settings.paddingChar);
+    const rawFresh = findAuditIssues(rows, project.settings.properCaseOnly, project.settings.paddingChar);
+    // Tranche 2's soft checks are dismissed via Accept rather than fixed — an accepted issue is
+    // filtered out here so it neither reappears in the walk nor counts against reaching "clean".
+    const fresh = rawFresh.filter((issue) => !accepted.has(auditIssueKey(issue)));
 
     // James's report (and a real, serious bug): Skip on the LAST issue in the walk-through was
     // reporting "clean" — including routing a Lock-origin run straight to "Confirm Lock" — even
@@ -834,7 +852,7 @@ export default function App() {
     // full fresh check across the whole taxonomy, independent of where the cursor happens to be,
     // is the only thing allowed to report clean. Never let Lock through on anything less.
     if (fresh.length === 0) {
-      setAudit({ ...audit, cursor: audit.originalRowIds.length, currentIssue: null, status: 'clean' });
+      setAudit({ ...audit, accepted, cursor: audit.originalRowIds.length, currentIssue: null, status: 'clean' });
       jumpToAuditIssue(null);
       return;
     }
@@ -861,7 +879,7 @@ export default function App() {
 
     if (next < audit.originalRowIds.length && firstIssueByRow.has(audit.originalRowIds[next])) {
       const nextIssue = firstIssueByRow.get(audit.originalRowIds[next]) ?? null;
-      setAudit({ ...audit, cursor: next, currentIssue: nextIssue, status: 'issue' });
+      setAudit({ ...audit, accepted, cursor: next, currentIssue: nextIssue, status: 'issue' });
       jumpToAuditIssue(nextIssue);
       return;
     }
@@ -872,6 +890,7 @@ export default function App() {
     const newIssue = fresh[0];
     setAudit({
       ...audit,
+      accepted,
       originalRowIds: [...audit.originalRowIds, newIssue.rowId],
       cursor: audit.originalRowIds.length,
       currentIssue: newIssue,
@@ -923,6 +942,16 @@ export default function App() {
   function handleAuditSkip() {
     if (!audit) return;
     advanceAudit(audit.cursor + 1);
+  }
+
+  // Accept (Tranche 2's soft, override-able checks only — Section 6.7: "inform, never block"):
+  // dismisses this one warning for the rest of the current audit run without requiring an actual
+  // fix, then re-checks from the same position in case this row has another issue underneath it.
+  function handleAuditAccept() {
+    if (!audit || !audit.currentIssue || !project) return;
+    const nextAccepted = new Set(audit.accepted);
+    nextAccepted.add(auditIssueKey(audit.currentIssue));
+    advanceAudit(audit.cursor, project.rows, nextAccepted);
   }
 
   function handleAuditResume() {
@@ -2434,6 +2463,7 @@ export default function App() {
           anchor={auditAnchor}
           onClearError={handleAuditClearError}
           onSkip={handleAuditSkip}
+          onAccept={handleAuditAccept}
           onExit={handleAuditExit}
           onResume={handleAuditResume}
           onLockFromClean={() => {
