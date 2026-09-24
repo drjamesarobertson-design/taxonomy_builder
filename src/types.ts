@@ -145,6 +145,15 @@ export interface TaxonomySettings {
    * at a time as the user answers "keep this in caps?" prompts; defaults to [] so every older
    * project file behaves exactly as before. */
   customAbbreviations: string[];
+  /** James's ask: Auto Code / Fill Missing Codes' gap-coding step, for Alpha and Alpha Numeric
+   * Code Restrictions only (Numeric Only keeps its existing adaptive spread-to-fill-1-8 rule —
+   * with only nine digits available there's no room to hold a fixed step and still cover a
+   * typical group). A fixed step of 1 (consecutive, "1, 2, 3...") or 2 ("1, 3, 5, 7, 9, B, D...",
+   * James's own example, continuing past "9" into letters exactly as CODE_SLOTS already orders
+   * them) rather than the previous adaptive floor(8 / count) step, which produced a different gap
+   * for almost every group size. Defaults to 2, matching his example; every older project file
+   * gets this same default via storage.ts's migration. */
+  autoCodeGapIncrement: 1 | 2;
 }
 
 export interface TaxonomyRow {
@@ -198,6 +207,7 @@ export const DEFAULT_SETTINGS: TaxonomySettings = {
   properCaseOnly: false,
   singleCodeColumn: false,
   customAbbreviations: [],
+  autoCodeGapIncrement: 2,
 };
 
 export function createEmptyRow(numLevels: number, suffixes: SuffixField[] = []): TaxonomyRow {

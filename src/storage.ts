@@ -80,6 +80,11 @@ export function migrateProjectData(data: TaxonomyProject): TaxonomyProject {
   // Older files predate Format Descriptions' custom abbreviation library — default to none,
   // matching the seed-list-only behaviour before this existed.
   if (!Array.isArray(settings.customAbbreviations)) settings.customAbbreviations = [];
+  // Older files predate the Auto Code gap-increment setting — default to 2, matching James's
+  // own example ("1, 3, 5, 7, 9, B, D...") for every taxonomy that hasn't chosen otherwise.
+  if (settings.autoCodeGapIncrement !== 1 && settings.autoCodeGapIncrement !== 2) {
+    settings.autoCodeGapIncrement = 2;
+  }
   const project = data as unknown as Record<string, unknown>;
   if (typeof project.fileVersions !== 'object' || project.fileVersions === null) {
     project.fileVersions = {};

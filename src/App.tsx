@@ -31,7 +31,9 @@ import NewTaxonomyForm from './NewTaxonomyForm';
 import SimpleTaxonomySetup from './SimpleTaxonomySetup';
 import GuidanceBanner from './GuidanceBanner';
 import SettingsModal from './SettingsModal';
-import { parseDiscreteCsv, readFileAsText } from './csvImport';
+import { parseDiscreteCsv, parseCompositeCodeCsv, buildSeparatedCsv, readFileAsText } from './csvImport';
+import type { ParsedCompositeCsv } from './csvImport';
+import SeparateCodeElementsSetup from './SeparateCodeElementsSetup';
 import type { ParsedDiscreteCsv } from './csvImport';
 import CsvImportConfirm from './CsvImportConfirm';
 import type { CsvImportFields } from './CsvImportConfirm';
@@ -175,6 +177,17 @@ export default function App() {
   const [pendingCsvImport, setPendingCsvImport] = useState<{ parsed: ParsedDiscreteCsv; defaultTitle: string } | null>(
     null,
   );
+  // James's ask: "Separate Out Code Elements" — a variant CSV import for files carrying one
+  // composite/concatenated code per row instead of this app's own one-char-per-column layout.
+  // Its own file picker and its own delimiter-setup step (SeparateCodeElementsSetup.tsx) feed
+  // into `pendingCsvImport` above once the user's chosen delimiter positions turn the parsed
+  // composite codes into an ordinary ParsedDiscreteCsv, so everything downstream of that point
+  // (CsvImportConfirm, handleCsvImportConfirm) is shared, unmodified, with the plain CSV import.
+  const separateCodeFileInputRef = useRef<HTMLInputElement>(null);
+  const [pendingSeparateCodeImport, setPendingSeparateCodeImport] = useState<{
+    parsed: ParsedCompositeCsv;
+    defaultTitle: string;
+  } | null>(null);
 
   // Bumped every time a genuinely new or freshly-loaded project replaces the current one (never
   // on an ordinary edit) — passed to Grid as its React key, so Grid remounts cleanly instead of
@@ -1153,7 +1166,14 @@ export default function App() {
       let rows = project.rows;
       const editedRow = issue.kind === 'code' ? rows.find((r) => r.id === issue.rowId) : undefined;
       if (issue.kind === 'code' && editedRow?.codes[issue.level]) {
-        const filled = fillRestOfGroup(rows, issue.rowId, issue.level, project.settings.paddingChar);
+        const filled = fillRestOfGroup(
+          rows,
+          issue.rowId,
+          issue.level,
+          project.settings.paddingChar,
+          project.settings.codeRestriction,
+          project.settings.autoCodeGapIncrement,
+        );
         if (filled !== rows) {
           rows = filled;
           handleSettingsAndRowsChange(project.settings, rows);
@@ -1482,6 +1502,50 @@ export default function App() {
     setProjectGeneration((g) => g + 1);
   }
 
+  function handleSeparateCodeCsvClick() {
+    // Same Lock Taxonomy / existing-content guards as the plain CSV import above — this also
+    // replaces the whole working project wholesale.
+    if (project?.settings.locked) {
+      alert('This taxonomy is locked and cannot be replaced by a CSV import. Unlock it first if this is genuinely necessary.');
+      return;
+    }
+    if (project && hasAnyContent(project.rows) && !confirm('This will clear the existing table content — proceed?')) {
+      return;
+    }
+    separateCodeFileInputRef.current?.click();
+  }
+
+  async function handleSeparateCodeFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const text = await readFileAsText(file);
+      const parsed = parseCompositeCodeCsv(text);
+      if ('error' in parsed) {
+        setLoadError(parsed.error);
+        return;
+      }
+      setLoadError(null);
+      const defaultTitle = file.name.replace(/\.csv$/i, '');
+      setPendingSeparateCodeImport({ parsed, defaultTitle });
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Could not read this file.');
+    }
+  }
+
+  // SeparateCodeElementsSetup's own "Continue" — turns the composite-code parse plus the user's
+  // chosen delimiter positions/character into an ordinary ParsedDiscreteCsv, then hands off into
+  // the exact same pendingCsvImport / CsvImportConfirm / handleCsvImportConfirm flow the plain
+  // CSV import already uses, rather than duplicating that title/table-name/purpose step.
+  function handleSeparateCodeSetupConfirm(delimiterPositions: number[], codeDelimiterChar: string) {
+    if (!pendingSeparateCodeImport) return;
+    const { parsed, defaultTitle } = pendingSeparateCodeImport;
+    const discrete = buildSeparatedCsv(parsed, delimiterPositions, codeDelimiterChar);
+    setPendingSeparateCodeImport(null);
+    setPendingCsvImport({ parsed: discrete, defaultTitle });
+  }
+
   function handleSaveSettings(fields: SettingsFields) {
     if (!project) return;
     // Number of code columns can move either way here — SettingsModal only ever submits a
@@ -1513,6 +1577,7 @@ export default function App() {
         indentChar: fields.indentChar,
         numLevels: newNumLevels,
         delimiterPositions: fields.delimiterPositions,
+        autoCodeGapIncrement: fields.autoCodeGapIncrement,
       },
     });
     setDirty(true);
@@ -1547,7 +1612,12 @@ export default function App() {
       setLoadError(`Auto Code for "${autoCodeType}" isn't built yet — only "${IMPLEMENTED_AUTO_CODE_TYPES[0]}" is available right now.`);
       return;
     }
-    const newRows = autoCodeAlphaNumeric(project.rows, project.settings.paddingChar);
+    const newRows = autoCodeAlphaNumeric(
+      project.rows,
+      project.settings.paddingChar,
+      autoCodeType,
+      project.settings.autoCodeGapIncrement,
+    );
     handleSettingsAndRowsChange({ ...project.settings, codeRestriction: autoCodeType }, newRows);
     setShowAutoCode(false);
   }
@@ -1805,6 +1875,16 @@ export default function App() {
                 Import CSV
               </button>
             )}
+            {project && (
+              <button
+                type="button"
+                className="toolbar-alt"
+                onClick={handleSeparateCodeCsvClick}
+                title="Import a CSV with one composite/concatenated code per row, splitting each character into its own code column"
+              >
+                Separate Out Code Elements
+              </button>
+            )}
             {project && <span className="toolbar-divider" />}
             {project && (
               <div className="lock-menu-wrapper" ref={lockMenuRef}>
@@ -1956,6 +2036,13 @@ export default function App() {
               style={{ display: 'none' }}
               onChange={handleCsvFileSelected}
             />
+            <input
+              ref={separateCodeFileInputRef}
+              type="file"
+              accept=".csv"
+              style={{ display: 'none' }}
+              onChange={handleSeparateCodeFileSelected}
+            />
           </div>
           <Logo className="app-logo" />
         </div>
@@ -2017,6 +2104,13 @@ export default function App() {
             </button>
             <button type="button" onClick={handleImportCsvClick} title="Import a taxonomy from a Discrete Columns CSV">
               Import CSV
+            </button>
+            <button
+              type="button"
+              onClick={handleSeparateCodeCsvClick}
+              title="Import a CSV with one composite/concatenated code per row, splitting each character into its own code column"
+            >
+              Separate Out Code Elements
             </button>
             <button
               type="button"
@@ -2220,6 +2314,14 @@ export default function App() {
           defaultTitle={pendingCsvImport.defaultTitle}
           onConfirm={handleCsvImportConfirm}
           onCancel={() => setPendingCsvImport(null)}
+        />
+      )}
+
+      {pendingSeparateCodeImport && (
+        <SeparateCodeElementsSetup
+          parsed={pendingSeparateCodeImport.parsed}
+          onConfirm={handleSeparateCodeSetupConfirm}
+          onCancel={() => setPendingSeparateCodeImport(null)}
         />
       )}
 

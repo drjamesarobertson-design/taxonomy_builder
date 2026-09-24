@@ -13,6 +13,7 @@ export interface SettingsFields {
   indentChar: string;
   numLevels: number;
   delimiterPositions: number[];
+  autoCodeGapIncrement: 1 | 2;
 }
 
 interface SettingsModalProps {
@@ -62,6 +63,7 @@ export default function SettingsModal({ project, onSave, onClose, helpText }: Se
   const [numLevelsText, setNumLevelsText] = useState(String(project.settings.numLevels));
   const [numLevelsError, setNumLevelsError] = useState<string | null>(null);
   const [delimiterPositions, setDelimiterPositions] = useState<number[]>(project.settings.delimiterPositions);
+  const [autoCodeGapIncrement, setAutoCodeGapIncrement] = useState<1 | 2>(project.settings.autoCodeGapIncrement);
 
   // The fewest columns that would still hold every row's actual content — a decrease below
   // this would silently cut off real descriptions/codes, so it's blocked rather than allowed
@@ -119,6 +121,7 @@ export default function SettingsModal({ project, onSave, onClose, helpText }: Se
       indentChar: replaceIndentChar ? indentChar : ' ',
       numLevels,
       delimiterPositions: sortedDelimiters,
+      autoCodeGapIncrement,
     });
   }
 
@@ -213,6 +216,17 @@ export default function SettingsModal({ project, onSave, onClose, helpText }: Se
             </button>
           )}
         </fieldset>
+        <label>
+          Auto Code Gap Increment (Alpha / Alpha Numeric)
+          <HelpIcon field="autoCodeGapIncrement" helpText={helpText} />
+          <select
+            value={autoCodeGapIncrement}
+            onChange={(e) => setAutoCodeGapIncrement(Number(e.target.value) === 2 ? 2 : 1)}
+          >
+            <option value={1}>1 — consecutive (1, 2, 3, 4...)</option>
+            <option value={2}>2 — gap coded (1, 3, 5, 7, 9, B, D...)</option>
+          </select>
+        </label>
         <label className="checkbox-label">
           <input
             type="checkbox"
