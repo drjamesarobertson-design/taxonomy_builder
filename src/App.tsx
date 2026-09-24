@@ -2240,25 +2240,32 @@ export default function App() {
               Concatenated?
             </p>
             <div className="confirm-dialog-actions">
+              {/* James's ask: Discrete Columns — the grid exactly as it appears on screen
+                  (Section 7) — is the everyday, expected export, not Concatenated (a later-phase
+                  ERP-import format, Section 9). Last button = the default (Enter-activated,
+                  styled blue — see App.css's own comment on this convention), so it goes last,
+                  not whichever button happened to render last. Cancel sits immediately before
+                  it, at the end of the row rather than its old spot up front, without taking the
+                  one "last" slot the default itself needs. */}
+              <button type="button" onClick={() => runExport('concatenated')}>
+                Concatenated
+              </button>
+              {exportChoice.format === 'csv' && (
+                <>
+                  <button type="button" onClick={() => runExport('concatenated', true)}>
+                    Concatenated (No Delimiter)
+                  </button>
+                  <button type="button" onClick={() => runExport('discrete', true)}>
+                    Discrete Columns (No Delimiter)
+                  </button>
+                </>
+              )}
               <button type="button" onClick={() => setExportChoice(null)}>
                 Cancel
               </button>
               <button type="button" onClick={() => runExport('discrete')}>
                 Discrete Columns
               </button>
-              <button type="button" onClick={() => runExport('concatenated')}>
-                Concatenated
-              </button>
-              {exportChoice.format === 'csv' && (
-                <>
-                  <button type="button" onClick={() => runExport('discrete', true)}>
-                    Discrete Columns (No Delimiter)
-                  </button>
-                  <button type="button" onClick={() => runExport('concatenated', true)}>
-                    Concatenated (No Delimiter)
-                  </button>
-                </>
-              )}
             </div>
           </div>
         </div>
