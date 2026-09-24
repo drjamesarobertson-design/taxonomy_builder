@@ -44,7 +44,22 @@ export default function HelpIcon({ field, helpText }: HelpIconProps) {
       >
         ?
       </button>
-      {open && <div className="help-popover">{helpText[field]?.trim() || FALLBACK}</div>}
+      {open && (
+        <div className="help-popover">
+          {helpText[field]?.helpText?.trim() || FALLBACK}
+          {helpText[field]?.videoUrl && (
+            <a
+              href={helpText[field].videoUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="help-popover-video-link"
+              onClick={(e) => e.stopPropagation()}
+            >
+              ▶ Watch video
+            </a>
+          )}
+        </div>
+      )}
     </span>
   );
 }

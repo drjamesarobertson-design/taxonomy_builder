@@ -28,6 +28,8 @@ import { FORMAT_MODES, applyFormatDescriptions, collectUnknownAbbreviationWords 
 import type { FormatMode } from './formatDescriptions';
 import { loadHelpText } from './helpText';
 import type { HelpTextMap } from './helpText';
+import Tooltip from './Tooltip';
+import HelpPage from './HelpPage';
 import NewTaxonomyForm from './NewTaxonomyForm';
 import SimpleTaxonomySetup from './SimpleTaxonomySetup';
 import GuidanceBanner from './GuidanceBanner';
@@ -298,6 +300,10 @@ export default function App() {
   // easy to forget to adjust something (e.g. the description length limit) before the grid
   // fills up with rows built against it.
   const [showSettings, setShowSettings] = useState(false);
+  // James's ask: a dedicated, searchable Help page — reachable from the toolbar at any time,
+  // project open or not — reusing the exact same help-text.csv data as every tooltip (Tooltip.tsx,
+  // menuTooltip.tsx) and the setup screens' own "?" HelpIcon.
+  const [showHelpPage, setShowHelpPage] = useState(false);
 
   // Lock Taxonomy menu (James's ask): the plain "Lock Taxonomy" button becomes a small dropdown
   // once a taxonomy exists — item (a) is the original lock action unchanged; items (b)-(f) only
@@ -1890,6 +1896,7 @@ export default function App() {
     <div className="app-shell">
       <LibrarySidebar
         entries={libraryEntries}
+        helpText={helpText}
         onRename={handleRenameLibraryEntry}
         onReorder={handleReorderLibrary}
         onMoveToWorkArea={handleMoveToWorkArea}
@@ -1925,85 +1932,93 @@ export default function App() {
               its group, rather than as a separately-styled button off to the side. */}
           <div className="toolbar">
             {project && (
-              <button type="button" onClick={handleUndo} disabled={undoStack.length === 0}>
-                Undo
-              </button>
+              <Tooltip field="btnUndo" helpText={helpText}>
+                <button type="button" onClick={handleUndo} disabled={undoStack.length === 0}>
+                  Undo
+                </button>
+              </Tooltip>
             )}
             {project && (
-              <button type="button" onClick={handleRedo} disabled={redoStack.length === 0}>
-                Redo
-              </button>
+              <Tooltip field="btnRedo" helpText={helpText}>
+                <button type="button" onClick={handleRedo} disabled={redoStack.length === 0}>
+                  Redo
+                </button>
+              </Tooltip>
             )}
             {project && <span className="toolbar-divider" />}
             {project && (
-              <button type="button" className="toolbar-alt" onClick={() => setShowSettings(true)}>
-                Settings
-              </button>
+              <Tooltip field="btnSettings" helpText={helpText}>
+                <button type="button" className="toolbar-alt" onClick={() => setShowSettings(true)}>
+                  Settings
+                </button>
+              </Tooltip>
             )}
             {project && <span className="toolbar-divider" />}
             {project && supportsFileSystemAccess() && (
-              <button
-                type="button"
-                onClick={handleChooseFolder}
-                title="Sets where your next Save/Export starts — after that, it reopens wherever you last saved"
-              >
-                {exportFolderName ? `Folder: ${exportFolderName}` : 'Choose Export Folder'}
-              </button>
+              <Tooltip field="btnChooseFolder" helpText={helpText}>
+                <button type="button" onClick={handleChooseFolder}>
+                  {exportFolderName ? `Folder: ${exportFolderName}` : 'Choose Export Folder'}
+                </button>
+              </Tooltip>
             )}
             {project && (
-              <button type="button" className={justSaved ? 'save-flash' : undefined} onClick={handleSave}>
-                {justSaved ? 'Saved ✓' : 'Save to File'}
-              </button>
+              <Tooltip field="btnSaveToFile" helpText={helpText}>
+                <button type="button" className={justSaved ? 'save-flash' : undefined} onClick={handleSave}>
+                  {justSaved ? 'Saved ✓' : 'Save to File'}
+                </button>
+              </Tooltip>
             )}
             {project && (
-              <button type="button" onClick={handleExportCsvClick}>
-                Export to CSV
-              </button>
+              <Tooltip field="btnExportCsv" helpText={helpText}>
+                <button type="button" onClick={handleExportCsvClick}>
+                  Export to CSV
+                </button>
+              </Tooltip>
             )}
             {project && (
-              <button type="button" onClick={() => setExportChoice({ format: 'xlsx' })}>
-                Export to Excel
-              </button>
+              <Tooltip field="btnExportExcel" helpText={helpText}>
+                <button type="button" onClick={() => setExportChoice({ format: 'xlsx' })}>
+                  Export to Excel
+                </button>
+              </Tooltip>
             )}
             {project && (
-              <button
-                type="button"
-                onClick={handleCreateBlock}
-                title="Export the whole table as a block another taxonomy can import"
-              >
-                Create Block
-              </button>
+              <Tooltip field="btnCreateBlock" helpText={helpText}>
+                <button type="button" onClick={handleCreateBlock}>
+                  Create Block
+                </button>
+              </Tooltip>
             )}
             {project && (
-              <button
-                type="button"
-                className={justAddedToLibrary ? 'save-flash' : undefined}
-                onClick={handleAddToLibraryClick}
-                title={
-                  currentLibraryEntryId
-                    ? "Update this taxonomy's existing Library entry"
-                    : 'Save a copy of this taxonomy to the Library'
-                }
-              >
-                {justAddedToLibrary ? 'Added ✓' : 'Add to Library'}
-              </button>
+              <Tooltip field="btnAddToLibrary" helpText={helpText}>
+                <button
+                  type="button"
+                  className={justAddedToLibrary ? 'save-flash' : undefined}
+                  onClick={handleAddToLibraryClick}
+                >
+                  {justAddedToLibrary ? 'Added ✓' : 'Add to Library'}
+                </button>
+              </Tooltip>
             )}
             {project && <span className="toolbar-divider" />}
             {project && (
-              <button type="button" className="toolbar-alt" onClick={handleLoadClick}>
-                Load from File
-              </button>
+              <Tooltip field="btnLoadFromFile" helpText={helpText}>
+                <button type="button" className="toolbar-alt" onClick={handleLoadClick}>
+                  Load from File
+                </button>
+              </Tooltip>
             )}
             {project && (
               <div className="lock-menu-wrapper" ref={importCsvMenuRef}>
-                <button
-                  type="button"
-                  className="toolbar-alt"
-                  onClick={() => setShowImportCsvMenu((v) => !v)}
-                  title="Import a taxonomy from a CSV file"
-                >
-                  Import CSV ▾
-                </button>
+                <Tooltip field="btnImportCsv" helpText={helpText}>
+                  <button
+                    type="button"
+                    className="toolbar-alt"
+                    onClick={() => setShowImportCsvMenu((v) => !v)}
+                  >
+                    Import CSV ▾
+                  </button>
+                </Tooltip>
                 {showImportCsvMenu && (
                   <ul className="context-menu lock-menu">
                     <li
@@ -2029,14 +2044,11 @@ export default function App() {
             {project && <span className="toolbar-divider" />}
             {project && (
               <div className="lock-menu-wrapper" ref={lockMenuRef}>
-                <button
-                  type="button"
-                  className="lock-btn"
-                  onClick={() => setShowLockMenu((v) => !v)}
-                  title="Protect every existing row's code and description once this taxonomy has gone live with real transactions"
-                >
-                  🔒 Lock Taxonomy ▾
-                </button>
+                <Tooltip field="btnLockTaxonomy" helpText={helpText}>
+                  <button type="button" className="lock-btn" onClick={() => setShowLockMenu((v) => !v)}>
+                    🔒 Lock Taxonomy ▾
+                  </button>
+                </Tooltip>
                 {showLockMenu && (
                   <ul className="context-menu lock-menu">
                     {!project.settings.locked && (
@@ -2098,64 +2110,60 @@ export default function App() {
               </div>
             )}
             {project && project.settings.locked && (
-              <button
-                type="button"
-                className="unlock-btn"
-                onClick={handleUnlockTaxonomy}
-                title="Lift protection so existing rows can be edited again — use with care"
-              >
-                🔓 Unlock Taxonomy
-              </button>
+              <Tooltip field="btnUnlockTaxonomy" helpText={helpText}>
+                <button type="button" className="unlock-btn" onClick={handleUnlockTaxonomy}>
+                  🔓 Unlock Taxonomy
+                </button>
+              </Tooltip>
             )}
             {project && <span className="toolbar-divider" />}
             {project && (
-              <button
-                type="button"
-                className="toolbar-alt"
-                onClick={handleAutoCodeClick}
-                title="Auto-fill blank codes throughout the taxonomy"
-              >
-                Auto Code
-              </button>
+              <Tooltip field="btnAutoCode" helpText={helpText}>
+                <button type="button" className="toolbar-alt" onClick={handleAutoCodeClick}>
+                  Auto Code
+                </button>
+              </Tooltip>
             )}
             {project && (
-              <button
-                type="button"
-                className="toolbar-alt"
-                onClick={handleFormatDescriptionsClick}
-                title="Clean up scrappy capitalisation — ALL CAPS headings, Proper Case posting-level entries"
-              >
-                Format Descriptions
-              </button>
+              <Tooltip field="btnFormatDescriptions" helpText={helpText}>
+                <button type="button" className="toolbar-alt" onClick={handleFormatDescriptionsClick}>
+                  Format Descriptions
+                </button>
+              </Tooltip>
             )}
             {project && <span className="toolbar-divider" />}
             {project && (
-              <button
-                type="button"
-                onClick={handleAuditTaxonomyClick}
-                title="Walk through every open issue one at a time, with a jump straight to each one"
-              >
-                Audit Taxonomy
-              </button>
+              <Tooltip field="btnAuditTaxonomy" helpText={helpText}>
+                <button type="button" onClick={handleAuditTaxonomyClick}>
+                  Audit Taxonomy
+                </button>
+              </Tooltip>
             )}
             {project && <span className="toolbar-divider" />}
             {project && (
-              <button
-                type="button"
-                onClick={handleBackToMenu}
-                title="Return to the landing menu — this taxonomy stays recoverable via Resume Work in Progress"
-              >
-                Back to Menu
-              </button>
+              <Tooltip field="btnBackToMenu" helpText={helpText}>
+                <button type="button" onClick={handleBackToMenu}>
+                  Back to Menu
+                </button>
+              </Tooltip>
             )}
             {project && (
-              <button type="button" onClick={handleNewTaxonomy}>
-                New Taxonomy
-              </button>
+              <Tooltip field="btnNewTaxonomy" helpText={helpText}>
+                <button type="button" onClick={handleNewTaxonomy}>
+                  New Taxonomy
+                </button>
+              </Tooltip>
             )}
-            <button type="button" className="toolbar-alt" onClick={handleLogOut} title={`Signed in as ${authedEmail}`}>
-              Log Out
-            </button>
+            <Tooltip field="btnLogOut" helpText={helpText}>
+              <button type="button" className="toolbar-alt" onClick={handleLogOut} title={`Signed in as ${authedEmail}`}>
+                Log Out
+              </button>
+            </Tooltip>
+            <Tooltip field="btnHelp" helpText={helpText}>
+              <button type="button" className="toolbar-alt" onClick={() => setShowHelpPage(true)}>
+                Help
+              </button>
+            </Tooltip>
             <input
               ref={fileInputRef}
               type="file"
@@ -2208,7 +2216,7 @@ export default function App() {
       {project && !project.settings.guidance && (
         <section className={`worksheet-guidance ${guidanceExpanded ? 'expanded' : 'collapsed'}`}>
           <div className="worksheet-guidance-text">
-            {helpText.worksheetGuidance?.trim() || 'No worksheet guidance has been added yet.'}
+            {helpText.worksheetGuidance?.helpText?.trim() || 'No worksheet guidance has been added yet.'}
           </div>
           <button type="button" className="worksheet-guidance-toggle" onClick={() => setGuidanceExpanded((e) => !e)}>
             {guidanceExpanded ? 'Show less ▴' : 'Show more ▾'}
@@ -2362,6 +2370,8 @@ export default function App() {
           helpText={helpText}
         />
       )}
+
+      {showHelpPage && <HelpPage helpText={helpText} onClose={() => setShowHelpPage(false)} />}
 
       {showAutoCode && (
         <div className="validation-overlay" onClick={() => setShowAutoCode(false)}>

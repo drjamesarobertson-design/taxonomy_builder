@@ -821,6 +821,163 @@ body.app-dark-theme .taxonomy-meta .purpose {
   white-space: pre-wrap;
 }
 
+.help-popover-video-link {
+  display: inline-block;
+  margin-top: 0.4rem;
+  color: #1a56db;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.help-popover-video-link:hover {
+  text-decoration: underline;
+}
+
+/* James's ask: a proper, professionally-styled hover tooltip on every toolbar button and
+   right-click menu item — Tooltip.tsx (toolbar) and menuTooltip.tsx (the much larger set of
+   <li> menu items) both render this same pair of classes, so every tooltip in the app looks
+   identical regardless of which of the two mechanisms produced it. */
+.app-tooltip-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.app-tooltip-popup {
+  position: absolute;
+  z-index: 60;
+  top: 100%;
+  left: 0;
+  margin-top: 0.35rem;
+  width: 15rem;
+  max-width: 60vw;
+  background: #1a1a2e;
+  color: #f5f5f5;
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  padding: 0.55rem 0.7rem;
+  font-size: 0.82rem;
+  font-weight: normal;
+  text-align: left;
+  white-space: pre-wrap;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
+/* The menu-item variant (menuTooltip.tsx) is positioned via inline left/top (fixed, next to
+   whichever <li> triggered it — see menuTooltip.tsx) rather than this class's own
+   top/left/margin, since it isn't nested inside the hovered element the way the toolbar
+   variant is. */
+.app-tooltip-popup-menu {
+  z-index: 4000;
+}
+
+.app-tooltip-video-link {
+  display: inline-block;
+  margin-top: 0.4rem;
+  color: #7fb0ff;
+  font-weight: 600;
+  text-decoration: none;
+  pointer-events: auto;
+}
+
+.app-tooltip-video-link:hover {
+  text-decoration: underline;
+}
+
+.help-page {
+  text-align: left;
+  max-width: 38rem;
+  width: 90vw;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.help-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.help-page-header h2 {
+  margin: 0;
+}
+
+.help-page-close {
+  background: none;
+  border: none;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  color: #666;
+  padding: 0.1rem 0.4rem;
+}
+
+.help-page-close:hover {
+  color: #1a1a1a;
+}
+
+.help-page-search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.55rem 0.8rem;
+  font-size: 1rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+}
+
+.help-page-list {
+  overflow-y: auto;
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding-right: 0.2rem;
+}
+
+.help-page-empty {
+  color: #666;
+  font-size: 0.9rem;
+  text-align: center;
+  padding: 1.5rem 0;
+}
+
+.help-page-entry {
+  border-bottom: 1px solid #eee;
+  padding-bottom: 0.8rem;
+}
+
+.help-page-entry:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.help-page-entry h3 {
+  margin: 0 0 0.3rem;
+  font-size: 1rem;
+  color: #1a1a2e;
+}
+
+.help-page-entry p {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  color: #333;
+}
+
+.help-page-video-link {
+  display: inline-block;
+  margin-top: 0.4rem;
+  color: #1a56db;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.help-page-video-link:hover {
+  text-decoration: underline;
+}
+
 .settings-summary {
   text-align: left;
   margin: 0.5rem 0;
