@@ -1717,9 +1717,10 @@ body.app-dark-theme .taxonomy-meta .purpose {
   right: 6px;
   bottom: 4px;
   z-index: 9999;
-  font-size: 0.7rem;
-  color: #9aa1ac;
-  background: rgba(255, 255, 255, 0.85);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #000;
+  background: rgba(255, 255, 255, 0.9);
   padding: 1px 6px;
   border-radius: 3px;
   pointer-events: none;
