@@ -47,9 +47,15 @@ function immediateParentIndex(rows: TaxonomyRow[], idx: number): number {
  * means a taxonomy can still end up with a genuine violation in it. Re-audits the whole thing
  * one last time before Lock makes it permanent: within each level, siblings sharing the same
  * immediate parent (not the whole column — a later heading's children legitimately restart
- * their own numbering) must strictly ascend. Returns the first violation found, or null. */
+ * their own numbering) must strictly ascend — an exact duplicate is just as much a violation of
+ * "strictly ascend" as a genuine decrease, and James's own real files have turned up real
+ * examples (two headings both coded the same value under one parent) that a `value < prev.value`
+ * check alone silently let straight through. `paddingChar` values are exempt entirely — many
+ * siblings legitimately share the same padding in a trailing column, which is correct, not a
+ * duplicate. Returns the first violation found, or null. */
 export function findAscendingOrderViolation(
   rows: TaxonomyRow[],
+  paddingChar: string,
 ): { rowIndex: number; level: number; value: string; prevRowIndex: number; prevValue: string } | null {
   const numLevels = rows.reduce((max, row) => Math.max(max, row.codes.length), 0);
   for (let level = 0; level < numLevels; level++) {
@@ -58,9 +64,9 @@ export function findAscendingOrderViolation(
       if (levelOf(rows[i]) !== level) continue;
       const parent = level > 0 ? immediateParentIndex(rows, i) : null;
       const value = rows[i].codes[level] ?? '';
-      if (!value) continue;
+      if (!value || value === paddingChar) continue;
       const prev = lastByParent.get(parent);
-      if (prev && value < prev.value) {
+      if (prev && value <= prev.value) {
         return { rowIndex: i, level, value, prevRowIndex: prev.rowIndex, prevValue: prev.value };
       }
       lastByParent.set(parent, { value, rowIndex: i });
@@ -348,13 +354,16 @@ export function findAuditIssues(
     });
   }
 
-  const violation = findAscendingOrderViolation(rows);
+  const violation = findAscendingOrderViolation(rows, paddingChar);
   if (violation) {
     issues.push({
       rowId: rows[violation.rowIndex].id,
       level: violation.level,
       kind: 'code',
-      message: `This code ("${violation.value}") is out of ascending order after row ${violation.prevRowIndex + 1} ("${violation.prevValue}") in this column.`,
+      message:
+        violation.value === violation.prevValue
+          ? `This code ("${violation.value}") duplicates row ${violation.prevRowIndex + 1}'s code in this column — codes must be unique among siblings.`
+          : `This code ("${violation.value}") is out of ascending order after row ${violation.prevRowIndex + 1} ("${violation.prevValue}") in this column.`,
     });
   }
 

@@ -1992,6 +1992,7 @@ export default function App() {
             autoFocusFirstRow={autoFocusFirstRow}
             onExportBlock={handleExportBlockRange}
             onSelectionChange={setGridSelectionRowIds}
+            auditActive={!!audit}
           />
           <footer className="app-footer">
             The ERP Doctor Taxonomy Builder is the Intellectual Property of the ERP Doctor and

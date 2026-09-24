@@ -497,11 +497,21 @@ export function padCodes(rows: TaxonomyRow[], paddingChar: string): TaxonomyRow[
 // new one padCodes' overreach created elsewhere) kept reappearing. Section 4.4's padding
 // convention only ever applies to columns AFTER a row's own level (findPaddingSymmetryIssues'
 // own scan range, col = level + 1 onward) — an ancestor gap is never this function's job.
+//
+// Overwrites a trailing column REGARDLESS of whether it's blank — James's real file turned up
+// a row (created via some earlier manual edit) whose trailing column held a stray leftover real
+// value ("3") rather than being genuinely empty. An earlier version of this only filled blank
+// trailing cells (`!c`), so that stray value was never touched — findPaddingSymmetryIssues kept
+// finding the exact same violation after every "Fix Automatically" click, a genuine freeze (the
+// button did something, just never anything that could resolve THIS row). No code past a row's
+// own level is ever meaningful data (Section 4.1: level is defined by the deepest POPULATED
+// description column — nothing deeper has a description to belong to), so it's always safe to
+// force it to padding outright, exactly matching what the check itself verifies.
 export function padTrailingCodes(rows: TaxonomyRow[], paddingChar: string): TaxonomyRow[] {
   return rows.map((row) => {
     const level = levelOf(row);
     if (level === -1) return row;
-    const codes = row.codes.map((c, i) => (i > level && !c ? paddingChar : c));
+    const codes = row.codes.map((c, i) => (i > level ? paddingChar : c));
     return { ...row, codes };
   });
 }

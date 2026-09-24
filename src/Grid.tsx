@@ -46,6 +46,16 @@ interface GridProps {
    * it changes (any cell kind — a code-column selection still identifies real rows just as
    * well as a description one for this purpose). Null means nothing is currently selected. */
   onSelectionChange?: (rowIds: ReadonlySet<string> | null) => void;
+  /** James's report: while the Audit Taxonomy panel is open, Grid's own separate deferred
+   * blur-triggered notices (item-count, orphan-child, caps/leaf-case-mismatch, "Other" not
+   * last, multi-char order) can pop up stacked directly on top of it — a genuinely different
+   * dialog system with its own .validation-overlay, at the same z-space, whose clicks then
+   * bleed into whatever's visually underneath (his report: dragging what he thought was the
+   * Audit panel's header actually landed on the other dialog's own button/overlay, advancing
+   * or dismissing something he never intended). Audit's own messaging is already the
+   * purpose-built guidance during that specific workflow, so these are suppressed entirely
+   * while it's open, rather than risk two dialog systems fighting for the same click. */
+  auditActive?: boolean;
 }
 
 type CellKind = 'code' | 'desc' | 'suffix';
@@ -85,6 +95,7 @@ export default function Grid({
   autoFocusFirstRow,
   onExportBlock,
   onSelectionChange,
+  auditActive,
 }: GridProps) {
   const {
     numLevels,
@@ -3085,6 +3096,14 @@ export default function Grid({
                       onChange={(e) => updateDescription(row.id, level, e.target.value)}
                       onKeyDown={(e) => handleCellKeyDown(e, 'desc', level, rowIndex)}
                       onBlur={() => {
+                        // Audit Taxonomy's own panel is already the active guidance while it's
+                        // open — none of this blur handler's dialogs (all deferred via
+                        // openDescDialogDeferred) should compete with it for the same click
+                        // (James's report: they can stack visually and misdirect a click meant
+                        // for the Audit panel underneath). Every "warned" ref below is left
+                        // untouched by skipping this early, so a genuinely still-relevant notice
+                        // gets its normal turn again on a later blur once Audit closes.
+                        if (auditActive) return;
                         // Shown once leaving the cell, not on the first keystroke — a popup
                         // grabbing focus mid-word would swallow the rest of what's being typed.
                         // Deferred a tick past the blur itself: blur fires as part of whatever
