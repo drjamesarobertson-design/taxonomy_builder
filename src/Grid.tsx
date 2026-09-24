@@ -1006,6 +1006,20 @@ export default function Grid({
         if (idx < editIndex) return row;
         if (idx === editIndex) return applyCode(row);
         if (!cascadeActive) return row;
+        // This column is only ever an INHERITED ancestor slot for a genuine descendant of the
+        // edited row (its own identity living at a deeper column) — never for a sibling at the
+        // exact same level, who needs its own distinct code, not a copy of the edited row's.
+        // Both share the same immediate parent (the check just below), so that alone can't tell
+        // them apart — James's real file turned up exactly this gap: promoting a block of rows
+        // blanks their codes (by design), and typing a code for the first of them cascaded the
+        // identical value into its now-blank SIBLINGS too, an outright duplicate the moment they
+        // needed their own separate codes. Reaching a row at this level or shallower means the
+        // edited row's own subtree has ended (row order is depth-first), so the cascade stops
+        // here entirely, not just for this one row.
+        if (levelOf(row) <= level) {
+          cascadeActive = false;
+          return row;
+        }
         const rowParent = level > 0 ? (row.codes[level - 1] ?? '') : null;
         const parentValue = level > 0 ? (rows[editIndex].codes[level - 1] ?? '') : null;
         if (parentValue !== null && rowParent !== parentValue) {
