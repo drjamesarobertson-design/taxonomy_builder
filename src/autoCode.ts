@@ -236,16 +236,75 @@ export function fillMissingCodesAtLevel(rows: TaxonomyRow[], level: number, padd
   return result;
 }
 
+function replaceCode(rows: TaxonomyRow[], idx: number, level: number, code: string): TaxonomyRow[] {
+  const row = rows[idx];
+  const next = [...rows];
+  next[idx] = { ...row, codes: row.codes.map((c, i) => (i === level ? code : c)) };
+  return next;
+}
+
+/** For fillRestOfGroup only — NOT reused by assignLevelCodes/Auto Code, deliberately: that one
+ * spreads a whole still-blank group from scratch, position-and-count only, which is exactly
+ * wrong here. James's real file turned up the gap: a row he'd just given code "4" had several
+ * newly-inserted rows after it, still blank — assignGroupCodes' spread, computed purely from
+ * each blank's POSITION and the group's total COUNT with no regard for "4" actually being there,
+ * hands them values with no relation to it (independently verified: it can even hand a LATER row
+ * a LOWER value than an EARLIER one, an outright ascending-order violation, whenever an existing
+ * code doesn't line up with where that position-based spread expected it).
+ *
+ * This instead walks the group in row order and fills each run of consecutive blanks with a
+ * plain, consecutive continuation directly after the nearest coded row above it (James's own
+ * example: a row just coded "4" should hand its blank followers "5", "6", "7") — never
+ * independently of what's already there, and never past a following already-coded row: a run
+ * with a real code both before AND after it only gets filled if there's actually room for one
+ * character per blank between them (two already-adjacent codes like "4"/"5" leave none at all,
+ * and forcing something in there would just as surely break ascending order the other way) —
+ * left untouched otherwise, falling back to the ordinary one-row-at-a-time Audit walkthrough for
+ * it. No gap-reservation, no Other/Miscellaneous handling: those are Auto Code's own concerns for
+ * coding an entire fresh group at once, not for patching a few new rows into an already-real
+ * sequence. */
+function fillOrderedGaps(rows: TaxonomyRow[], indices: number[], level: number): TaxonomyRow[] {
+  let result = rows;
+  let floorSlot = -1;
+  let i = 0;
+  while (i < indices.length) {
+    const existing = result[indices[i]].codes[level];
+    if (existing) {
+      const slot = CODE_SLOTS.indexOf(existing);
+      if (slot > floorSlot) floorSlot = slot;
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j < indices.length && !result[indices[j]].codes[level]) j++;
+    const runLength = j - i;
+    const hasCeiling = j < indices.length;
+    const ceilingSlot = hasCeiling ? CODE_SLOTS.indexOf(result[indices[j]].codes[level]) : CODE_SLOTS.length;
+    const room = ceilingSlot - floorSlot - 1;
+    if (room >= runLength) {
+      for (let k = 0; k < runLength; k++) {
+        const slot = floorSlot + 1 + k;
+        result = replaceCode(result, indices[i + k], level, CODE_SLOTS[slot]);
+      }
+      floorSlot += runLength;
+    }
+    // else: not enough room for even one character per blank between the two real codes on
+    // either side — leave this run exactly as it is.
+    i = j;
+  }
+  return result;
+}
+
 /** James's ask, straight out of the Audit walkthrough on his real Function_Master file: a whole
  * run of siblings (a "series") with no code at all yet at this level — Audit can only ever flag
  * one row at a time, so fixing the row it happens to be pointing at still left every other
  * member of that exact group to its own separate trip through the walkthrough. The one value
- * just typed for THIS row is enough to gap-code the rest of its own immediate sibling group
- * right away, using the same rule Auto Code / Fill Missing Codes already apply — reusing
- * assignGroupCodes rather than fillMissingCodesAtLevel's whole-column sweep, since a value
- * entered for one row says nothing about an unrelated group elsewhere in the same column; only
- * THIS row's own group should move. Returns `rows` unchanged (same reference) when nothing else
- * in the group is blank, so a caller can cheaply tell "nothing to re-render" from "group filled"
+ * just typed for THIS row is enough to code the rest of its own immediate sibling group right
+ * away (fillOrderedGaps, above — NOT assignGroupCodes/Auto Code's own spread, see its comment
+ * for why), scoped to only THIS row's group, since a value entered for one row says nothing
+ * about an unrelated group elsewhere in the same column. Returns `rows` unchanged (same
+ * reference) when nothing else in the group is blank, OR when every blank run turned out to have
+ * no room to fill safely, so a caller can cheaply tell "nothing to re-render" from "group filled"
  * by reference equality. */
 export function fillRestOfGroup(rows: TaxonomyRow[], rowId: string, level: number, paddingChar: string): TaxonomyRow[] {
   const rowIndex = rows.findIndex((r) => r.id === rowId);
@@ -253,8 +312,9 @@ export function fillRestOfGroup(rows: TaxonomyRow[], rowId: string, level: numbe
   const groups = groupSiblingIndices(rows, level);
   const indices = [...groups.values()].find((g) => g.includes(rowIndex));
   if (!indices || !indices.some((i) => i !== rowIndex && !rows[i].codes[level])) return rows;
-  let result = assignGroupCodes(rows, indices, level);
-  result = fillCodesDown(result);
+  const filled = fillOrderedGaps(rows, indices, level);
+  if (filled === rows) return rows;
+  let result = fillCodesDown(filled);
   result = padCodes(result, paddingChar);
   return result;
 }
