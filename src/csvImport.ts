@@ -464,12 +464,12 @@ export function parseDiscreteCsv(text: string): ParsedDiscreteCsv | { error: str
   // James's report: a file with one combined code per row (e.g. "2111" instead of one column per
   // code character) fails every path above with a generic "no code columns found" error that
   // gives no hint what to actually do about it — check whether parseCompositeCodeCsv (below)
-  // would succeed on this exact file, and if so, redirect to the button built for it rather than
-  // leaving the user stuck on a dead end.
+  // would succeed on this exact file, and if so, redirect to the menu item built for it rather
+  // than leaving the user stuck on a dead end.
   if ('error' in result && !('error' in parseCompositeCodeCsv(text))) {
     return {
       error:
-        'This file has one combined code per row (e.g. "2111") rather than one column per code character — use "Separate Out Code Elements" instead of "Import CSV" for this file.',
+        'This file has one combined code per row (e.g. "2111") rather than one column per code character — on the "Import CSV" menu, choose "Third Party Concatenated Codes" instead of "ERP Doctor Delimited Format" for this file.',
     };
   }
   return result;
