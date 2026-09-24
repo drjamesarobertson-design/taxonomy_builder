@@ -58,6 +58,8 @@ import {
   migrateLegacyLocalLibrary,
   seedStarterSamplesForNewAccount,
   setStarterSample,
+  listNewStarterSamples,
+  importSelectedStarterSamples,
 } from './library';
 import type { LibraryCategory, LibraryEntry, LibraryExportBundle } from './library';
 import { bumpFileVersion } from './fileVersion';
@@ -436,6 +438,11 @@ export default function App() {
   // Library" knows whether to update that same entry in place or prompt for a new one.
   const [libraryEntries, setLibraryEntries] = useState<LibraryEntry[]>([]);
   const [currentLibraryEntryId, setCurrentLibraryEntryId] = useState<string | null>(null);
+  // "Refresh Library" (James's ask): null means the dialog is closed; a (possibly empty) array
+  // is the result of the most recent listNewStarterSamples() call, shown as a checklist in
+  // LibrarySidebar. Kept here rather than inside the sidebar itself since fetching it is a
+  // network call through library.ts, same as every other Library mutation/query in this file.
+  const [newSampleCandidates, setNewSampleCandidates] = useState<LibraryEntry[] | null>(null);
   const [libraryCategoryPrompt, setLibraryCategoryPrompt] = useState<LibraryCategory>(LIBRARY_CATEGORIES[0]);
   const [showLibraryCategoryPrompt, setShowLibraryCategoryPrompt] = useState(false);
   // James's ask: let the taxonomy's name be adjusted right here, before it's saved to the
@@ -624,6 +631,19 @@ export default function App() {
 
   function handleSetStarterSample(id: string, isStarterSample: boolean) {
     setStarterSample(id, isStarterSample).then(refreshLibrary).catch(reportLibraryError);
+  }
+
+  function handleCheckForNewSamples() {
+    listNewStarterSamples().then(setNewSampleCandidates).catch(reportLibraryError);
+  }
+
+  function handleImportNewSamples(ids: string[]) {
+    importSelectedStarterSamples(ids)
+      .then(() => {
+        setNewSampleCandidates(null);
+        refreshLibrary();
+      })
+      .catch(reportLibraryError);
   }
 
   function handleRemoveLibraryEntry() {
@@ -1832,6 +1852,10 @@ export default function App() {
         onRemove={setLibraryRemoveTarget}
         onImport={handleImportLibrary}
         onSetStarterSample={handleSetStarterSample}
+        newSampleCandidates={newSampleCandidates}
+        onCheckForNewSamples={handleCheckForNewSamples}
+        onImportNewSamples={handleImportNewSamples}
+        onCloseNewSamples={() => setNewSampleCandidates(null)}
       />
       <div className="app">
       <div className="app-sticky-top">
