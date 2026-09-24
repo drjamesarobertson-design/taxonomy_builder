@@ -110,8 +110,9 @@ export interface AuditIssue {
   level: number;
   /** What the panel's primary action button does for this issue:
    * - 'code' / 'desc' — focus that cell for the user to fix by hand ("Clear Error").
-   * - 'auto' — apply a whole-taxonomy fix immediately with no cell to jump to at all (padCodes
-   *   for padding-symmetry) — the grid refuses to let a code character be typed into a column
+   * - 'auto' — apply a whole-taxonomy fix immediately with no cell to jump to at all
+   *   (padTrailingCodes for padding-symmetry) — the grid refuses to let a code character be
+   *   typed into a column
    *   beyond a row's own level ("Enter Descriptions Before Entering Codes"), so this genuinely
    *   can't be fixed by jumping to a cell and typing.
    * - 'toggleCase' — a childless ALL CAPS heading almost always just needs Toggle Case (it's a

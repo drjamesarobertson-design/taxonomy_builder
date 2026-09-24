@@ -4,7 +4,7 @@ import { createEmptyRow, growRowsToLevels } from './types';
 import { getLevelColor } from './colors';
 import { toggleCase } from './caseUtils';
 import { toProperCasePreservingAbbreviations } from './abbreviations';
-import { isValidCodeChar, isAllowedByCodeRestriction, hasCodeGap } from './codeValidation';
+import { isValidCodeChar, isAllowedByCodeRestriction, hasCodeGap, validCodesInRange } from './codeValidation';
 import {
   findOtherNotLastInGroup,
   isOtherEntryNotLast,
@@ -267,6 +267,15 @@ export default function Grid({
      * Column, Width of Col 1 truncation) aren't overriding a stated recommendation, so those
      * keep the normal "confirm is default" convention. */
     defaultToCancel?: boolean;
+    /** James's ask, on hitting exactly this dialog himself: "be useful if in a case like this
+     * to suggest the fix" — an actual valid code, already computed, one click away, rather than
+     * making the user go work it out by hand or fall back to Override on a value that's really
+     * just a typo/misread. Only offered when a genuinely valid code exists to suggest (a real
+     * gap between the two bounding siblings) — becomes the new default action (last/blue) when
+     * present, ahead of both Cancel and Override, since it's the one response that's actually
+     * correct rather than either abandoning the edit or deliberately breaking the rule. */
+    suggestLabel?: string;
+    onSuggest?: () => void;
   } | null>(null);
   // Right-click "Width of Col 1…" (James's ask, column 1 only): lets an existing taxonomy's
   // Column 1 code width be changed after the fact — previously settable only once, at creation,
@@ -898,14 +907,35 @@ export default function Grid({
       const tooLow = upper !== null && char <= upper;
       const tooHigh = lower !== null && char >= lower;
       if (tooLow || tooHigh) {
+        // James's own report, hitting exactly this dialog: he'd promoted rows and no longer
+        // registered that the value he typed collided with an existing sibling, so the plain
+        // Override/Cancel choice left him guessing — "be useful in a case like this to suggest
+        // the fix". Computing an actual valid code is only attempted for a genuine single-
+        // character column (maxCharsHere === 1, i.e. every column except a multi-character
+        // Column 1) — a multi-character suggestion would need to search far more combinations
+        // for comparatively little benefit, since James's own case (and the overwhelming
+        // majority of real columns) is single-character anyway.
+        const suggestion =
+          maxCharsHere === 1
+            ? (validCodesInRange(upper, lower).find((c) => c !== paddingChar && isAllowedByCodeRestriction(c, codeRestriction)) ?? null)
+            : null;
         // Section 4.4/6.7's ascending-order rule is a hard rule everywhere else, but James
         // asked for an escape hatch here specifically — mid-restructure, a user may know a
         // "backwards" value is exactly what they want for now. Override re-runs this same
         // update bypassing only this check, not the others (charset, left-to-right, etc).
         setConfirmDialog({
-          message: 'Codes should increase, lesser value is invalid—Override?',
+          message: suggestion
+            ? `Codes should increase, lesser value is invalid. Did you mean "${suggestion}"?`
+            : 'Codes should increase, lesser value is invalid—Override?',
           confirmLabel: 'Override',
           defaultToCancel: true,
+          suggestLabel: suggestion ? `Use "${suggestion}"` : undefined,
+          onSuggest: suggestion
+            ? () => {
+                updateCode(rowId, level, suggestion, { ...options, skipOrderCheck: true });
+                focusCodeInputAtEnd(rowId, level);
+              }
+            : undefined,
           onConfirm: () => {
             if (maxCharsHere > 1) multiCharOrderCheckedRef.current.add(orderCheckKey);
             updateCode(rowId, level, value, { ...options, skipOrderCheck: true });
@@ -3484,6 +3514,25 @@ export default function Grid({
                     {confirmDialog.confirmLabel ?? 'Delete'}
                   </button>
                 );
+                // James's ask: an actual computed fix, when one exists, is the one response that's
+                // genuinely correct — ahead of both Cancel (abandons the edit) and Override
+                // (deliberately keeps the invalid value) — so it takes the default (last/blue) slot.
+                if (confirmDialog.onSuggest) {
+                  const suggestButton = (
+                    <button
+                      key="suggest"
+                      type="button"
+                      onClick={() => {
+                        confirmDialog.onSuggest?.();
+                        setConfirmDialog(null);
+                        restoreFocusAfterDescDialog();
+                      }}
+                    >
+                      {confirmDialog.suggestLabel}
+                    </button>
+                  );
+                  return [cancelButton, confirmButton, suggestButton];
+                }
                 // Last button = default (Enter-activated, styled blue) — see the confirmDialog
                 // state's own comment: declining an override of a recommended practice is the
                 // one that goes last here, not the override itself.

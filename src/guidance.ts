@@ -483,6 +483,29 @@ export function padCodes(rows: TaxonomyRow[], paddingChar: string): TaxonomyRow[
   });
 }
 
+// "Fix Automatically" (Audit Taxonomy's padding-symmetry issue specifically — codeValidation.ts's
+// findPaddingSymmetryIssues, kind 'auto'): deliberately narrower than padCodes above. That
+// function's "also pad an unused ancestor level" broadening is only safe because its own two
+// existing callers (GuidanceBanner.tsx's "Pad Codes" button, autoCode.ts's "Auto Code") always
+// run fillCodesDown first, so any ancestor column padCodes still finds blank genuinely has
+// nothing left to inherit. Audit's "Fix Automatically" calls this standalone, with no
+// fillCodesDown pass before it — on a real file with dozens of headings not yet coded at all
+// (James's report: it "gets stuck, nothing happens"), padCodes would silently overwrite every
+// one of those genuinely-incomplete ancestor codes with the padding character instead of
+// leaving them for codeCompletion's own separate "incomplete code" check to catch — quietly
+// corrupting real gaps into what looks like finished data, while the SAME padding issue (or a
+// new one padCodes' overreach created elsewhere) kept reappearing. Section 4.4's padding
+// convention only ever applies to columns AFTER a row's own level (findPaddingSymmetryIssues'
+// own scan range, col = level + 1 onward) — an ancestor gap is never this function's job.
+export function padTrailingCodes(rows: TaxonomyRow[], paddingChar: string): TaxonomyRow[] {
+  return rows.map((row) => {
+    const level = levelOf(row);
+    if (level === -1) return row;
+    const codes = row.codes.map((c, i) => (i > level && !c ? paddingChar : c));
+    return { ...row, codes };
+  });
+}
+
 // James's round-2 feedback, items 2 and 6: after Suggest Codes, check every level's sibling
 // groups (rows sharing the same immediate parent code, one column to the left) for a code
 // that's either a flat-out duplicate of an earlier sibling, or not in strictly ascending order
