@@ -1489,7 +1489,9 @@ export default function App() {
       '.',
       parsed.codeDelimiterChar,
     );
-    newProject.rows = parsed.rows;
+    newProject.rows = fields.dropCodes
+      ? parsed.rows.map((row) => ({ ...row, codes: row.codes.map(() => '') }))
+      : parsed.rows;
     setProject(newProject);
     setDirty(true);
     setAutoFocusFirstRow(false);
