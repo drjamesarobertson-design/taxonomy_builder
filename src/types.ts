@@ -154,6 +154,16 @@ export interface TaxonomySettings {
    * for almost every group size. Defaults to 2, matching his example; every older project file
    * gets this same default via storage.ts's migration. */
   autoCodeGapIncrement: 1 | 2;
+  /** James's ask: a taxonomy imported with no codes at all (e.g. "Multi-Column Description
+   * Table Without Code" -- a folder-structure export) has a full set of empty code columns
+   * that are just visual noise until the user is ready to code it, and made an already-dense
+   * screen ("going to get too difficult with codes concatenating") harder to read. Purely a
+   * display concern, same mechanism as the Simple Taxonomy wizard's own headings/subItems
+   * stages (Grid.tsx's hideAllCodes) -- the code columns and their data are still there
+   * underneath, just not rendered, and toggling this back off reveals them exactly as they
+   * were. Defaults false so every other taxonomy is unaffected; set true automatically right
+   * after a codeless import, and freely toggleable afterwards from Settings. */
+  codeColumnsHidden: boolean;
 }
 
 export interface TaxonomyRow {
@@ -208,6 +218,7 @@ export const DEFAULT_SETTINGS: TaxonomySettings = {
   singleCodeColumn: false,
   customAbbreviations: [],
   autoCodeGapIncrement: 2,
+  codeColumnsHidden: false,
 };
 
 export function createEmptyRow(numLevels: number, suffixes: SuffixField[] = []): TaxonomyRow {
