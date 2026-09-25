@@ -15,6 +15,7 @@ export interface SettingsFields {
   numLevels: number;
   delimiterPositions: number[];
   autoCodeGapIncrement: 1 | 2;
+  codeColumnsHidden: boolean;
 }
 
 interface SettingsModalProps {
@@ -65,6 +66,7 @@ export default function SettingsModal({ project, onSave, onClose, helpText }: Se
   const [numLevelsError, setNumLevelsError] = useState<string | null>(null);
   const [delimiterPositions, setDelimiterPositions] = useState<number[]>(project.settings.delimiterPositions);
   const [autoCodeGapIncrement, setAutoCodeGapIncrement] = useState<1 | 2>(project.settings.autoCodeGapIncrement);
+  const [codeColumnsHidden, setCodeColumnsHidden] = useState(project.settings.codeColumnsHidden);
 
   // The fewest columns that would still hold every row's actual content — a decrease below
   // this would silently cut off real descriptions/codes, so it's blocked rather than allowed
@@ -123,6 +125,7 @@ export default function SettingsModal({ project, onSave, onClose, helpText }: Se
       numLevels,
       delimiterPositions: sortedDelimiters,
       autoCodeGapIncrement,
+      codeColumnsHidden,
     });
   }
 
@@ -231,6 +234,15 @@ export default function SettingsModal({ project, onSave, onClose, helpText }: Se
             <option value={1}>1 — consecutive (1, 2, 3, 4...)</option>
             <option value={2}>2 — gap coded (1, 3, 5, 7, 9, B, D...)</option>
           </select>
+        </label>
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={codeColumnsHidden}
+            onChange={(e) => setCodeColumnsHidden(e.target.checked)}
+          />
+          Hide Code Columns — display only, the codes (if any) are kept
+          <HelpIcon field="codeColumnsHidden" helpText={helpText} />
         </label>
         <label className="checkbox-label">
           <input

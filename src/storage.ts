@@ -85,6 +85,9 @@ export function migrateProjectData(data: TaxonomyProject): TaxonomyProject {
   if (settings.autoCodeGapIncrement !== 1 && settings.autoCodeGapIncrement !== 2) {
     settings.autoCodeGapIncrement = 2;
   }
+  // Older files predate hiding code columns for a codeless import — default to false (shown),
+  // matching every taxonomy's behaviour before this existed.
+  if (typeof settings.codeColumnsHidden !== 'boolean') settings.codeColumnsHidden = false;
   const project = data as unknown as Record<string, unknown>;
   if (typeof project.fileVersions !== 'object' || project.fileVersions === null) {
     project.fileVersions = {};

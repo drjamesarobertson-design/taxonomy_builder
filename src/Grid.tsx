@@ -117,7 +117,7 @@ export default function Grid({
   // 'headings' and 'subItems' stages are description-only by design. `numLevels` itself grows
   // as those stages advance, so this is purely a display concern layered on top, not a change
   // to how many levels actually exist.
-  const hideAllCodes = guidance?.stage === 'headings' || guidance?.stage === 'subItems';
+  const hideAllCodes = guidance?.stage === 'headings' || guidance?.stage === 'subItems' || settings.codeColumnsHidden;
   const levels = Array.from({ length: numLevels }, (_, i) => i);
   // The wide overflow column gets whatever's left of the configured max description length
   // after reserving one character per description level (Section 6.7's indent padding) and

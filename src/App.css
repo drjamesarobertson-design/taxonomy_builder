@@ -835,19 +835,23 @@ body.app-dark-theme .taxonomy-meta .purpose {
 
 /* James's ask: a proper, professionally-styled hover tooltip on every toolbar button and
    right-click menu item — Tooltip.tsx (toolbar) and menuTooltip.tsx (the much larger set of
-   <li> menu items) both render this same pair of classes, so every tooltip in the app looks
-   identical regardless of which of the two mechanisms produced it. */
+   <li> menu items) both render this same class, so every tooltip in the app looks identical
+   regardless of which of the two mechanisms produced it. Both are portalled straight to
+   document.body and positioned via inline top/left (position: fixed, computed in JS from the
+   hovered element's own getBoundingClientRect, clamped to the viewport) rather than this
+   class's own top/left — James's report: an ordinary CSS-anchored popup (position: absolute
+   inside the hovered element) got clipped by any scrolling/overflow-hidden ancestor (the
+   Library sidebar's own scroll container) and ran off the right edge of the screen entirely
+   near the window's edge (the logo). Escaping to document.body and clamping in JS fixes both.
+   .app-tooltip-wrapper still exists purely as the hover/focus trigger surface — it is no
+   longer a positioning context. */
 .app-tooltip-wrapper {
-  position: relative;
   display: inline-block;
 }
 
 .app-tooltip-popup {
-  position: absolute;
-  z-index: 60;
-  top: 100%;
-  left: 0;
-  margin-top: 0.35rem;
+  position: fixed;
+  z-index: 4000;
   width: 15rem;
   max-width: 60vw;
   background: #1a1a2e;
@@ -861,14 +865,6 @@ body.app-dark-theme .taxonomy-meta .purpose {
   white-space: pre-wrap;
   line-height: 1.35;
   pointer-events: none;
-}
-
-/* The menu-item variant (menuTooltip.tsx) is positioned via inline left/top (fixed, next to
-   whichever <li> triggered it — see menuTooltip.tsx) rather than this class's own
-   top/left/margin, since it isn't nested inside the hovered element the way the toolbar
-   variant is. */
-.app-tooltip-popup-menu {
-  z-index: 4000;
 }
 
 .app-tooltip-popup-logo {

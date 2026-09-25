@@ -184,9 +184,15 @@ export default function App() {
   // structure; the file itself carries no title/table name/purpose, so those are collected
   // in a small confirm step once parsing succeeds).
   const csvImportFileInputRef = useRef<HTMLInputElement>(null);
-  const [pendingCsvImport, setPendingCsvImport] = useState<{ parsed: ParsedDiscreteCsv; defaultTitle: string } | null>(
-    null,
-  );
+  const [pendingCsvImport, setPendingCsvImport] = useState<{
+    parsed: ParsedDiscreteCsv;
+    defaultTitle: string;
+    /** True only for a codeless import (Multi-Column Description Table Without Code) -- the
+     * resulting project starts with its code columns hidden (settings.codeColumnsHidden),
+     * since there's nothing in them yet and a full set of empty code columns is just noise
+     * until the user is ready to code the taxonomy. */
+    hideCodeColumns?: boolean;
+  } | null>(null);
   // James's ask: "Separate Out Code Elements" — a variant CSV import for files carrying one
   // composite/concatenated code per row instead of this app's own one-char-per-column layout.
   // Its own file picker and its own delimiter-setup step (SeparateCodeElementsSetup.tsx) feed
@@ -1662,7 +1668,7 @@ export default function App() {
 
   function handleCsvImportConfirm(fields: CsvImportFields) {
     if (!pendingCsvImport) return;
-    const { parsed } = pendingCsvImport;
+    const { parsed, hideCodeColumns } = pendingCsvImport;
     const newProject = createProject(
       fields.title,
       fields.tableName,
@@ -1675,6 +1681,7 @@ export default function App() {
       '.',
       parsed.codeDelimiterChar,
     );
+    if (hideCodeColumns) newProject.settings.codeColumnsHidden = true;
     newProject.rows = fields.dropCodes
       ? parsed.rows.map((row) => ({ ...row, codes: row.codes.map(() => '') }))
       : parsed.rows;
@@ -1759,7 +1766,7 @@ export default function App() {
       }
       setLoadError(null);
       const defaultTitle = file.name.replace(/\.csv$/i, '');
-      setPendingCsvImport({ parsed, defaultTitle });
+      setPendingCsvImport({ parsed, defaultTitle, hideCodeColumns: true });
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Could not read this file.');
     }
@@ -1797,6 +1804,7 @@ export default function App() {
         numLevels: newNumLevels,
         delimiterPositions: fields.delimiterPositions,
         autoCodeGapIncrement: fields.autoCodeGapIncrement,
+        codeColumnsHidden: fields.codeColumnsHidden,
       },
     });
     setDirty(true);
