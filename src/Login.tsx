@@ -17,7 +17,13 @@ type Mode = 'login' | 'register' | 'forgot';
 const MOBILE_NUMBER_PATTERN = /^\+[1-9]\d[\d ]{5,17}$/;
 
 export default function Login({ onSuccess }: LoginProps) {
-  const [mode, setMode] = useState<Mode>('login');
+  // James's ask: a "Get Started Free" link from the marketing site (the-erp-doctor.com) should
+  // land straight on the registration form, not the ordinary login form -- a plain ?mode=register
+  // in the URL is the simplest way for a static WordPress page to ask for that with nothing more
+  // than an <a> tag, no API call or shared session needed. Any other/missing value just falls
+  // back to the ordinary login form, so this is a no-op for every existing link into the app.
+  const initialMode = new URLSearchParams(window.location.search).get('mode') === 'register' ? 'register' : 'login';
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
