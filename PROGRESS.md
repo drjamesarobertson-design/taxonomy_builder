@@ -3,7 +3,10 @@
 A running record of what's been built, round by round, so "where are we?" has a
 single answer without scrolling through PR history. `CLAUDE.md` is still the
 source of truth for what the tool is *supposed* to do; this file tracks what
-actually exists in `main` right now and how it got there.
+actually exists in `main` right now and how it got there. `MASTER_BRIEFING.md`
+is the higher-level, business-and-product-facing companion to this file —
+read that one first for orientation; come here for the engineering detail
+behind any specific decision.
 
 **Live app:** https://drjamesarobertson-design.github.io/taxonomy_builder/
 (auto-deployed by GitHub Actions on every push to `main`)
@@ -20,6 +23,14 @@ just means whatever comes next, not a different process or a rewrite.
 ---
 
 ## Current status (as of PR #151, 2026-09-23, plus later rounds below)
+
+*Note (2026-09-28): PRs #180–#188 (cloud Library, starter samples, the Help
+system, the three CSV import shapes, Folders/HDD/Outlook, and the draft
+Pricing page) shipped after this section was last written and aren't yet
+folded into the detailed list below — see `MASTER_BRIEFING.md` for a current
+summary of all of them, and the PR history itself (or a future round of this
+file) for the full engineering detail on each.*
+
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
 further rounds of testing feedback. The tool currently supports, in full:
