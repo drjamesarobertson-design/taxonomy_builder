@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { signIn, signUp, sendPasswordReset } from './auth';
 import Logo from './Logo';
+import PricingPage from './PricingPage';
 
 interface LoginProps {
   onSuccess: (email: string) => void;
@@ -33,6 +34,7 @@ export default function Login({ onSuccess }: LoginProps) {
   // convention, so it's unmissable and gets the same Enter-to-dismiss App.tsx already wires up
   // for that class — replaces the small inline paragraph this used to be.
   const [showConfirmEmailNotice, setShowConfirmEmailNotice] = useState(false);
+  const [showPricing, setShowPricing] = useState(false);
 
   function switchMode(next: Mode) {
     setMode(next);
@@ -109,6 +111,11 @@ export default function Login({ onSuccess }: LoginProps) {
         Taxonomy Builder by the ERP Doctor
         <br />
         James A Robertson and Associates Limited
+      </p>
+      <p className="login-switch-mode">
+        <a href="#" onClick={(e) => { e.preventDefault(); setShowPricing(true); }}>
+          View Pricing
+        </a>
       </p>
 
       {mode === 'login' && (
@@ -268,6 +275,10 @@ export default function Login({ onSuccess }: LoginProps) {
             </button>
           </div>
         </div>
+      )}
+
+      {showPricing && (
+        <PricingPage onClose={() => setShowPricing(false)} onCreateAccount={() => { setShowPricing(false); switchMode('register'); }} />
       )}
     </div>
   );

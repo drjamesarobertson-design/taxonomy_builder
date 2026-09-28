@@ -885,6 +885,109 @@ body.app-dark-theme .taxonomy-meta .purpose {
   text-decoration: underline;
 }
 
+.pricing-page {
+  text-align: left;
+  max-width: 56rem;
+  width: 92vw;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.pricing-page-note {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  background: #fff8e1;
+  border: 1px solid #f0d98c;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: #6b5900;
+  text-align: center;
+}
+
+.pricing-tiers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+}
+
+.pricing-tier {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  background: #fafafa;
+}
+
+.pricing-tier-highlight {
+  border-color: #1a56db;
+  border-width: 2px;
+  background: #f2f6ff;
+}
+
+.pricing-tier h3 {
+  margin: 0 0 0.2rem;
+}
+
+.pricing-tier-price {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0 0 0.3rem;
+  color: #1a1a2e;
+}
+
+.pricing-tier-tagline {
+  margin: 0 0 0.8rem;
+  font-size: 0.85rem;
+  color: #555;
+  min-height: 2.4em;
+}
+
+.pricing-tier-features {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  flex: 1;
+  font-size: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.pricing-tier-features li {
+  padding-left: 1.1rem;
+  position: relative;
+}
+
+.pricing-tier-features li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: #1a8a4a;
+  font-weight: 700;
+}
+
+.pricing-tier-cta {
+  width: 100%;
+  padding: 0.6rem;
+  font-weight: 600;
+}
+
+.outlook-client-dialog {
+  text-align: left;
+  max-width: 34rem;
+}
+
+.outlook-client-steps {
+  margin: 0 0 0.75rem;
+  padding-left: 1.3rem;
+  font-size: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
 .help-page {
   text-align: left;
   max-width: 38rem;
