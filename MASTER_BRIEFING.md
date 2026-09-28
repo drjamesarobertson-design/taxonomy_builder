@@ -6,7 +6,65 @@ he shares this with) rather than as an engineering log — for the detailed,
 round-by-round build history, see `PROGRESS.md`; for the original functional
 specification, see `CLAUDE.md`.*
 
-*Last updated: 2026-09-28, after PR #188.*
+*Last updated: 2026-09-28, after PR #190.*
+
+---
+
+## 0. Where things stand right now — read this first
+
+James is away from the project until **Friday 2026-10-02 at the earliest**
+(moving house Wednesday 2026-09-30; packing takes up Tuesday). Nothing is
+blocked on the engineering side — the app is fully shipped and deployed as of
+PR #190. What's paused is the **commercial setup conversation**, which was
+mid-flow when James stepped away. Here's exactly where that stands, so it can
+pick up without re-deriving anything:
+
+**Delivered to James, not yet actioned by him:**
+- The WordPress-ready pricing page (a self-contained `<div>` + `<style>`
+  snippet for a WordPress "Custom HTML" block — no plugin, no developer
+  needed) was sent to him as a file. It's built and visually verified
+  (desktop + mobile), but he has not yet pasted it into the-erp-doctor.com.
+  It contains one placeholder he needs to fill in before publishing:
+  `REPLACE_WITH_CONTACT` on the Enterprise tier's "Contact Us" link, currently
+  pointing at `#`.
+- That page's Free-tier button links to
+  `https://drjamesarobertson-design.github.io/taxonomy_builder/?mode=register`
+  — this works today because of PR #190 (`Login.tsx` now reads `?mode=register`
+  from the URL and opens straight on the sign-up form).
+
+**Conversation in progress — Stripe setup, one step at a time (James's
+explicit instruction: "doing on a step-by-step one step at a time basis"):**
+- **Step 1 was given**, not yet confirmed done by James: go to
+  `https://dashboard.stripe.com/register`, create an account, verify email.
+  No business/banking details needed yet — Stripe allows exploring the
+  dashboard in **test mode** immediately; live/payout details can be added
+  later, right before actually going live.
+- **Do not jump ahead to step 2** (creating products/prices in the Stripe
+  dashboard, or the Edge Functions work) until James confirms he's completed
+  step 1 and is looking at the Stripe Dashboard. This pacing was his explicit,
+  repeated request — respect it even after a multi-day gap.
+
+**Answered, no action needed:** James asked whether there's a reason not to
+do the Outlook 365 Azure app registration now, ahead of Stripe. Answer given:
+no — it's free, independent of Stripe, and redirect URIs can be edited later.
+He said he'd follow his own stated order (Stripe first) unless told
+otherwise, so **do not start the Outlook 365 walkthrough unprompted** — wait
+for him to ask for it, per §4 below.
+
+**When James returns, the natural next questions to ask him (don't assume
+the order — let him pick up wherever he wants):**
+1. Did the Stripe account get created? If yes → give step 2 of the Stripe
+   walkthrough (next: creating the Product/Price objects in test mode for
+   the Professional and Enterprise tiers, ready for Checkout Session code).
+2. Did the WordPress pricing page get published? If yes → confirm the
+   `REPLACE_WITH_CONTACT` link was updated; if he wants help with the
+   WordPress steps themselves (block editor vs. classic editor, etc.), that
+   walkthrough hasn't been given yet — give it "one step at a time" per his
+   standing preference.
+3. Does he want to proceed with the Outlook 365 Azure app registration now,
+   or hold it until Stripe is further along? Either is fine technically.
+4. Sign-off still needed on the draft pricing numbers themselves (§4/§5
+   below) before any tier-limit enforcement gets built into the app.
 
 ---
 
@@ -118,6 +176,9 @@ Toolbar "Folders ▾" menu:
 - A **Pricing** page (reachable from the Login screen and the signed-in
   landing menu) presenting a draft three-tier model — see §4. Explicitly
   marked as a draft under review; there is no working checkout yet.
+- The same draft pricing has also been prepared as a **standalone WordPress
+  snippet** (delivered to James as a file, not part of this repository) for
+  the-erp-doctor.com marketing site — see §0 for its exact delivery status.
 
 ---
 
@@ -193,6 +254,12 @@ key and webhook secret should go directly into Supabase's own dashboard
 (Project Settings → Edge Functions → Secrets), the same way Supabase's own
 credentials never leave that dashboard today.
 
+**Status:** James asked for this walkthrough "one step at a time." Step 1
+(create the account at `dashboard.stripe.com/register`, verify email, no
+banking details needed yet — test mode is available immediately) was given
+on 2026-09-28. Not yet confirmed done. See §0 for exactly where to pick this
+up.
+
 ### Outlook 365 — needs a one-time Microsoft 365 app registration
 For "Sign in with Microsoft" to be genuinely one-click for every future
 licensee (per James's explicit ask — "really easy for someone who licenses
@@ -204,6 +271,14 @@ would just click "Connect Outlook 365," sign in with their own Microsoft
 work/school account, and approve access. Not started yet; needs James's
 decision to proceed (and access to a Microsoft 365 admin account to register
 the app) before it can be built.
+
+**Status:** James asked whether there's a reason to delay this registration
+until after Stripe is set up. Answer given (2026-09-28): no technical reason
+— it's free, independent of Stripe, and redirect URIs can be edited later;
+if anything, earlier is better since app-registration review can have some
+lead time. He said he'd follow his own stated order (Stripe first) unless he
+says otherwise — so wait for him to ask before giving the step-by-step for
+this, rather than starting it unprompted.
 
 ### The website (the-erp-doctor.com) — admin access not needed for the above
 None of the billing or Outlook work above touches the WordPress marketing
@@ -220,16 +295,20 @@ just for that purpose — not the real admin login.
 ## 5. Open items awaiting James's input
 
 - [ ] Confirm or adjust the three pricing tiers and their dollar amounts.
-- [ ] Create a new Stripe account; share the publishable key here, store the
-      secret key and webhook secret directly in Supabase (never in chat).
+- [ ] **In progress, step 1 given:** create a new Stripe account (see §4 —
+      being walked through one step at a time, at James's request).
 - [ ] Decide whether/when to proceed with the Outlook 365 Microsoft Graph
-      app registration.
-- [ ] Decide whether the Pricing page should also go live on the WordPress
-      marketing site, and if so, provide a WordPress Application Password
-      (not the main admin login) when ready.
+      app registration (no blocker either way — see §4).
+- [ ] **Delivered, not yet actioned:** the WordPress pricing snippet is with
+      James as a file. He still needs to (a) fill in the
+      `REPLACE_WITH_CONTACT` placeholder and (b) actually paste it into
+      the-erp-doctor.com — the WordPress-side walkthrough for that hasn't
+      been given yet, pending his request.
 - [ ] Once pricing is confirmed: sign off on wiring real tier limits into the
       app (a bigger, business-facing change, deliberately held until the
       numbers are final).
+
+*See §0 above for the immediate "pick up here" summary of this list.*
 
 ---
 
