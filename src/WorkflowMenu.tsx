@@ -26,6 +26,7 @@ interface WorkflowMenuProps {
    * for the eventual full software). */
   onLoadGLAnalyser: () => void;
   onOpenGLBuilder: () => void;
+  onViewPricing: () => void;
   helpText: HelpTextMap;
 }
 
@@ -42,11 +43,17 @@ export default function WorkflowMenu({
   onResume,
   onLoadGLAnalyser,
   onOpenGLBuilder,
+  onViewPricing,
   helpText,
 }: WorkflowMenuProps) {
   return (
     <section className="workflow-menu">
       <h2>What would you like to do?</h2>
+      <p className="workflow-menu-hint">
+        <a href="#" onClick={(e) => { e.preventDefault(); onViewPricing(); }}>
+          View Pricing
+        </a>
+      </p>
       {resumeTitle && onResume && (
         <Tooltip field="btnResumeWorkInProgress" helpText={helpText}>
           <button type="button" className="workflow-resume-btn" onClick={onResume}>

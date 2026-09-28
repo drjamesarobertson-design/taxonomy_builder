@@ -14,8 +14,9 @@ import {
   exportDiscreteCsvAs,
 } from './gridExport';
 import { exportBlock } from './blockTransfer';
-import { chooseExportFolder, peekExportFolderName, supportsFileSystemAccess } from './exportFolder';
+import { chooseExportFolder, peekExportFolderName, supportsFileSystemAccess, saveExportFile } from './exportFolder';
 import { supportsHddFolders, buildHddFolderPlan, createHddFolders } from './hddFolders';
+import { buildOutlookFolderPathList, OUTLOOK_MACRO_VBA } from './outlookFolders';
 import { hasBlankCodeGaps, findAuditIssues } from './codeValidation';
 import { padTrailingCodes } from './guidance';
 import { toggleCase } from './caseUtils';
@@ -31,6 +32,7 @@ import { loadHelpText } from './helpText';
 import type { HelpTextMap } from './helpText';
 import Tooltip from './Tooltip';
 import HelpPage from './HelpPage';
+import PricingPage from './PricingPage';
 import { useMenuTooltip, MenuTooltipPortal } from './menuTooltip';
 import NewTaxonomyForm from './NewTaxonomyForm';
 import SimpleTaxonomySetup from './SimpleTaxonomySetup';
@@ -211,6 +213,30 @@ export default function App() {
   // delimiter-setup step needed, since there are no codes to place delimiters around).
   const multiColumnDescFileInputRef = useRef<HTMLInputElement>(null);
   const [hddFoldersBusy, setHddFoldersBusy] = useState(false);
+  // James's ask: "Folders" branches to where the mirrored structure should be created --
+  // "Local Hard Drive" (built), "Outlook Client" / "Outlook 365" (acknowledged as buildable,
+  // but a separate, bigger piece of work he's asked to tackle once Local Hard Drive is settled --
+  // see outlookNotice below). Same small-dropdown pattern as Import CSV / Lock Taxonomy.
+  const [showFoldersMenu, setShowFoldersMenu] = useState(false);
+  const foldersMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showFoldersMenu) return;
+    const close = (e: MouseEvent) => {
+      if (!foldersMenuRef.current?.contains(e.target as Node)) setShowFoldersMenu(false);
+    };
+    window.addEventListener('click', close);
+    return () => window.removeEventListener('click', close);
+  }, [showFoldersMenu]);
+  const [outlookNotice, setOutlookNotice] = useState<'client' | '365' | null>(null);
+  // James's ask: once a destination root is picked, offer a top-level folder to keep this
+  // taxonomy's folders separate from whatever else is already in that root -- "Data" by
+  // default, though some prefer "000" so it sorts to the very top. Left blank, folders are
+  // created directly inside the picked root.
+  const [hddSubfolderPrompt, setHddSubfolderPrompt] = useState<{
+    root: FileSystemDirectoryHandle;
+    plan: ReturnType<typeof buildHddFolderPlan>;
+  } | null>(null);
+  const [hddSubfolderName, setHddSubfolderName] = useState('Data');
 
   // James's ask: fold both CSV import entry points under one "Import CSV" button, which opens a
   // small dropdown to choose the file's actual shape — "ERP Doctor Delimited Format" (this app's
@@ -319,6 +345,7 @@ export default function App() {
   // project open or not — reusing the exact same help-text.csv data as every tooltip (Tooltip.tsx,
   // menuTooltip.tsx) and the setup screens' own "?" HelpIcon.
   const [showHelpPage, setShowHelpPage] = useState(false);
+  const [showPricingPage, setShowPricingPage] = useState(false);
 
   // Lock Taxonomy menu (James's ask): the plain "Lock Taxonomy" button becomes a small dropdown
   // once a taxonomy exists — item (a) is the original lock action unchanged; items (b)-(f) only
@@ -330,9 +357,9 @@ export default function App() {
   // covers this app's own two small dropdown menus (Import CSV ▾, Lock Taxonomy ▾).
   const { tooltip: appMenuTooltip, showTooltip: showAppMenuTooltip, hideTooltip: hideAppMenuTooltip } = useMenuTooltip();
   useEffect(() => {
-    if (!showImportCsvMenu && !showLockMenu) hideAppMenuTooltip();
+    if (!showImportCsvMenu && !showLockMenu && !showFoldersMenu) hideAppMenuTooltip();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showImportCsvMenu, showLockMenu]);
+  }, [showImportCsvMenu, showLockMenu, showFoldersMenu]);
 
   useEffect(() => {
     if (!showLockMenu) return;
@@ -1211,15 +1238,17 @@ export default function App() {
     runAudit('standalone');
   }
 
-  // "HDD Folders" (James's ask): create real folders on the user's hard drive mirroring the
-  // current taxonomy's structure -- every row, not just the leaves, since a heading is a real
-  // folder too. File System Access API only (Chromium browsers); degrades to a clear message
-  // rather than a silent no-op on Firefox/Safari, same as "Choose Export Folder" already does.
-  async function handleHddFoldersClick() {
+  // "Folders → Local Hard Drive" (James's ask): create real folders on the user's hard drive
+  // mirroring the current taxonomy's structure -- every row, not just the leaves, since a
+  // heading is a real folder too. File System Access API only (Chromium browsers); degrades to
+  // a clear message rather than a silent no-op on Firefox/Safari, same as "Choose Export
+  // Folder" already does. Picking the root just opens hddSubfolderPrompt below -- the actual
+  // creation happens once that's confirmed.
+  async function handleLocalHardDriveClick() {
     if (!project) return;
     if (!supportsHddFolders()) {
       alert(
-        'HDD Folders needs a Chromium-based browser (Chrome or Edge) to create folders on your computer — it isn\'t available in this browser.',
+        'Local Hard Drive needs a Chromium-based browser (Chrome or Edge) to create folders on your computer — it isn\'t available in this browser.',
       );
       return;
     }
@@ -1230,27 +1259,66 @@ export default function App() {
     }
     let root: FileSystemDirectoryHandle;
     try {
-      root = await window.showDirectoryPicker!({ id: 'taxonomy-builder-hdd-folders', mode: 'readwrite' });
+      // 'documents' is the closest available default to James's ask ("might default to
+      // Documents or the OneDrive folder") -- the File System Access API has no way to target
+      // a specific cloud-sync folder like OneDrive by name, only these fixed well-known
+      // locations, and Windows already points "Documents" at OneDrive's own copy once OneDrive
+      // sync is set up to redirect it, which covers that case without any extra code here.
+      root = await window.showDirectoryPicker!({ id: 'taxonomy-builder-hdd-folders', mode: 'readwrite', startIn: 'documents' });
     } catch {
       return; // user cancelled the picker
     }
-    if (
-      !confirm(
-        `This will create ${plan.length} folder${plan.length === 1 ? '' : 's'} inside "${root.name}", mirroring the current taxonomy structure. Existing folders with the same names are reused, not overwritten. Continue?`,
-      )
-    ) {
-      return;
-    }
+    setHddSubfolderName('Data');
+    setHddSubfolderPrompt({ root, plan });
+  }
+
+  async function handleHddSubfolderConfirm() {
+    if (!hddSubfolderPrompt) return;
+    const { root, plan } = hddSubfolderPrompt;
+    const subfolderName = hddSubfolderName.trim();
+    setHddSubfolderPrompt(null);
     setHddFoldersBusy(true);
     setLoadError(null);
     try {
-      const result = await createHddFolders(root, plan);
-      alert(`Created ${result.created} folder${result.created === 1 ? '' : 's'} inside "${root.name}".`);
+      const target = subfolderName ? await root.getDirectoryHandle(subfolderName, { create: true }) : root;
+      const result = await createHddFolders(target, plan);
+      alert(`Created ${result.created} folder${result.created === 1 ? '' : 's'} inside "${target.name}".`);
     } catch (err) {
       setLoadError(err instanceof Error ? `Could not finish creating folders: ${err.message}` : 'Could not finish creating folders.');
     } finally {
       setHddFoldersBusy(false);
     }
+  }
+
+  // "Outlook Client" / "Outlook 365" (James's ask, after re-reading an earlier explanation of
+  // this project's scope, and his follow-up: make it "really easy for someone who licenses the
+  // software to action"). Outlook 365 is genuinely one-click for a licensee once set up --
+  // "Sign in with Microsoft" via a Microsoft Graph API app registration done ONCE by the ERP
+  // Doctor, not per licensee -- but that registration itself is still outstanding, so it's held
+  // as a placeholder notice for now. Outlook Client (desktop) has no such shortcut -- a browser
+  // page has no way to reach a locally-running Outlook process at all -- so the closest thing to
+  // "really easy" without shipping a full signed Outlook Add-in (a bigger future project) is a
+  // one-time VBA macro import (outlookFolders.ts) plus the two files it needs, both downloadable
+  // right here.
+  function handleOutlookClick(kind: 'client' | '365') {
+    setShowFoldersMenu(false);
+    setOutlookNotice(kind);
+  }
+
+  async function handleDownloadOutlookFolderList() {
+    if (!project) return;
+    const plan = buildHddFolderPlan(project.rows);
+    if (plan.length === 0) {
+      alert('There are no entries in this taxonomy yet to create folders for.');
+      return;
+    }
+    const blob = new Blob([buildOutlookFolderPathList(plan)], { type: 'text/plain;charset=utf-8' });
+    await saveExportFile(blob, 'taxonomy-outlook-folders.txt');
+  }
+
+  async function handleDownloadOutlookMacro() {
+    const blob = new Blob([OUTLOOK_MACRO_VBA], { type: 'text/plain;charset=utf-8' });
+    await saveExportFile(blob, 'CreateTaxonomyFolders.bas');
   }
 
   // The "Audit — Y/N" prompt before Export to CSV (default Yes). Export to Excel is deliberately
@@ -2264,11 +2332,45 @@ export default function App() {
             )}
             {project && <span className="toolbar-divider" />}
             {project && (
-              <Tooltip field="btnHddFolders" helpText={helpText}>
-                <button type="button" onClick={handleHddFoldersClick} disabled={hddFoldersBusy}>
-                  {hddFoldersBusy ? 'Creating Folders…' : 'HDD Folders'}
-                </button>
-              </Tooltip>
+              <div className="lock-menu-wrapper" ref={foldersMenuRef}>
+                <Tooltip field="btnFolders" helpText={helpText}>
+                  <button
+                    type="button"
+                    onClick={() => setShowFoldersMenu((v) => !v)}
+                    disabled={hddFoldersBusy}
+                  >
+                    {hddFoldersBusy ? 'Creating Folders…' : 'Folders ▾'}
+                  </button>
+                </Tooltip>
+                {showFoldersMenu && (
+                  <ul className="context-menu lock-menu">
+                    <li
+                      onClick={() => {
+                        setShowFoldersMenu(false);
+                        handleLocalHardDriveClick();
+                      }}
+                      onMouseEnter={showAppMenuTooltip('menuFoldersLocalHardDrive')}
+                      onMouseLeave={hideAppMenuTooltip}
+                    >
+                      Local Hard Drive
+                    </li>
+                    <li
+                      onClick={() => handleOutlookClick('client')}
+                      onMouseEnter={showAppMenuTooltip('menuFoldersOutlookClient')}
+                      onMouseLeave={hideAppMenuTooltip}
+                    >
+                      Outlook Client
+                    </li>
+                    <li
+                      onClick={() => handleOutlookClick('365')}
+                      onMouseEnter={showAppMenuTooltip('menuFoldersOutlook365')}
+                      onMouseLeave={hideAppMenuTooltip}
+                    >
+                      Outlook 365
+                    </li>
+                  </ul>
+                )}
+              </div>
             )}
             {project && <span className="toolbar-divider" />}
             {project && (
@@ -2373,6 +2475,7 @@ export default function App() {
             onResume={handleResumeWorkInProgress}
             onLoadGLAnalyser={() => setShowGLAnalyserNotice(true)}
             onOpenGLBuilder={openGLBuilder}
+            onViewPricing={() => setShowPricingPage(true)}
             helpText={helpText}
           />
           <footer className="app-footer">
@@ -2532,6 +2635,92 @@ export default function App() {
       )}
 
       {showHelpPage && <HelpPage helpText={helpText} onClose={() => setShowHelpPage(false)} />}
+      {showPricingPage && <PricingPage onClose={() => setShowPricingPage(false)} />}
+
+      {hddSubfolderPrompt && (
+        <div className="validation-overlay" onClick={() => setHddSubfolderPrompt(null)}>
+          <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <p>
+              This will create {hddSubfolderPrompt.plan.length} folder{hddSubfolderPrompt.plan.length === 1 ? '' : 's'} mirroring the
+              current taxonomy structure. Existing folders with the same names are reused, not overwritten.
+            </p>
+            <label>
+              Top-level folder inside "{hddSubfolderPrompt.root.name}" (optional)
+              <input
+                type="text"
+                value={hddSubfolderName}
+                onChange={(e) => setHddSubfolderName(e.target.value)}
+                placeholder="Data"
+                autoFocus
+              />
+            </label>
+            <p className="field-warning">
+              Keeps this taxonomy's folders separate from other files already in "{hddSubfolderPrompt.root.name}". Some prefer
+              "000" so it sorts to the very top of the folder listing. Leave blank to create directly inside "
+              {hddSubfolderPrompt.root.name}".
+            </p>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setHddSubfolderPrompt(null)}>
+                Cancel
+              </button>
+              <button type="button" onClick={handleHddSubfolderConfirm}>
+                Create Folders
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {outlookNotice === 'client' && (
+        <div className="validation-overlay" onClick={() => setOutlookNotice(null)}>
+          <div className="validation-dialog outlook-client-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <h3>Outlook Client — one-time setup</h3>
+            <p>
+              Desktop Outlook has no way for a web page to reach it directly, so this needs a small macro installed once in
+              Outlook itself:
+            </p>
+            <ol className="outlook-client-steps">
+              <li>Download both files below.</li>
+              <li>In Outlook: Developer tab → Visual Basic → File → Import File… → choose the downloaded .bas file.</li>
+              <li>Click the folder in Outlook's own folder pane where you want the structure created.</li>
+              <li>
+                Developer tab → Macros → run "CreateTaxonomyFolders" → choose the downloaded folder list .txt file.
+              </li>
+            </ol>
+            <p className="field-warning">
+              Don't see the Developer tab? File → Options → Customize Ribbon → tick "Developer".
+            </p>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={handleDownloadOutlookFolderList}>
+                Download Folder List
+              </button>
+              <button type="button" onClick={handleDownloadOutlookMacro}>
+                Download Setup Macro
+              </button>
+            </div>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setOutlookNotice(null)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {outlookNotice === '365' && (
+        <div className="validation-overlay" onClick={() => setOutlookNotice(null)}>
+          <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <p>
+              Not built yet — the plan is a one-click "Sign in with Microsoft" button, so anyone who licenses this
+              software can connect their own Outlook 365 account with no technical setup at all. That needs a one-time
+              Microsoft 365 app registration done once by the ERP Doctor (not per licensee) before it can go live.
+            </p>
+            <button type="button" onClick={() => setOutlookNotice(null)}>
+              OK
+            </button>
+          </div>
+        </div>
+      )}
       <MenuTooltipPortal tooltip={appMenuTooltip} helpText={helpText} />
 
       {showAutoCode && (
