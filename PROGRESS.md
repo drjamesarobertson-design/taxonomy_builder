@@ -24,12 +24,15 @@ just means whatever comes next, not a different process or a rewrite.
 
 ## Current status (as of PR #151, 2026-09-23, plus later rounds below)
 
-*Note (2026-09-28): PRs #180–#188 (cloud Library, starter samples, the Help
-system, the three CSV import shapes, Folders/HDD/Outlook, and the draft
-Pricing page) shipped after this section was last written and aren't yet
-folded into the detailed list below — see `MASTER_BRIEFING.md` for a current
-summary of all of them, and the PR history itself (or a future round of this
-file) for the full engineering detail on each.*
+*Note (2026-09-28): PRs #180–#190 (cloud Library, starter samples, the Help
+system, the three CSV import shapes, Folders/HDD/Outlook, the draft Pricing
+page, and the `?mode=register` deep link) shipped after this section was
+last written and aren't yet folded into the detailed list below — see
+`MASTER_BRIEFING.md` for a current summary of all of them, and the PR
+history itself (or a future round of this file) for the full engineering
+detail on each. `MASTER_BRIEFING.md` §0 also records exactly where the
+commercial-setup conversation (Stripe, WordPress pricing page, Outlook 365)
+was paused, since James is away from the project until early October.*
 
 
 Stages 1–5 of the original build sequence are complete, plus roughly 40
