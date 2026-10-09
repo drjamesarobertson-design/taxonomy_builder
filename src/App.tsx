@@ -38,7 +38,7 @@ import NewTaxonomyForm from './NewTaxonomyForm';
 import SimpleTaxonomySetup from './SimpleTaxonomySetup';
 import GuidanceBanner from './GuidanceBanner';
 import SettingsModal from './SettingsModal';
-import { parseDiscreteCsv, parseCompositeCodeCsv, parseMultiColumnDescriptionCsv, buildSeparatedCsv, readFileAsText } from './csvImport';
+import { parseDiscreteCsv, parseCompositeCodeCsv, parseMultiColumnDescriptionCsv, parseFlatCodeDescriptionCsv, buildSeparatedCsv, readFileAsText } from './csvImport';
 import type { ParsedCompositeCsv } from './csvImport';
 import SeparateCodeElementsSetup from './SeparateCodeElementsSetup';
 import type { ParsedDiscreteCsv } from './csvImport';
@@ -212,6 +212,12 @@ export default function App() {
   // Goes straight into the same pendingCsvImport/CsvImportConfirm flow as the plain import (no
   // delimiter-setup step needed, since there are no codes to place delimiters around).
   const multiColumnDescFileInputRef = useRef<HTMLInputElement>(null);
+  // James's ask: a fourth CSV import shape -- a flat, single-level list where the code column is
+  // a multi-character mnemonic (e.g. Incoterms: "CFR,Cost and Freight") rather than this app's
+  // own one-character-per-level code. Same pendingCsvImport flow as the other three; the original
+  // code comes in as a Suffix value (csvImport.ts's parseFlatCodeDescriptionCsv) and the real
+  // level-1 code is left blank, same reasoning as the Multi-Column Description import.
+  const flatCodeDescFileInputRef = useRef<HTMLInputElement>(null);
   const [hddFoldersBusy, setHddFoldersBusy] = useState(false);
   // James's ask: "Folders" branches to where the mirrored structure should be created --
   // "Local Hard Drive" (built), "Outlook Client" / "Outlook 365" (acknowledged as buildable,
@@ -1840,6 +1846,37 @@ export default function App() {
     }
   }
 
+  function handleFlatCodeDescCsvClick() {
+    // Same Lock Taxonomy / existing-content guards as the other three CSV import paths above.
+    if (project?.settings.locked) {
+      alert('This taxonomy is locked and cannot be replaced by a CSV import. Unlock it first if this is genuinely necessary.');
+      return;
+    }
+    if (project && hasAnyContent(project.rows) && !confirm('This will clear the existing table content — proceed?')) {
+      return;
+    }
+    flatCodeDescFileInputRef.current?.click();
+  }
+
+  async function handleFlatCodeDescFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const text = await readFileAsText(file);
+      const parsed = parseFlatCodeDescriptionCsv(text);
+      if ('error' in parsed) {
+        setLoadError(parsed.error);
+        return;
+      }
+      setLoadError(null);
+      const defaultTitle = file.name.replace(/\.csv$/i, '');
+      setPendingCsvImport({ parsed, defaultTitle, hideCodeColumns: true });
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Could not read this file.');
+    }
+  }
+
   function handleSaveSettings(fields: SettingsFields) {
     if (!project) return;
     // Number of code columns can move either way here — SettingsModal only ever submits a
@@ -2216,6 +2253,16 @@ export default function App() {
                     >
                       Multi-Column Description Table Without Code
                     </li>
+                    <li
+                      onClick={() => {
+                        setShowImportCsvMenu(false);
+                        handleFlatCodeDescCsvClick();
+                      }}
+                      onMouseEnter={showAppMenuTooltip('menuImportFlatCodeDesc')}
+                      onMouseLeave={hideAppMenuTooltip}
+                    >
+                      Flat Code and Description List
+                    </li>
                   </ul>
                 )}
               </div>
@@ -2432,6 +2479,13 @@ export default function App() {
               style={{ display: 'none' }}
               onChange={handleMultiColumnDescFileSelected}
             />
+            <input
+              ref={flatCodeDescFileInputRef}
+              type="file"
+              accept=".csv"
+              style={{ display: 'none' }}
+              onChange={handleFlatCodeDescFileSelected}
+            />
           </div>
           <Logo className="app-logo" />
         </div>
@@ -2535,6 +2589,16 @@ export default function App() {
                     onMouseLeave={hideAppMenuTooltip}
                   >
                     Multi-Column Description Table Without Code
+                  </li>
+                  <li
+                    onClick={() => {
+                      setShowImportCsvMenu(false);
+                      handleFlatCodeDescCsvClick();
+                    }}
+                    onMouseEnter={showAppMenuTooltip('menuImportFlatCodeDesc')}
+                    onMouseLeave={hideAppMenuTooltip}
+                  >
+                    Flat Code and Description List
                   </li>
                 </ul>
               )}

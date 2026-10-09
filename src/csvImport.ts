@@ -700,6 +700,47 @@ export function parseMultiColumnDescriptionCsv(text: string): ParsedDiscreteCsv 
   return buildResult(dataRows, numLevels, [], descCols, [], '-', [], []);
 }
 
+// James's ask: a fourth import shape -- a flat, single-level list where the "code" column is a
+// multi-character mnemonic (e.g. Incoterms: "CFR,Cost and Freight") rather than this app's own
+// one-character-per-level code. There's no level for a code like "CFR" to split across -- unlike
+// "Third Party Concatenated Codes" (parseCompositeCodeCsv), where each character of a composite
+// code narrows down one more level of a real hierarchy, these are unrelated flat entries that
+// just happen to be a few characters long. So the original code isn't split or discarded: it's
+// brought in as a Suffix value (same convention as an imported legacy/old GL code elsewhere in
+// this file), and the taxonomy's own real code is left blank at level 1 for the user to allocate
+// -- consistent with Section 5's "codes are allocated once the hierarchy is settled," and with how
+// the Multi-Column Description import already leaves codes blank for exactly the same reason. No
+// header row is assumed (matches every real file James has supplied this way), but one is skipped
+// if the first row's first two cells read as "Code"/"Description" (or a close variant), the same
+// names parseCompositeCodeCsv already recognises.
+export function parseFlatCodeDescriptionCsv(text: string): ParsedDiscreteCsv | { error: string } {
+  const table = parseCsvTable(text);
+  if (table.length === 0) return { error: 'This file is empty.' };
+
+  const looksLikeHeader =
+    matchesHeader(table[0]?.[0], COMPOSITE_CODE_HEADER_NAMES) && matchesHeader(table[0]?.[1], COMPOSITE_DESC_HEADER_NAMES);
+  const dataRows = looksLikeHeader ? table.slice(1) : table;
+  if (dataRows.length === 0) return { error: 'No data rows found in this file.' };
+
+  const missingDescription: string[] = [];
+  dataRows.forEach((row, i) => {
+    const code = (row[0] ?? '').trim();
+    const description = (row[1] ?? '').trim();
+    if (code !== '' && description === '') missingDescription.push(rowLabel(row, i));
+  });
+  if (missingDescription.length > 0) {
+    return {
+      error:
+        `${missingDescription.length} row(s) have a code but no description: ${joinIssueList(missingDescription)}. ` +
+        `This format expects exactly two columns per row -- a code, then its description.`,
+    };
+  }
+
+  const numCols = Math.max(...dataRows.map((r) => r.length));
+  const suffixValueCols = [0, ...Array.from({ length: Math.max(0, numCols - 2) }, (_, i) => i + 2)];
+  return buildResult(dataRows, 1, [], [1], [], '-', suffixValueCols, suffixValueCols.map(() => '-'));
+}
+
 export function readFileAsText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
