@@ -63,8 +63,14 @@ function parseCsvTable(text: string): string[][] {
     row.push(field);
     table.push(row);
   }
-  // Drop stray fully-blank lines (a single empty field), most commonly a trailing newline at EOF.
-  return table.filter((r) => !(r.length <= 1 && (r[0] ?? '') === ''));
+  // Drop stray fully-blank lines -- a single empty field (most commonly a trailing newline at
+  // EOF), or a whole row of empty fields (James's report: a real file exported from Excel had
+  // ~80 trailing rows that were nothing but commas -- every row allocated in the sheet but never
+  // used). Left in, those rows used to drag every column's "is this mostly a single code
+  // character?" ratio below the detection threshold in parseHeaderlessCsv below, so a perfectly
+  // normal file failed with "Could not find any code columns" for a reason that had nothing to
+  // do with its actual code/description columns.
+  return table.filter((r) => r.some((cell) => cell !== ''));
 }
 
 // Builds the final rows/suffixes once every column's role (code / description / suffix value /
