@@ -560,7 +560,18 @@ export function parseDiscreteCsv(text: string): ParsedDiscreteCsv | { error: str
   // gives no hint what to actually do about it — check whether parseCompositeCodeCsv (below)
   // would succeed on this exact file, and if so, redirect to the menu item built for it rather
   // than leaving the user stuck on a dead end.
-  if ('error' in result && !('error' in parseCompositeCodeCsv(text))) {
+  //
+  // James's second report: a real file had a plain "Code"/"Description" header (so
+  // parseCompositeCodeCsv's own header match succeeded) but was ALREADY one character per code
+  // column -- not a combined code at all. parseCompositeCodeCsv happily "succeeds" on that too
+  // (numLevels ends up 1, since every value in that one matched column is a single character),
+  // which used to override a genuinely useful error from the paths above with this misleading
+  // redirect. A real combined/composite code is the whole point of that import path, so only
+  // redirect when it actually found multi-character codes to split -- numLevels === 1 there means
+  // "this column was already single characters," which is a different problem the error above
+  // already describes correctly.
+  const asComposite = parseCompositeCodeCsv(text);
+  if ('error' in result && !('error' in asComposite) && asComposite.numLevels > 1) {
     return {
       error:
         'This file has one combined code per row (e.g. "2111") rather than one column per code character — on the "Import CSV" menu, choose "Third Party Concatenated Codes" instead of "ERP Doctor Delimited Format" for this file.',
