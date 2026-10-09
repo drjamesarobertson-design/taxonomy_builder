@@ -372,7 +372,7 @@ function parseHeaderlessCsv(table: string[][]): ParsedDiscreteCsv | { error: str
 // "Level N" run — recognised by header name (case-insensitive), in this fixed order, each
 // independently optional. Widened beyond one literal spelling each since there's no reason to
 // assume every such export names them identically.
-const OLD_CODE_HEADER_NAMES = ['old acc', 'old account', 'old code', 'old gl code', 'account code', 'gl code', 'client account code'];
+const OLD_CODE_HEADER_NAMES = ['code', 'old acc', 'old account', 'old code', 'old gl code', 'account code', 'gl code', 'client account code'];
 const CERTAINTY_HEADER_NAMES = ['certainty', 'confidence'];
 const NOTES_HEADER_NAMES = ['notes', 'note', 'reason / notes', 'reason', 'comments', 'comment'];
 
