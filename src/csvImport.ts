@@ -372,7 +372,18 @@ function parseHeaderlessCsv(table: string[][]): ParsedDiscreteCsv | { error: str
 // "Level N" run — recognised by header name (case-insensitive), in this fixed order, each
 // independently optional. Widened beyond one literal spelling each since there's no reason to
 // assume every such export names them identically.
-const OLD_CODE_HEADER_NAMES = ['code', 'old acc', 'old account', 'old code', 'old gl code', 'account code', 'gl code', 'client account code'];
+const OLD_CODE_HEADER_NAMES = [
+  'code',
+  'old acc',
+  'old account',
+  'old code',
+  'old gl code',
+  'account code',
+  'gl code',
+  'client account code',
+  'evidence',
+  'evidence (case studies)',
+];
 const CERTAINTY_HEADER_NAMES = ['certainty', 'confidence'];
 const NOTES_HEADER_NAMES = ['notes', 'note', 'reason / notes', 'reason', 'comments', 'comment'];
 
@@ -497,12 +508,49 @@ function tryParseDescriptionOnlyCsv(table: string[][]): ParsedDiscreteCsv | { er
       break;
     }
   }
+
+  // James's report: a second real GL Analyser export didn't name each level column
+  // individually ("L1","L2"...) at all — just one label over the whole block ("Payroll Class /
+  // Pay Component"), followed by a run of blank header cells reserving extra depth, immediately
+  // followed by its own trailing metadata ("Evidence (case studies)", "Notes"). The reserved
+  // blank run is only an upper bound on depth — real depth comes from how many of those columns
+  // the data actually uses, trimmed from the end exactly like the overflow logic below already
+  // does for the per-column style. Only attempted when the strict "L1".."Ln" style above found
+  // nothing, and only trusted as a match when a real trailing metadata column turns up
+  // afterward — otherwise this would be indistinguishable from a genuinely headerless file (e.g.
+  // a Multi-Column Description Table Without Code export) whose first DATA row would otherwise
+  // be misread as a header and silently dropped.
+  let singleLabelFallback = false;
+  if (descCols.length === 0) {
+    const label = (header[0] ?? '').trim();
+    if (label !== '' && !isKnownTrailingHeader(header[0])) {
+      let end = 1;
+      while (end < header.length && (header[end] ?? '').trim() === '') end++;
+      if (end > 1) {
+        let windowEnd = end;
+        while (windowEnd > 1 && dataRows.every((r) => (r[windowEnd - 1] ?? '').trim() === '')) windowEnd--;
+        const atMostOnePerRow = dataRows.every((r) => {
+          let count = 0;
+          for (let c = 0; c < windowEnd; c++) if ((r[c] ?? '').trim() !== '') count++;
+          return count <= 1;
+        });
+        if (atMostOnePerRow) {
+          for (let c = 0; c < windowEnd; c++) descCols.push(c);
+          col = end;
+          singleLabelFallback = true;
+        }
+      }
+    }
+  }
+
   if (descCols.length === 0 || descCols.length > MAX_LEVELS) return null;
 
-  while (descCols.length < MAX_LEVELS && col < header.length && !isKnownTrailingHeader(header[col])) {
-    if (!isOverflowDescriptionColumn(dataRows, col, descCols[descCols.length - 1])) break;
-    descCols.push(col);
-    col++;
+  if (!singleLabelFallback) {
+    while (descCols.length < MAX_LEVELS && col < header.length && !isKnownTrailingHeader(header[col])) {
+      if (!isOverflowDescriptionColumn(dataRows, col, descCols[descCols.length - 1])) break;
+      descCols.push(col);
+      col++;
+    }
   }
 
   // James's report: a real GL Analyser export sometimes leaves a single unnamed, always-blank
@@ -514,19 +562,29 @@ function tryParseDescriptionOnlyCsv(table: string[][]): ParsedDiscreteCsv | { er
   // like this fell through to "isn't this shape" and then to the headerless parser, which
   // rejected it outright with a "Could not find any code columns" error that has nothing to do
   // with the actual problem.
-  while (col < header.length && (header[col] ?? '').trim() === '') col++;
+  //
+  // James's second report: the Payroll Block export above leaves a blank the same way between
+  // its old-code-equivalent "Evidence" column and "Notes", with no Confidence column in between
+  // — a blank can turn up before ANY of the three, not just the first, so this now runs before
+  // each check rather than just once up front.
+  const skipBlankHeaderCols = () => {
+    while (col < header.length && (header[col] ?? '').trim() === '') col++;
+  };
+  skipBlankHeaderCols();
 
   let oldCodeCol: number | null = null;
   if (col < header.length && matchesHeader(header[col], OLD_CODE_HEADER_NAMES)) {
     oldCodeCol = col;
     col++;
   }
+  skipBlankHeaderCols();
 
   let certaintyCol: number | null = null;
   if (col < header.length && matchesHeader(header[col], CERTAINTY_HEADER_NAMES)) {
     certaintyCol = col;
     col++;
   }
+  skipBlankHeaderCols();
 
   let noteCol: number | null = null;
   if (col < header.length) {
@@ -535,6 +593,11 @@ function tryParseDescriptionOnlyCsv(table: string[][]): ParsedDiscreteCsv | { er
     col++;
   }
   if (col < header.length) return null; // anything else left over means this isn't this shape
+
+  // The single-label fallback above is only trustworthy once it's actually found a recognised
+  // trailing metadata column — with none at all, this is just as likely to be a genuinely
+  // headerless file whose first data row looks like a label-plus-blanks by coincidence.
+  if (singleLabelFallback && oldCodeCol === null && certaintyCol === null && noteCol === null) return null;
 
   const mergedRows = mergeCommentRowsIntoNotesAbove(dataRows, descCols, oldCodeCol, certaintyCol, noteCol);
   const suffixValueCols = [oldCodeCol, certaintyCol].filter((c): c is number => c !== null);
@@ -766,11 +829,18 @@ export function parseFlatCodeDescriptionCsv(text: string): ParsedDiscreteCsv | {
   return buildResult(dataRows, 1, [0], [1], [], '-', suffixValueCols, suffixValueCols.map(() => '-'));
 }
 
-export function readFileAsText(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(new Error('Could not read this file.'));
-    reader.readAsText(file);
-  });
+// James's report: a real export (built in an older Windows tool) wasn't UTF-8 at all --
+// FileReader.readAsText defaults to UTF-8 and silently replaces every byte it can't decode with
+// "?" rather than failing, so special characters (en dashes, accented letters) throughout the
+// file's descriptions and notes came through corrupted with no error or warning at all. A strict
+// UTF-8 decode (TextDecoder's fatal option, unlike FileReader, actually throws on invalid bytes)
+// detects this; Windows-1252 is the near-universal fallback for a non-UTF-8 CSV from Windows
+// software, and every byte value is a valid character in it, so it never fails a file outright.
+export async function readFileAsText(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+  } catch {
+    return new TextDecoder('windows-1252').decode(buffer);
+  }
 }
