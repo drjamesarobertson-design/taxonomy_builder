@@ -194,6 +194,14 @@ export default function App() {
      * since there's nothing in them yet and a full set of empty code columns is just noise
      * until the user is ready to code the taxonomy. */
     hideCodeColumns?: boolean;
+    /** Set only for the Flat Code and Description List import -- column 1 holds a multi-
+     * character mnemonic rather than this app's usual single-character code, so the created
+     * project needs settings.column1CodeLength widened to fit it (the widest code the file
+     * actually has) and settings.singleCodeColumn turned on -- the same settings the Simple
+     * Taxonomy wizard's own "Limit to Single Code Column" checkbox sets, and for the same
+     * reason: a flat list has no headings, so every entry is a leaf (also turns on
+     * properCaseOnly). */
+    column1CodeLength?: number;
   } | null>(null);
   // James's ask: "Separate Out Code Elements" — a variant CSV import for files carrying one
   // composite/concatenated code per row instead of this app's own one-char-per-column layout.
@@ -214,9 +222,10 @@ export default function App() {
   const multiColumnDescFileInputRef = useRef<HTMLInputElement>(null);
   // James's ask: a fourth CSV import shape -- a flat, single-level list where the code column is
   // a multi-character mnemonic (e.g. Incoterms: "CFR,Cost and Freight") rather than this app's
-  // own one-character-per-level code. Same pendingCsvImport flow as the other three; the original
-  // code comes in as a Suffix value (csvImport.ts's parseFlatCodeDescriptionCsv) and the real
-  // level-1 code is left blank, same reasoning as the Multi-Column Description import.
+  // own one-character-per-level code. Same pendingCsvImport flow as the other three; the code
+  // goes straight into the real level-1 code cell (csvImport.ts's parseFlatCodeDescriptionCsv),
+  // which is safe here because a flat, single-level list is the one place this app already lets
+  // column 1 hold more than one character (settings.column1CodeLength / singleCodeColumn).
   const flatCodeDescFileInputRef = useRef<HTMLInputElement>(null);
   const [hddFoldersBusy, setHddFoldersBusy] = useState(false);
   // James's ask: "Folders" branches to where the mirrored structure should be created --
@@ -1673,10 +1682,30 @@ export default function App() {
   // other row edit, since these are grid actions, not a separate Settings-screen change.
   function handleSettingsAndRowsChange(settings: TaxonomySettings, rows: TaxonomyRow[]) {
     if (!project) return;
+    // Backstop for James's gap: column 1 of a flat, single-level taxonomy may hold a multi-
+    // character code (singleCodeColumn / column1CodeLength). The two paths that normally grow
+    // numLevels past 1 (Grid's "Add Column", Settings' "Number of Code Columns") already handle
+    // this themselves (confirm-and-truncate, or block); this is just the backstop for any other
+    // path (e.g. the Simple Taxonomy wizard advancing a stage) that might grow numLevels without
+    // going through either -- silently normalises rather than leaving column 1 permanently stuck
+    // wide with no way back (that right-click option only shows for numLevels === 1). A no-op
+    // when the caller already reset these themselves, since the condition below is then false.
+    let nextSettings = settings;
+    let nextRows = rows;
+    if (
+      settings.numLevels > 1 &&
+      project.settings.numLevels === 1 &&
+      (settings.singleCodeColumn || settings.column1CodeLength > 1)
+    ) {
+      nextSettings = { ...settings, column1CodeLength: 1, singleCodeColumn: false };
+      nextRows = rows.map((row) =>
+        (row.codes[0] ?? '').length > 1 ? { ...row, codes: [row.codes[0].slice(0, 1), ...row.codes.slice(1)] } : row,
+      );
+    }
     setUndoStack((stack) => [...stack, project.rows]);
     setRedoStack([]);
     lastEditKeyRef.current = null;
-    setProject({ ...project, settings, rows });
+    setProject({ ...project, settings: nextSettings, rows: nextRows });
     setDirty(true);
   }
 
@@ -1742,7 +1771,7 @@ export default function App() {
 
   function handleCsvImportConfirm(fields: CsvImportFields) {
     if (!pendingCsvImport) return;
-    const { parsed, hideCodeColumns } = pendingCsvImport;
+    const { parsed, hideCodeColumns, column1CodeLength } = pendingCsvImport;
     const newProject = createProject(
       fields.title,
       fields.tableName,
@@ -1756,6 +1785,11 @@ export default function App() {
       parsed.codeDelimiterChar,
     );
     if (hideCodeColumns) newProject.settings.codeColumnsHidden = true;
+    if (column1CodeLength !== undefined && !fields.dropCodes) {
+      newProject.settings.column1CodeLength = column1CodeLength;
+      newProject.settings.singleCodeColumn = true;
+      newProject.settings.properCaseOnly = true;
+    }
     newProject.rows = fields.dropCodes
       ? parsed.rows.map((row) => ({ ...row, codes: row.codes.map(() => '') }))
       : parsed.rows;
@@ -1871,7 +1905,8 @@ export default function App() {
       }
       setLoadError(null);
       const defaultTitle = file.name.replace(/\.csv$/i, '');
-      setPendingCsvImport({ parsed, defaultTitle, hideCodeColumns: true });
+      const column1CodeLength = Math.max(1, ...parsed.rows.map((row) => (row.codes[0] ?? '').length));
+      setPendingCsvImport({ parsed, defaultTitle, column1CodeLength });
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Could not read this file.');
     }
@@ -1886,7 +1921,28 @@ export default function App() {
     const newNumLevels = fields.numLevels;
     const oldNumLevels = project.settings.numLevels;
     let rows = project.rows;
+    let column1CodeLength = project.settings.column1CodeLength;
+    let singleCodeColumn = project.settings.singleCodeColumn;
     if (newNumLevels > oldNumLevels) {
+      // James's gap: column 1 of a flat, single-level taxonomy may hold a multi-character code
+      // (singleCodeColumn / column1CodeLength -- the grid's "Width of Col 1…", and the Flat
+      // Code and Description List CSV import). Adding a level here stops it being a flat list,
+      // so column 1 needs to go back to one character like every other column -- blocked
+      // outright (rather than silently truncating a real code) when that would actually cut
+      // something off; otherwise reset quietly, since nothing is lost. Same reasoning as the
+      // grid's own "Add Column" right-click, which handles the same gap with a confirm dialog
+      // instead of this modal's existing alert()-and-block pattern for unsafe structural changes.
+      if (oldNumLevels === 1 && (singleCodeColumn || column1CodeLength > 1)) {
+        const overflowing = project.rows.filter((row) => (row.codes[0] ?? '').length > 1);
+        if (overflowing.length > 0) {
+          alert(
+            `Column 1 holds a multi-character code on ${overflowing.length} row${overflowing.length === 1 ? '' : 's'} (e.g. "${overflowing[0].codes[0]}") — narrow it to 1 character first (right-click Column 1 → "Width of Col 1…") before adding another level.`,
+          );
+          return;
+        }
+        column1CodeLength = 1;
+        singleCodeColumn = false;
+      }
       rows = growRowsToLevels(rows, newNumLevels);
     } else if (newNumLevels < oldNumLevels) {
       rows = rows.map((row) => ({
@@ -1910,6 +1966,8 @@ export default function App() {
         delimiterPositions: fields.delimiterPositions,
         autoCodeGapIncrement: fields.autoCodeGapIncrement,
         codeColumnsHidden: fields.codeColumnsHidden,
+        column1CodeLength,
+        singleCodeColumn,
       },
     });
     setDirty(true);

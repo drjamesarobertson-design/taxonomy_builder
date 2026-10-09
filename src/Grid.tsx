@@ -2442,15 +2442,37 @@ export default function Grid({
   function handleAddColumnClick() {
     if (!contextMenu) return;
     setContextMenu(null);
+    // James's gap: column 1 of a flat, single-level taxonomy may hold a multi-character code
+    // (singleCodeColumn / column1CodeLength -- see Width of Col 1 below, and the Flat Code and
+    // Description List CSV import). The moment a second level is added this stops being a flat
+    // list, so column 1 needs to go back to the same one-character rule every other column
+    // already has -- same truncate-with-confirm UX applyWidthOfCol1 already uses when narrowing
+    // Width of Col 1 directly, just folded into this confirmation instead of a second prompt.
+    const needsReset = numLevels === 1 && (settings.singleCodeColumn || column1CodeLength > 1);
+    const overflowing = needsReset ? rows.filter((row) => (row.codes[0] ?? '').length > 1) : [];
+    const commitAdd = () => {
+      const newRows = growRowsToLevels(rows, numLevels + 1).map((row) =>
+        needsReset && (row.codes[0] ?? '').length > 1
+          ? { ...row, codes: [row.codes[0].slice(0, 1), ...row.codes.slice(1)] }
+          : row,
+      );
+      onSettingsAndRowsChange(
+        needsReset
+          ? { ...settings, numLevels: numLevels + 1, column1CodeLength: 1, singleCodeColumn: false }
+          : { ...settings, numLevels: numLevels + 1 },
+        newRows,
+      );
+    };
     setConfirmDialog({
-      message: 'Add a new code and description column at the far right?',
+      message: !needsReset
+        ? 'Add a new code and description column at the far right?'
+        : `Add a new code and description column at the far right? This taxonomy's Column 1 holds a multi-character code (a flat, single-level list) — adding a level turns Column 1 back into a single character like every other column${
+            overflowing.length > 0
+              ? `, cutting ${overflowing.length} existing code${overflowing.length === 1 ? '' : 's'} down to 1 character`
+              : ''
+          }.`,
       confirmLabel: 'Yes',
-      onConfirm: () => {
-        onSettingsAndRowsChange(
-          { ...settings, numLevels: numLevels + 1 },
-          growRowsToLevels(rows, numLevels + 1),
-        );
-      },
+      onConfirm: commitAdd,
     });
   }
 

@@ -316,9 +316,16 @@ export async function exportDiscreteXlsx(
     }
     const isCode = col.type === 'code';
     const staysWide = col.type === 'desc' && col.level === lastDescLevel;
+    // James's ask: column 1 of a flat, single-level taxonomy may hold a multi-character code
+    // (settings.column1CodeLength) -- narrowing it down to NARROW_WIDTH like every other code
+    // column would clip it, relying on a spill into the gap column that's itself only 3 wide.
+    // Same sizing the on-screen grid already uses (Grid.tsx's `${column1CodeLength}ch`).
+    const isWideCol1 = isCode && col.level === 0 && project.settings.column1CodeLength > 1;
     excelCol.width = staysWide
       ? autoFitWidth(header[colIndex], rows.map((r) => r[colIndex]), 8, 60)
-      : NARROW_WIDTH;
+      : isWideCol1
+        ? project.settings.column1CodeLength + 1
+        : NARROW_WIDTH;
     excelCol.alignment = { horizontal: isCode ? 'center' : 'left' };
     const hex = getLevelColor(col.level);
     if (!hex) return;
@@ -388,9 +395,16 @@ export async function exportLockedXlsx(
     }
     const isCode = col.type === 'code';
     const staysWide = col.type === 'desc' && col.level === lastDescLevel;
+    // James's ask: column 1 of a flat, single-level taxonomy may hold a multi-character code
+    // (settings.column1CodeLength) -- narrowing it down to NARROW_WIDTH like every other code
+    // column would clip it, relying on a spill into the gap column that's itself only 3 wide.
+    // Same sizing the on-screen grid already uses (Grid.tsx's `${column1CodeLength}ch`).
+    const isWideCol1 = isCode && col.level === 0 && project.settings.column1CodeLength > 1;
     excelCol.width = staysWide
       ? autoFitWidth(header[colIndex], rows.map((r) => r[colIndex]), 8, 60)
-      : NARROW_WIDTH;
+      : isWideCol1
+        ? project.settings.column1CodeLength + 1
+        : NARROW_WIDTH;
     excelCol.alignment = { horizontal: isCode ? 'center' : 'left' };
     const hex = getLevelColor(col.level);
     if (!hex) return;
