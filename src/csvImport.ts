@@ -700,19 +700,24 @@ export function parseMultiColumnDescriptionCsv(text: string): ParsedDiscreteCsv 
   return buildResult(dataRows, numLevels, [], descCols, [], '-', [], []);
 }
 
+// The widest a multi-character column-1 code can be -- matches the Grid's own "Width of Col 1…"
+// picker (Grid.tsx, 1-10) and storage.ts's clamp on settings.column1CodeLength, so a file this
+// import accepts is always one the rest of the app can actually display and hold onto.
+const MAX_COLUMN1_CODE_LENGTH = 10;
+
 // James's ask: a fourth import shape -- a flat, single-level list where the "code" column is a
-// multi-character mnemonic (e.g. Incoterms: "CFR,Cost and Freight") rather than this app's own
-// one-character-per-level code. There's no level for a code like "CFR" to split across -- unlike
-// "Third Party Concatenated Codes" (parseCompositeCodeCsv), where each character of a composite
-// code narrows down one more level of a real hierarchy, these are unrelated flat entries that
-// just happen to be a few characters long. So the original code isn't split or discarded: it's
-// brought in as a Suffix value (same convention as an imported legacy/old GL code elsewhere in
-// this file), and the taxonomy's own real code is left blank at level 1 for the user to allocate
-// -- consistent with Section 5's "codes are allocated once the hierarchy is settled," and with how
-// the Multi-Column Description import already leaves codes blank for exactly the same reason. No
-// header row is assumed (matches every real file James has supplied this way), but one is skipped
-// if the first row's first two cells read as "Code"/"Description" (or a close variant), the same
-// names parseCompositeCodeCsv already recognises.
+// multi-character mnemonic (e.g. Incoterms: "CFR,Cost and Freight") rather than this app's usual
+// single-character-per-level code. There's no level for a code like "CFR" to split across --
+// unlike "Third Party Concatenated Codes" (parseCompositeCodeCsv), where each character of a
+// composite code narrows down one more level of a real hierarchy, these are unrelated flat
+// entries that just happen to be a few characters long. The code goes straight into the real
+// level-1 code cell (codeCols = [0]) -- safe because a flat list is the one place this app
+// already allows column 1 to hold more than one character (settings.column1CodeLength /
+// singleCodeColumn, the Grid's "Width of Col 1…" and the Simple Taxonomy wizard's "Limit to
+// Single Code Column"); the caller (App.tsx) sets those on the created project from the widest
+// code this file actually has. No header row is assumed (matches every real file James has
+// supplied this way), but one is skipped if the first row's first two cells read as "Code"/
+// "Description" (or a close variant), the same names parseCompositeCodeCsv already recognises.
 export function parseFlatCodeDescriptionCsv(text: string): ParsedDiscreteCsv | { error: string } {
   const table = parseCsvTable(text);
   if (table.length === 0) return { error: 'This file is empty.' };
@@ -723,10 +728,12 @@ export function parseFlatCodeDescriptionCsv(text: string): ParsedDiscreteCsv | {
   if (dataRows.length === 0) return { error: 'No data rows found in this file.' };
 
   const missingDescription: string[] = [];
+  const tooLong: string[] = [];
   dataRows.forEach((row, i) => {
     const code = (row[0] ?? '').trim();
     const description = (row[1] ?? '').trim();
     if (code !== '' && description === '') missingDescription.push(rowLabel(row, i));
+    if (code.length > MAX_COLUMN1_CODE_LENGTH) tooLong.push(`${rowLabel(row, i)} ("${code}", ${code.length} characters)`);
   });
   if (missingDescription.length > 0) {
     return {
@@ -735,10 +742,17 @@ export function parseFlatCodeDescriptionCsv(text: string): ParsedDiscreteCsv | {
         `This format expects exactly two columns per row -- a code, then its description.`,
     };
   }
+  if (tooLong.length > 0) {
+    return {
+      error:
+        `${tooLong.length} row(s) have a code longer than this tool supports (${MAX_COLUMN1_CODE_LENGTH} characters): ` +
+        `${joinIssueList(tooLong)}. Shorten these codes and re-import.`,
+    };
+  }
 
   const numCols = Math.max(...dataRows.map((r) => r.length));
-  const suffixValueCols = [0, ...Array.from({ length: Math.max(0, numCols - 2) }, (_, i) => i + 2)];
-  return buildResult(dataRows, 1, [], [1], [], '-', suffixValueCols, suffixValueCols.map(() => '-'));
+  const suffixValueCols = Array.from({ length: Math.max(0, numCols - 2) }, (_, i) => i + 2);
+  return buildResult(dataRows, 1, [0], [1], [], '-', suffixValueCols, suffixValueCols.map(() => '-'));
 }
 
 export function readFileAsText(file: File): Promise<string> {
