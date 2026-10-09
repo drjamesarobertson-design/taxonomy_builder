@@ -21,6 +21,68 @@ export interface ParsedDiscreteCsv {
 
 const CODE_CHARSET = new Set(['.', ..."0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ".split('')]);
 
+// A short, human-findable label for a row in an error message — row *numbers* drift from what a
+// user sees in Excel the moment any blank row upstream got dropped, but the row's own longest
+// cell (almost always its description, since codes/mnemonics are short) is something they can
+// actually Ctrl+F for.
+function rowLabel(row: string[], index: number): string {
+  const longest = row.reduce((best, v) => (v.trim().length > best.trim().length ? v : best), '');
+  const snippet = longest.trim();
+  const shown = snippet.length > 40 ? `${snippet.slice(0, 40)}…` : snippet;
+  return shown ? `row ${index + 1} ("${shown}")` : `row ${index + 1}`;
+}
+
+const MAX_LISTED_ISSUES = 8;
+
+function joinIssueList(issues: string[]): string {
+  const shown = issues.slice(0, MAX_LISTED_ISSUES).join('; ');
+  const more = issues.length > MAX_LISTED_ISSUES ? `; and ${issues.length - MAX_LISTED_ISSUES} more` : '';
+  return `${shown}${more}`;
+}
+
+// James's ask after a real file silently mis-imported: don't just fail (or worse, succeed with
+// the wrong structure) when a file's code columns and description columns don't actually line up
+// row by row — say exactly which rows are wrong and what's wrong with them. Ground truth is
+// Section 4.1: a row's level is the position of its deepest populated code column, and that must
+// be exactly where its one populated description column sits. Runs on the fully-built rows (not
+// raw CSV columns) so it applies uniformly regardless of which detection path produced them; a
+// row with no code entered yet (every cell blank/pad) is left alone, since that's just a taxonomy
+// not coded yet, not a structural problem.
+function checkCodeDescriptionAlignment(rows: TaxonomyRow[]): string | null {
+  if (rows.length === 0 || rows[0].codes.length === 0) return null; // this import shape has no code columns at all
+  const issues: string[] = [];
+  rows.forEach((row, i) => {
+    let deepestCodeIdx = -1;
+    row.codes.forEach((c, idx) => {
+      if (c !== '' && c !== '.') deepestCodeIdx = idx;
+    });
+    if (deepestCodeIdx === -1) return;
+    const populatedDescIdxs = row.descriptions
+      .map((d, idx) => (d.trim() !== '' ? idx : -1))
+      .filter((idx) => idx !== -1);
+    const label = `row ${i + 1}`;
+    if (populatedDescIdxs.length === 0) {
+      issues.push(`${label} (code "${row.codes.join('')}") has no description text at all`);
+    } else if (populatedDescIdxs.length > 1) {
+      issues.push(`${label} has description text in more than one column (levels ${populatedDescIdxs.map((n) => n + 1).join(', ')})`);
+    } else if (populatedDescIdxs[0] !== deepestCodeIdx) {
+      const text = row.descriptions[populatedDescIdxs[0]].trim();
+      const shown = text.length > 40 ? `${text.slice(0, 40)}…` : text;
+      issues.push(
+        `${label} ("${shown}") has its code stopping at level ${deepestCodeIdx + 1} but its description ` +
+          `is in the level ${populatedDescIdxs[0] + 1} column`,
+      );
+    }
+  });
+  if (issues.length === 0) return null;
+  return (
+    `${issues.length} row(s) have a code and description that don't line up at the same level: ${joinIssueList(issues)}. ` +
+    `Each row's description should sit in the column matching how deep its own code goes for that row — ` +
+    `give these rows their own code at the right level (rather than leaving it blank or reusing a parent's ` +
+    `code) and re-import.`
+  );
+}
+
 // A minimal RFC4180-style CSV parser: quoted fields (with embedded commas/newlines/escaped
 // "" for a literal quote) and bare fields, CRLF or bare LF line endings.
 function parseCsvTable(text: string): string[][] {
@@ -87,7 +149,7 @@ function buildResult(
   suffixValueCols: number[],
   suffixDelimiterChars: string[],
   noteCol: number | null = null,
-): ParsedDiscreteCsv {
+): ParsedDiscreteCsv | { error: string } {
   const suffixes: SuffixField[] = suffixValueCols.map((c, i) => {
     const maxLen = dataRows.reduce((m, r) => Math.max(m, (r[c] ?? '').length), 1);
     // James's ask for an imported old GL code column: "6 char but allow for 10" — a generous
@@ -109,6 +171,8 @@ function buildResult(
       suffixValues: suffixValueCols.map((c) => r[c] ?? ''),
       ...(noteCol !== null && (r[noteCol] ?? '').trim() !== '' ? { note: (r[noteCol] ?? '').trim() } : {}),
     }));
+  const alignmentIssue = checkCodeDescriptionAlignment(rows);
+  if (alignmentIssue) return { error: alignmentIssue };
   return { numLevels, delimiterPositions, codeDelimiterChar, suffixes, rows };
 }
 
@@ -117,7 +181,7 @@ function buildResult(
 // columns — the shape this app's own CSV export produces. Returns null (not an error) on any
 // mismatch, since a plain file with no header at all is just as valid; parseDiscreteCsv falls
 // back to the data-driven detection below when this comes back empty-handed.
-function tryParseHeaderedCsv(table: string[][]): ParsedDiscreteCsv | null {
+function tryParseHeaderedCsv(table: string[][]): ParsedDiscreteCsv | { error: string } | null {
   const header = table[0];
   const dataRows = table.slice(1);
 
@@ -238,6 +302,30 @@ function parseHeaderlessCsv(table: string[][]): ParsedDiscreteCsv | { error: str
       delimiterChars.push(common);
       col++;
       continue;
+    }
+    // James's report: a real file had a run of clean single-character code columns, then one
+    // more column that was STILL mostly single characters but with a batch of rows (one whole
+    // branch of the taxonomy) using two-character codes instead -- not enough to pass
+    // mostlyMatches' 90% bar, but nowhere near "this is actually free-text descriptions" either.
+    // The old behaviour silently treated that column as the start of the description block (and
+    // everything genuinely further right as stray suffix data), which is exactly how James ended
+    // up with "only one code column, and the second one in the description" and no clue why.
+    // Catching the near-miss here instead -- a column that's AT LEAST half single-character code
+    // but short of mostlyMatches' bar -- turns that into a specific, fixable error instead of a
+    // silently wrong parse.
+    const nonBlank = values.filter((v) => v !== '');
+    const codeLikeCount = nonBlank.filter((v) => v.length === 1 && CODE_CHARSET.has(v)).length;
+    if (nonBlank.length > 0 && codeLikeCount / nonBlank.length >= 0.5) {
+      const issues = rows
+        .map((r, i) => ({ r, i, v: r[col] }))
+        .filter(({ v }) => v !== '' && !(v.length === 1 && CODE_CHARSET.has(v)))
+        .map(({ r, i, v }) => `${rowLabel(r, i)} has "${v}"`);
+      return {
+        error:
+          `Column ${col + 1} looks like it should be a code column — most rows there hold a single character — ` +
+          `but ${issues.length} row(s) have something else: ${joinIssueList(issues)}. Codes must be exactly ` +
+          `one character per level; recode these rows (or give that level its own extra column) and re-import.`,
+      };
     }
     break;
   }
@@ -388,7 +476,7 @@ function mergeCommentRowsIntoNotesAbove(
 // nothing for that logic to anchor on, and a codeless file is a completely unambiguous shape in
 // its own right once the header names itself this way. Returns null (not an error) on any
 // header mismatch, so parseDiscreteCsv's other two paths still get a turn.
-function tryParseDescriptionOnlyCsv(table: string[][]): ParsedDiscreteCsv | null {
+function tryParseDescriptionOnlyCsv(table: string[][]): ParsedDiscreteCsv | { error: string } | null {
   const header = table[0];
   const dataRows = table.slice(1);
 
