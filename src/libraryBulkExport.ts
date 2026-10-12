@@ -17,7 +17,10 @@ export function supportsFolderBulkExport(): boolean {
 // Same sibling-collision handling as buildHddFolderPlan (hddFolders.ts) — two entries whose
 // table name/title sanitizes to the same filename get " (2)", " (3)", ... appended rather than
 // one silently overwriting the other.
-function uniqueFilenames(entries: LibraryEntry[], extension: string): Map<string, string> {
+// Exported for libraryBulkReplace.ts, which needs the exact same entry-id -> filename mapping
+// (same order, same collision numbering) to match an uploaded file's name back to the Library
+// entry a bulk export of the current Library would have produced it from.
+export function uniqueFilenames(entries: LibraryEntry[], extension: string): Map<string, string> {
   const used = new Set<string>();
   const names = new Map<string, string>();
   for (const entry of entries) {

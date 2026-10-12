@@ -102,6 +102,24 @@
   cursor: default;
 }
 
+/* "Import from Folder (Replace)" (James's ask): a bulk, in-place overwrite across the whole
+   Library -- visually flagged as more consequential than the ordinary transfer buttons beside
+   it, pending a proper super-user gate. */
+.library-transfer-button-danger {
+  border-color: #c0392b;
+  color: #ffb4a8;
+}
+
+.library-replace-warning {
+  color: #b02a2a;
+  font-size: 0.85rem;
+}
+
+.library-replace-note {
+  font-size: 0.85rem;
+  color: #666;
+}
+
 .library-import-file-input {
   display: none;
 }

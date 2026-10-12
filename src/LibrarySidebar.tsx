@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { InputHTMLAttributes } from 'react';
 import { createPortal } from 'react-dom';
 import {
   buildLibraryExportBundle,
@@ -9,6 +10,8 @@ import {
 import type { LibraryCategory, LibraryEntry, LibraryExportBundle } from './library';
 import { saveExportFile } from './exportFolder';
 import { exportLibraryEntriesToFiles } from './libraryBulkExport';
+import { supportsFolderBulkRead, pickFolderFiles, planReplace, applyReplacements } from './libraryBulkReplace';
+import type { ReplacePlan } from './libraryBulkReplace';
 import type { HelpTextMap } from './helpText';
 import { useMenuTooltip, MenuTooltipPortal } from './menuTooltip';
 import Tooltip from './Tooltip';
@@ -29,6 +32,9 @@ interface LibrarySidebarProps {
   onCheckForNewSamples: () => void;
   onImportNewSamples: (ids: string[]) => void;
   onCloseNewSamples: () => void;
+  /** "Import from Folder (Replace)" (James's ask): fired once a batch of entries has had its
+   * content replaced in place, so the caller can refresh its own copy of the Library list. */
+  onBulkReplaceComplete: () => void;
 }
 
 interface ContextMenuState {
@@ -62,6 +68,7 @@ export default function LibrarySidebar({
   onCheckForNewSamples,
   onImportNewSamples,
   onCloseNewSamples,
+  onBulkReplaceComplete,
 }: LibrarySidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -90,6 +97,18 @@ export default function LibrarySidebar({
   const [bulkExportProgress, setBulkExportProgress] = useState<{ done: number; total: number; format: string } | null>(
     null,
   );
+  // "Import from Folder (Replace)" (James's ask): anonymising real-client taxonomies for demo
+  // use means Export -> hand the file to Claude Chat to anonymise -> bring the edited copy back
+  // in, replacing that same Library entry's content and nothing else. replacePlan holds the
+  // matched-by-filename result awaiting confirmation; replaceProgress/replaceResult drive the
+  // same progress-then-summary flow as bulk export. Not yet gated behind anything -- see
+  // libraryBulkReplace.ts's header comment.
+  const [replacePlan, setReplacePlan] = useState<ReplacePlan | null>(null);
+  const [replaceProgress, setReplaceProgress] = useState<{ done: number; total: number } | null>(null);
+  const [replaceResult, setReplaceResult] = useState<{ replacedCount: number; rowCountMismatches: string[] } | null>(
+    null,
+  );
+  const replaceFolderInputRef = useRef<HTMLInputElement>(null);
   const [pendingImport, setPendingImport] = useState<LibraryExportBundle | null>(null);
   // Which entries (by index into pendingImport.entries) are ticked in the import checklist —
   // James's ask: let him check the contents before committing, same as Export's own picker.
@@ -247,6 +266,36 @@ export default function LibrarySidebar({
     );
     setBulkExportProgress(null);
     if (result.method !== 'cancelled') setShowExportPicker(false);
+  }
+
+  function handleFilesPicked(files: File[]) {
+    if (files.length === 0) return;
+    setReplacePlan(planReplace(entries, files));
+  }
+
+  async function startBulkReplace() {
+    if (supportsFolderBulkRead()) {
+      const files = await pickFolderFiles();
+      if (files) handleFilesPicked(files);
+    } else {
+      replaceFolderInputRef.current?.click();
+    }
+  }
+
+  async function confirmBulkReplace() {
+    if (!replacePlan) return;
+    const { matches } = replacePlan;
+    setReplaceProgress({ done: 0, total: matches.length });
+    try {
+      const result = await applyReplacements(matches, (done, total) => setReplaceProgress({ done, total }));
+      setReplaceResult(result);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Something went wrong replacing these entries.');
+    } finally {
+      setReplaceProgress(null);
+      setReplacePlan(null);
+      onBulkReplaceComplete();
+    }
   }
 
   function handleImportFileChosen(file: File) {
@@ -439,6 +488,16 @@ export default function LibrarySidebar({
             Check for New Samples
           </button>
         </Tooltip>
+        <Tooltip field="btnLibReplaceFromFolder" helpText={helpText}>
+          <button
+            type="button"
+            className="library-transfer-button library-transfer-button-danger"
+            onClick={startBulkReplace}
+            disabled={entries.length === 0}
+          >
+            Import from Folder (Replace)…
+          </button>
+        </Tooltip>
         <input
           ref={importFileInputRef}
           type="file"
@@ -447,6 +506,21 @@ export default function LibrarySidebar({
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) handleImportFileChosen(file);
+            e.target.value = '';
+          }}
+        />
+        <input
+          ref={replaceFolderInputRef}
+          type="file"
+          multiple
+          className="library-import-file-input"
+          // webkitdirectory is a long-standing, widely-supported non-standard attribute with no
+          // React/TS typing of its own -- cast narrowly to add it rather than widening the whole
+          // element's prop types. Only reached on browsers without window.showDirectoryPicker.
+          {...({ webkitdirectory: '' } as unknown as InputHTMLAttributes<HTMLInputElement>)}
+          onChange={(e) => {
+            const files = Array.from(e.target.files ?? []);
+            handleFilesPicked(files);
             e.target.value = '';
           }}
         />
@@ -658,6 +732,102 @@ export default function LibrarySidebar({
                   Library Backup (.json)
                 </button>
               </Tooltip>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
+    {replacePlan &&
+      createPortal(
+        <div
+          className="validation-overlay"
+          onClick={() => {
+            if (!replaceProgress) setReplacePlan(null);
+          }}
+        >
+          <div className="validation-dialog library-export-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <p>
+              Replace {replacePlan.matches.length} of {entries.length} Library{' '}
+              {entries.length === 1 ? 'entry' : 'entries'} with the content from matching files in that folder?
+            </p>
+            <p className="library-replace-warning">
+              This overwrites each matched entry's content in place — category, order and Starter Sample status stay
+              as they are, but the previous content cannot be recovered afterwards.
+            </p>
+            {replacePlan.matches.length > 0 && (
+              <div className="library-export-checklist">
+                <div className="library-export-checklist-group">
+                  <h4>Will be replaced</h4>
+                  {replacePlan.matches.map(({ entry, file }) => (
+                    <div key={entry.id} className="library-export-checklist-item">
+                      {file.name} → {entry.project.title || '(untitled)'}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {replacePlan.unmatchedFiles.length > 0 && (
+              <div className="library-export-checklist">
+                <div className="library-export-checklist-group">
+                  <h4>Not matched to any Library entry — will be skipped</h4>
+                  {replacePlan.unmatchedFiles.map((name) => (
+                    <div key={name} className="library-export-checklist-item">
+                      {name}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {replacePlan.entriesWithoutFile.length > 0 && (
+              <p className="library-replace-note">
+                {replacePlan.entriesWithoutFile.length} other Library{' '}
+                {replacePlan.entriesWithoutFile.length === 1 ? 'entry has' : 'entries have'} no matching file and
+                will be left unchanged.
+              </p>
+            )}
+            {replaceProgress && (
+              <p className="library-export-progress">
+                Replacing: {replaceProgress.done} of {replaceProgress.total}…
+              </p>
+            )}
+            <div className="confirm-dialog-actions">
+              <button type="button" disabled={!!replaceProgress} onClick={() => setReplacePlan(null)}>
+                Cancel
+              </button>
+              <Tooltip field="btnLibReplaceConfirm" helpText={helpText}>
+                <button
+                  type="button"
+                  disabled={replacePlan.matches.length === 0 || !!replaceProgress}
+                  onClick={confirmBulkReplace}
+                >
+                  Replace {replacePlan.matches.length} {replacePlan.matches.length === 1 ? 'Entry' : 'Entries'}
+                </button>
+              </Tooltip>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
+    {replaceResult &&
+      createPortal(
+        <div className="validation-overlay" onClick={() => setReplaceResult(null)}>
+          <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <p>
+              Replaced {replaceResult.replacedCount} Library {replaceResult.replacedCount === 1 ? 'entry' : 'entries'}.
+            </p>
+            {replaceResult.rowCountMismatches.length > 0 && (
+              <p className="library-replace-note">
+                {replaceResult.rowCountMismatches.length} of these had a different number of rows than the entry
+                they replaced, so notes and locked-row status beyond the shorter of the two couldn't be carried
+                over: {replaceResult.rowCountMismatches.join(', ')}
+              </p>
+            )}
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setReplaceResult(null)}>
+                OK
+              </button>
             </div>
           </div>
         </div>,

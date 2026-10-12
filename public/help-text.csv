@@ -141,6 +141,8 @@ btnLibExportCsv,Export to CSV,"Save each selected taxonomy as its own raw-grid .
 btnLibExportConfirm,Library Backup (.json),"Bundle the selected taxonomies into a single Library export file, for backup, moving to a new machine, or sharing a demo/sample set.",
 btnLibImportConfirm,Import,Import the selected taxonomies into your Library.,
 btnLibAddNewSamplesConfirm,Add Samples,Add the selected starter samples to your Library.,
+btnLibReplaceFromFolder,Import from Folder (Replace)…,"Point at a folder of edited .xlsx/.csv files (e.g. anonymised copies of an Export) -- each file whose name matches a current Library entry replaces that entry's content in place. Entries with no matching file are left untouched; this never adds a new entry.",
+btnLibReplaceConfirm,Replace,Overwrite these matched Library entries' content with the uploaded files.,
 btnGuidanceNextStep,Next Step,Move on to the next stage of the guided wizard.,
 btnGuidanceFillCodes,Fill Codes,Carry each heading's code down through its own rows.,
 btnGuidancePadCodes,Pad Codes,Mark the rows that don't go any deeper with the padding character.,

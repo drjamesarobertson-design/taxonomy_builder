@@ -85,7 +85,10 @@ function checkCodeDescriptionAlignment(rows: TaxonomyRow[]): string | null {
 
 // A minimal RFC4180-style CSV parser: quoted fields (with embedded commas/newlines/escaped
 // "" for a literal quote) and bare fields, CRLF or bare LF line endings.
-function parseCsvTable(text: string): string[][] {
+// Exported for libraryBulkReplace.ts, which re-parses a CSV that's an edited copy of this
+// app's own raw-grid export -- it reuses this exact row-splitting primitive rather than a
+// second one, so the two agree on quoting/embedded-newline handling.
+export function parseCsvTable(text: string): string[][] {
   const table: string[][] = [];
   let row: string[] = [];
   let field = '';
