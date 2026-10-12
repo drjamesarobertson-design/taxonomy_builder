@@ -82,6 +82,7 @@
    rest of this sidebar, directly under the collapse toggle rather than a second location. */
 .library-transfer-buttons {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.4rem;
   margin-bottom: 0.6rem;
 }

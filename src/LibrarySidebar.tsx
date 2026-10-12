@@ -301,13 +301,13 @@ export default function LibrarySidebar({
   function handleImportFileChosen(file: File) {
     // James's report: this button's own file picker's accept filter doesn't stop every
     // browser/OS from still letting an .xlsx/.csv be chosen here (the wrong button for those --
-    // see "Import from Folder (Replace)…" below) -- catching that by extension up front gives a
-    // much clearer next step than a bare JSON-parse failure.
+    // see "Replace from Folder…" below) -- catching that by extension up front gives a much
+    // clearer next step than a bare JSON-parse failure.
     const ext = file.name.slice(file.name.lastIndexOf('.') + 1).toLowerCase();
     if (ext === 'xlsx' || ext === 'csv') {
       alert(
         `This button is for a Library Backup (.json) file only. To bring in an edited .${ext} file ` +
-          'like this one, use "Import from Folder (Replace)…" instead.',
+          'like this one, use "Replace from Folder…" instead.',
       );
       return;
     }
@@ -507,7 +507,7 @@ export default function LibrarySidebar({
             onClick={startBulkReplace}
             disabled={entries.length === 0}
           >
-            Import from Folder (Replace)…
+            Replace from Folder…
           </button>
         </Tooltip>
         <input
