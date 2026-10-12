@@ -232,14 +232,22 @@ function exportFilename(project: TaxonomyProject, descriptor: string, extension:
 // one-off snapshots handed to another piece of software (the Cubic Business Model's four
 // tables), not part of the taxonomy's own save/export version lineage, so `bumpFileVersion`
 // doesn't apply here.
+// James's ask: "Export All" (bulk Library export, LibrarySidebar.tsx) needs a plain Blob per
+// taxonomy with no save dialog and no version-counter side effect of its own -- it writes many
+// files into one already-chosen destination in one pass, not one file via one Save As. Factored
+// out so exportDiscreteCsvAs/exportDiscreteCsv (both still single-file, dialog-driven exports)
+// can share the exact same bytes rather than this logic drifting between three copies.
+export function buildDiscreteCsvBlob(project: TaxonomyProject): Blob {
+  const { rows } = buildDiscreteGrid(project);
+  const csv = rows.map((line) => line.map(csvEscape).join(',')).join('\r\n');
+  return new Blob([csv], { type: 'text/csv;charset=utf-8' });
+}
+
 export async function exportDiscreteCsvAs(
   project: TaxonomyProject,
   filename: string,
 ): Promise<{ usedFolder: boolean; cancelled: boolean }> {
-  const { rows } = buildDiscreteGrid(project);
-  const csv = rows.map((line) => line.map(csvEscape).join(',')).join('\r\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-  return saveExportFile(blob, filename);
+  return saveExportFile(buildDiscreteCsvBlob(project), filename);
 }
 
 export async function exportDiscreteCsv(
@@ -260,11 +268,15 @@ export async function exportDiscreteCsv(
   return { project: cancelled ? project : versioned, usedFolder, cancelled };
 }
 
-export async function exportDiscreteXlsx(
+// James's ask: "Export All" (bulk Library export, LibrarySidebar.tsx) needs a plain Blob per
+// taxonomy with no save dialog and no version-counter side effect of its own -- it writes many
+// files into one already-chosen destination in one pass, not one file via one Save As. Factored
+// out of exportDiscreteXlsx below so both share the exact same workbook-building logic (colours,
+// column widths, the Column 1 width exception) rather than it drifting between two copies.
+export async function buildDiscreteXlsxBlob(
   project: TaxonomyProject,
   options?: { paddingOverride?: string; suffixMode?: 'concatenate' | 'rightAlign' },
-): Promise<{ project: TaxonomyProject; usedFolder: boolean; cancelled: boolean }> {
-  const { project: versioned, versionLabel } = bumpFileVersion(project, 'discrete-xlsx');
+): Promise<Blob> {
   // exceljs is a large dependency needed only for this one export path — code-split so it
   // doesn't inflate the initial bundle for everyone who never exports to Excel.
   const ExcelJS = (await import('exceljs')).default;
@@ -336,9 +348,17 @@ export async function exportDiscreteXlsx(
   });
 
   const buffer = await workbook.xlsx.writeBuffer();
-  const blob = new Blob([buffer], {
+  return new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });
+}
+
+export async function exportDiscreteXlsx(
+  project: TaxonomyProject,
+  options?: { paddingOverride?: string; suffixMode?: 'concatenate' | 'rightAlign' },
+): Promise<{ project: TaxonomyProject; usedFolder: boolean; cancelled: boolean }> {
+  const { project: versioned, versionLabel } = bumpFileVersion(project, 'discrete-xlsx');
+  const blob = await buildDiscreteXlsxBlob(project, options);
   const { usedFolder, cancelled } = await saveExportFile(blob, exportFilename(project, 'Per Column', 'xlsx', versionLabel));
   return { project: cancelled ? project : versioned, usedFolder, cancelled };
 }

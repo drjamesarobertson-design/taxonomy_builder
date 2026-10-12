@@ -8,6 +8,7 @@ import {
 } from './library';
 import type { LibraryCategory, LibraryEntry, LibraryExportBundle } from './library';
 import { saveExportFile } from './exportFolder';
+import { exportLibraryEntriesToFiles } from './libraryBulkExport';
 import type { HelpTextMap } from './helpText';
 import { useMenuTooltip, MenuTooltipPortal } from './menuTooltip';
 import Tooltip from './Tooltip';
@@ -82,6 +83,13 @@ export default function LibrarySidebar({
   // anything is actually added.
   const [showExportPicker, setShowExportPicker] = useState(false);
   const [exportSelection, setExportSelection] = useState<Set<string>>(new Set());
+  // "Export All" (James's ask): same checklist/selection as the JSON backup export above, but
+  // writing one Excel or CSV file per selected entry instead of one combined backup file. Set
+  // while the write is in progress (a real wait for a large Library, since each file is its own
+  // ExcelJS workbook), cleared on completion/cancel.
+  const [bulkExportProgress, setBulkExportProgress] = useState<{ done: number; total: number; format: string } | null>(
+    null,
+  );
   const [pendingImport, setPendingImport] = useState<LibraryExportBundle | null>(null);
   // Which entries (by index into pendingImport.entries) are ticked in the import checklist —
   // James's ask: let him check the contents before committing, same as Export's own picker.
@@ -225,6 +233,20 @@ export default function LibrarySidebar({
     const date = new Date().toISOString().slice(0, 10);
     const { cancelled } = await saveExportFile(blob, `taxonomy-library-export-${date}.json`);
     if (!cancelled) setShowExportPicker(false);
+  }
+
+  // "Export All" (James's ask): one Excel or CSV file per selected entry, written in one pass —
+  // see libraryBulkExport.ts for the folder-write-vs-individual-downloads split. The picker stays
+  // open underneath; only the progress dialog shows while this runs, so a cancel (Chromium's
+  // folder prompt dismissed) just leaves the checklist exactly as it was.
+  async function confirmExportFiles(format: 'xlsx' | 'csv') {
+    const selected = entries.filter((e) => exportSelection.has(e.id));
+    setBulkExportProgress({ done: 0, total: selected.length, format });
+    const result = await exportLibraryEntriesToFiles(selected, format, (done, total) =>
+      setBulkExportProgress({ done, total, format }),
+    );
+    setBulkExportProgress(null);
+    if (result.method !== 'cancelled') setShowExportPicker(false);
   }
 
   function handleImportFileChosen(file: File) {
@@ -577,7 +599,7 @@ export default function LibrarySidebar({
       createPortal(
         <div className="validation-overlay" onClick={() => setShowExportPicker(false)}>
           <div className="validation-dialog library-export-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
-            <p>Choose which taxonomies to include in the export file:</p>
+            <p>Choose which taxonomies to export:</p>
             <div className="library-export-select-all">
               <button type="button" onClick={() => setExportSelection(new Set(entries.map((e) => e.id)))}>
                 Select All
@@ -603,13 +625,37 @@ export default function LibrarySidebar({
                 </div>
               ))}
             </div>
+            {bulkExportProgress && (
+              <p className="library-export-progress">
+                Exporting {bulkExportProgress.format.toUpperCase()}: {bulkExportProgress.done} of{' '}
+                {bulkExportProgress.total}…
+              </p>
+            )}
             <div className="confirm-dialog-actions">
-              <button type="button" onClick={() => setShowExportPicker(false)}>
+              <button type="button" disabled={!!bulkExportProgress} onClick={() => setShowExportPicker(false)}>
                 Cancel
               </button>
+              <Tooltip field="btnLibExportXlsx" helpText={helpText}>
+                <button
+                  type="button"
+                  disabled={exportSelection.size === 0 || !!bulkExportProgress}
+                  onClick={() => confirmExportFiles('xlsx')}
+                >
+                  Export to Excel
+                </button>
+              </Tooltip>
+              <Tooltip field="btnLibExportCsv" helpText={helpText}>
+                <button
+                  type="button"
+                  disabled={exportSelection.size === 0 || !!bulkExportProgress}
+                  onClick={() => confirmExportFiles('csv')}
+                >
+                  Export to CSV
+                </button>
+              </Tooltip>
               <Tooltip field="btnLibExportConfirm" helpText={helpText}>
-                <button type="button" disabled={exportSelection.size === 0} onClick={confirmExport}>
-                  Export {exportSelection.size} {exportSelection.size === 1 ? 'Taxonomy' : 'Taxonomies'}
+                <button type="button" disabled={exportSelection.size === 0 || !!bulkExportProgress} onClick={confirmExport}>
+                  Library Backup (.json)
                 </button>
               </Tooltip>
             </div>
