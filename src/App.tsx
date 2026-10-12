@@ -2167,6 +2167,7 @@ export default function App() {
         onCheckForNewSamples={handleCheckForNewSamples}
         onImportNewSamples={handleImportNewSamples}
         onCloseNewSamples={() => setNewSampleCandidates(null)}
+        onBulkReplaceComplete={refreshLibrary}
       />
       <div className="app">
       <div className="app-sticky-top">

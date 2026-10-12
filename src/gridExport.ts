@@ -9,14 +9,18 @@ import { getLevelColor } from './colors';
 import { saveExportFile } from './exportFolder';
 import { bumpFileVersion } from './fileVersion';
 
-type ExportColumn =
+export type ExportColumn =
   | { type: 'code'; level: number }
   | { type: 'desc'; level: number }
   | { type: 'delimiter'; char: string }
   | { type: 'gap' }
   | { type: 'suffix'; index: number };
 
-function buildExportColumns(
+// Exported for libraryBulkReplace.ts (James's "replace matching Library entries by filename"
+// batch import): rebuilding the exact same column layout a given project's own raw-grid export
+// used is how that feature reads an edited copy of that export back in, positionally, without
+// needing a second from-scratch shape detector alongside the general CSV importer.
+export function buildExportColumns(
   project: TaxonomyProject,
   options?: { excludeDelimiters?: boolean; excludeSuffixColumns?: boolean },
 ): ExportColumn[] {
