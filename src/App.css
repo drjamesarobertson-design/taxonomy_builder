@@ -126,6 +126,11 @@
   margin-bottom: 1rem;
 }
 
+.library-export-progress {
+  font-weight: 600;
+  margin: 0 0 1rem;
+}
+
 .library-export-checklist-group h4 {
   font-size: 0.8rem;
   text-transform: uppercase;
