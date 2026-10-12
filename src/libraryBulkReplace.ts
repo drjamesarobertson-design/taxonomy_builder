@@ -2,10 +2,18 @@
 // (exported via "Export to Excel"/"Export to CSV", then edited outside the app -- e.g. to strip
 // client-identifying text before using a taxonomy for a demo video) must REPLACE each matching
 // Library entry's content in place, never add a new entry and never touch entries with no
-// matching file. "Matching" means: the uploaded file's name (minus extension) is exactly the
-// filename the current Library would produce for that entry via a bulk export -- the same
-// uniqueFilenames() ordering/collision logic libraryBulkExport.ts already uses, so a round trip
-// through Export -> edit -> this always lines files back up with the entry they came from.
+// matching file. "Matching" means: the uploaded file's name (minus extension) is, once
+// normalised, the filename the current Library would produce for that entry via a bulk export --
+// the same uniqueFilenames() ordering/collision logic libraryBulkExport.ts already uses, so a
+// round trip through Export -> edit -> this lines files back up with the entry they came from
+// even once normalised.
+//
+// James's report (first real try): his own file-naming habit -- visible in every file he's sent
+// this whole project, e.g. "Payroll_Block_Master_v_2.0.csv" -- replaces spaces with underscores
+// and appends a trailing "_v_N.N" version tag, neither of which our own export filename ever
+// has. An exact-stem match against that would never succeed for him in practice, so matchKey()
+// below normalises underscores/hyphens/spaces together and strips a trailing version tag (or an
+// OS-style duplicate-download "(2)") before comparing on both sides.
 //
 // Deliberately narrow: this never creates or deletes a Library entry, and every field other
 // than rows (category, order, isStarterSample/"star", settings, title, tableName, purpose,
@@ -43,6 +51,36 @@ function stemOf(filename: string): string {
   return dot === -1 ? filename : filename.slice(0, dot);
 }
 
+// Treats underscores, hyphens and runs of whitespace as interchangeable word separators, same
+// as sanitizeFolderName's own replacement of filesystem-illegal characters with "_" already
+// blurs the line between what was originally a space and what wasn't.
+function normalizeForMatch(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Strips a trailing version tag ("v1.3", "v 2", "v_3.0" once normalized to "v 3 0"... handled
+// below) and a trailing OS-style duplicate-download suffix ("(2)") -- repeatedly, in case a
+// file picked up both (e.g. "... v1.3 (2)"). Caveat: a taxonomy whose real title genuinely ends
+// in something like "V2" would also get trimmed here -- an accepted tradeoff given James's own
+// files always carry a genuine version tag in practice.
+function stripTrailingVersionTag(normalized: string): string {
+  let result = normalized;
+  for (let i = 0; i < 3; i++) {
+    const next = result.replace(/\s*\(\d+\)$/, '').replace(/\s*v\s*\d+(\s*\.\s*\d+)*$/i, '');
+    if (next === result) break;
+    result = next.trim();
+  }
+  return result;
+}
+
+function matchKey(filename: string): string {
+  return stripTrailingVersionTag(normalizeForMatch(stemOf(filename)));
+}
+
 /** Chromium only (gated by supportsFolderBulkRead) -- one folder-read permission prompt, then
  * every file directly inside it (not recursing into subfolders, same as the bulk export only
  * ever writes one level deep). Returns null if the user dismisses the picker. */
@@ -71,15 +109,19 @@ export interface ReplacePlan {
 }
 
 /** Pure name-matching only -- no file content is read here. Matches each file's name (minus
- * extension) against the filename a bulk export of `entries` (in this same order) would have
- * produced for it, under that file's own extension. */
-function reverseByStem(entries: LibraryEntry[], extension: string): Map<string, LibraryEntry> {
+ * extension, normalised) against the filename a bulk export of `entries` (in this same order)
+ * would have produced for it, under that file's own extension. A key two entries' names both
+ * normalise to maps to `null` (ambiguous) rather than either entry, so a collision never causes
+ * a file to silently land on the wrong one. */
+function reverseByStem(entries: LibraryEntry[], extension: string): Map<string, LibraryEntry | null> {
   const names = uniqueFilenames(entries, extension);
   const entryById = new Map(entries.map((e) => [e.id, e]));
-  const reversed = new Map<string, LibraryEntry>();
+  const reversed = new Map<string, LibraryEntry | null>();
   for (const [entryId, filename] of names) {
     const entry = entryById.get(entryId);
-    if (entry) reversed.set(stemOf(filename).toLowerCase(), entry);
+    if (!entry) continue;
+    const key = matchKey(filename);
+    reversed.set(key, reversed.has(key) ? null : entry);
   }
   return reversed;
 }
@@ -98,8 +140,8 @@ export function planReplace(entries: LibraryEntry[], files: File[]): ReplacePlan
       unmatchedFiles.push(file.name);
       continue;
     }
-    const stem = stemOf(file.name).toLowerCase();
-    const entry = (ext === 'csv' ? csvByStem : xlsxByStem).get(stem);
+    const key = matchKey(file.name);
+    const entry = (ext === 'csv' ? csvByStem : xlsxByStem).get(key);
     if (!entry) {
       unmatchedFiles.push(file.name);
       continue;
