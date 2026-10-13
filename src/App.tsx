@@ -389,6 +389,10 @@ export default function App() {
   // handleLockTaxonomy's own comment for why: a native confirm() dialog can consume the click's
   // user activation before the save afterward gets to call the native Save-As picker.
   const [lockConfirm, setLockConfirm] = useState<'lock' | 'lockUpdates' | null>(null);
+  // James's report: nothing confirmed the Lock actually went through afterwards — the only
+  // visible sign was the toolbar button's own icon flipping from 🔒 to 🔓, easy to miss. Shown
+  // once performLockTaxonomy/performLockUpdates finish.
+  const [lockSuccessMessage, setLockSuccessMessage] = useState<string | null>(null);
 
   // Audit Taxonomy (James's spec, considerably elaborated in review): Lock Taxonomy no longer
   // runs its own separate integrity check — it launches this walkthrough instead, and can't
@@ -1444,6 +1448,7 @@ export default function App() {
     setProject(lockedProject);
     setDirty(false);
     performSave(lockedProject);
+    setLockSuccessMessage('Table Locked');
   }
 
   // Unlock: lifts the enforcement only — every row's `protected` flag from the last Lock is
@@ -1484,6 +1489,7 @@ export default function App() {
     setProject(lockedProject);
     setDirty(false);
     performSave(lockedProject);
+    setLockSuccessMessage('Updates Locked');
   }
 
   async function performExportLockedXlsx() {
@@ -3537,6 +3543,23 @@ export default function App() {
                 }}
               >
                 {lockConfirm === 'lock' ? 'Continue and Lock' : 'Continue and Lock Updates'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {lockSuccessMessage && (
+        <div className="validation-overlay" onClick={() => setLockSuccessMessage(null)}>
+          <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <p>
+              🔒 {lockSuccessMessage}. Every row is now protected — its code and description can
+              no longer be edited or deleted, and new rows can only go where a real code gap
+              already exists.
+            </p>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setLockSuccessMessage(null)}>
+                OK
               </button>
             </div>
           </div>

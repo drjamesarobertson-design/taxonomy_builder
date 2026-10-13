@@ -24,6 +24,19 @@ export function countHeadings(rows: TaxonomyRow[]): number {
   return rows.filter((r) => levelOf(r) === 0).length;
 }
 
+// James's report: the wizard's own Enter/Down-arrow auto-add-a-row convenience (Grid.tsx) always
+// leaves one genuinely empty row sitting at the end, ready for the next entry -- fine while
+// still on the same stage, but it was carrying straight through into the next one (Step 2, or
+// the coding grid) whenever "Next Step" was clicked before that row got typed into. Stripped at
+// every stage transition below, not just the very end — a transition can happen with more than
+// one trailing blank in principle (e.g. Enter pressed twice in a row), so this removes all of
+// them, not just one.
+export function stripTrailingBlankRows(rows: TaxonomyRow[]): TaxonomyRow[] {
+  let end = rows.length;
+  while (end > 0 && levelOf(rows[end - 1]) === -1) end--;
+  return rows.slice(0, end);
+}
+
 /** One count per heading, in order — how many level-1 children immediately follow it. A
  * heading with 0 children deliberately isn't "too few" (Simple Taxonomy explicitly allows
  * some headings to stay flat while others expand), so callers should only flag counts that

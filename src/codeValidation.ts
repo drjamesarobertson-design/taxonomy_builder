@@ -454,8 +454,23 @@ export function isAllowedByCodeRestriction(ch: string, restriction: CodeRestrict
 // gap, but "1"/"3" does (a "2" fits), and the same logic holds across the digit/letter
 // boundary (e.g. "9"/"A" has no gap in the fixed charset, "9"/"B" does). The padding character
 // itself is never a usable gap-filler — it isn't a real code.
-export function hasCodeGap(upper: string, lower: string, restriction: CodeRestriction, paddingChar: string): boolean {
-  return validCodesInRange(upper, lower).some((c) => c !== paddingChar && isAllowedByCodeRestriction(c, restriction));
+//
+// James's report: inserting more than one row at once (a multi-row selection's "Insert N Rows
+// Above/Below") only ever checked whether ANY single code fit the gap, not whether N of them
+// did — a locked taxonomy let "Insert 2 Rows" straight through a gap that could only ever hold
+// one new code (e.g. between "1" and "3"). `neededCount` (default 1, every existing single-row
+// caller unaffected) makes this an exact count check instead of a bare existence check.
+export function hasCodeGap(
+  upper: string,
+  lower: string,
+  restriction: CodeRestriction,
+  paddingChar: string,
+  neededCount: number = 1,
+): boolean {
+  const usable = validCodesInRange(upper, lower).filter(
+    (c) => c !== paddingChar && isAllowedByCodeRestriction(c, restriction),
+  );
+  return usable.length >= neededCount;
 }
 
 /** Compresses a sorted list of single characters into "X" / "X-Y" runs for display. */
