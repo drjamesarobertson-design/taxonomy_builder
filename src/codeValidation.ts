@@ -103,6 +103,32 @@ export function findChildlessHeadings(rows: TaxonomyRow[], properCaseOnly: boole
   return result;
 }
 
+/** The mirror image of findChildlessHeadings, above: a row WITH children that ISN'T in ALL
+ * CAPS — Section 4.3's other half ("entries that will have child entries are shown in ALL
+ * CAPS"). James's report: a whole taxonomy that had gone through an outside tool (an AI chat,
+ * anonymising real data) came back entirely Proper Case, headings included — nothing in Audit
+ * caught it, since the previous check only ever looked at ALL-CAPS rows. Same
+ * properCaseOnly carve-out as above. Returns the 0-based row indices found. */
+export function findHeadingsNotAllCaps(rows: TaxonomyRow[], properCaseOnly: boolean): number[] {
+  if (properCaseOnly) return [];
+  const result: number[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const level = levelOf(rows[i]);
+    if (level === -1) continue;
+    const text = rows[i].descriptions[level] ?? '';
+    if (!text.trim() || isAllCaps(text)) continue;
+    let hasChild = false;
+    for (let j = i + 1; j < rows.length; j++) {
+      const l = levelOf(rows[j]);
+      if (l === -1) continue;
+      hasChild = l > level;
+      break;
+    }
+    if (hasChild) result.push(i);
+  }
+  return result;
+}
+
 // Audit Taxonomy (James's ask, "Audit Taxonomy — Proposed Specification"): Lock Taxonomy no
 // longer runs its own separate check (findLockIntegrityIssues, above this comment in earlier
 // versions of this file, is gone — replaced entirely by this). One issue per distinct problem,
@@ -331,7 +357,18 @@ export function findAuditIssues(
       level: levelOf(rows[i]),
       kind: 'toggleCase',
       message:
-        'This ALL CAPS heading has no children — usually a posting-level entry left in the wrong case. "Fix and Resume Audit" switches it to Proper Case, or Skip to add its breakdown instead.',
+        'This ALL CAPS heading has no children — usually a posting-level entry left in the wrong case. "Fix and Resume Audit" switches it to Proper Case, or Accept as is if this is a deliberate ALL CAPS entry (e.g. a section marker) rather than a posting-level mistake.',
+    });
+  }
+
+  const headingsNotAllCaps = findHeadingsNotAllCaps(rows, properCaseOnly);
+  for (const i of headingsNotAllCaps) {
+    issues.push({
+      rowId: rows[i].id,
+      level: levelOf(rows[i]),
+      kind: 'toggleCase',
+      message:
+        'This heading has children but isn\'t in ALL CAPS — structural headings should be ALL CAPS (Proper Case is reserved for posting-level entries). "Fix and Resume Audit" switches it to ALL CAPS.',
     });
   }
 

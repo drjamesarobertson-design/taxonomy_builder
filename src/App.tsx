@@ -3623,7 +3623,9 @@ export default function App() {
                 ? 'Confirm Lock. Every row currently in the table becomes protected — its code and description can no longer be edited or deleted (Mark as Delete can still retire an entry), and new rows can only be inserted where a code gap already exists. The file will be saved. This should only ever be undone deliberately, through a separate Unlock action.'
                 : 'Confirm Lock Updates. Every row currently in the table — including whatever has been added since the last Lock — becomes protected, and the taxonomy shows the original plus the updates as one locked list. The file will be saved. This should only ever be undone deliberately, through a separate Unlock action.'}
             </p>
-            {!currentLibraryEntryId && (
+            {currentLibraryEntryId ? (
+              <p className="lock-confirm-library-note">This will update the Library entry this taxonomy is linked to.</p>
+            ) : (
               <label className="library-category-label">
                 Save to Library under
                 <select
