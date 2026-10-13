@@ -579,11 +579,18 @@
   margin: 0 0 1rem;
 }
 
-.workflow-resume-btn {
-  display: block;
-  width: 100%;
+.workflow-resume-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
   max-width: 900px;
   margin-bottom: 1.25rem;
+}
+
+.workflow-resume-btn {
+  display: block;
+  flex: 1;
+  min-width: 0;
   padding: 0.9rem 1.25rem;
   cursor: pointer;
   background: #1d8a4c;
@@ -598,6 +605,25 @@
 .workflow-resume-btn:hover {
   background: #166b3a;
   border-color: #166b3a;
+}
+
+/* James's ask: an explicit way to dismiss "Resume Work in Progress" rather than it sitting
+   there indefinitely with no way to make it go away short of clicking through to it. */
+.workflow-resume-dismiss {
+  flex-shrink: 0;
+  width: 2.75rem;
+  cursor: pointer;
+  background: none;
+  color: #555;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.workflow-resume-dismiss:hover {
+  background: #f3f3f3;
+  color: #222;
 }
 
 .workflow-menu-columns {
