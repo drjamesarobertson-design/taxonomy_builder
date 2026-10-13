@@ -29,8 +29,17 @@ interface LibrarySidebarProps {
    * empty) once onCheckForNewSamples has resolved, listing every starter sample this account
    * doesn't already have a copy of. */
   newSampleCandidates: LibraryEntry[] | null;
+  /** True while the "Check for New Samples" request is in flight — James's report: with
+   * ~25 samples to check against and nothing on screen saying so, a slow check looked like
+   * nothing had happened, so a repeated click fired off another one underneath it. */
+  checkingNewSamples: boolean;
   onCheckForNewSamples: () => void;
   onImportNewSamples: (ids: string[]) => void;
+  /** Non-null while "Add Samples" is actually running — each sample is still a separate
+   * sequential network round trip, so this can take a visible few seconds. Same report as
+   * checkingNewSamples: without this, a second click re-ran the whole batch on top of the
+   * first, duplicating every sample. */
+  importNewSamplesProgress: { done: number; total: number } | null;
   onCloseNewSamples: () => void;
   /** "Import from Folder (Replace)" (James's ask): fired once a batch of entries has had its
    * content replaced in place, so the caller can refresh its own copy of the Library list. */
@@ -65,8 +74,10 @@ export default function LibrarySidebar({
   onImport,
   onSetStarterSample,
   newSampleCandidates,
+  checkingNewSamples,
   onCheckForNewSamples,
   onImportNewSamples,
+  importNewSamplesProgress,
   onCloseNewSamples,
   onBulkReplaceComplete,
 }: LibrarySidebarProps) {
@@ -496,8 +507,13 @@ export default function LibrarySidebar({
           </button>
         </Tooltip>
         <Tooltip field="btnLibCheckNewSamples" helpText={helpText}>
-          <button type="button" className="library-transfer-button" onClick={onCheckForNewSamples}>
-            Check for New Samples
+          <button
+            type="button"
+            className="library-transfer-button"
+            onClick={onCheckForNewSamples}
+            disabled={checkingNewSamples}
+          >
+            {checkingNewSamples ? 'Checking…' : 'Check for New Samples'}
           </button>
         </Tooltip>
         <Tooltip field="btnLibReplaceFromFolder" helpText={helpText}>
@@ -919,9 +935,14 @@ export default function LibrarySidebar({
             byCategory.set(e.category, list);
           });
           return (
-            <div className="validation-overlay" onClick={onCloseNewSamples}>
+            <div className="validation-overlay" onClick={importNewSamplesProgress ? undefined : onCloseNewSamples}>
               <div className="validation-dialog library-export-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
-                {newSampleCandidates.length === 0 ? (
+                {importNewSamplesProgress ? (
+                  <p>
+                    Adding sample {Math.min(importNewSamplesProgress.done + 1, importNewSamplesProgress.total)} of{' '}
+                    {importNewSamplesProgress.total}… please wait.
+                  </p>
+                ) : newSampleCandidates.length === 0 ? (
                   <p>No new starter samples right now — you already have every one that's been marked.</p>
                 ) : (
                   <>
@@ -963,18 +984,20 @@ export default function LibrarySidebar({
                     </div>
                   </>
                 )}
-                <div className="confirm-dialog-actions">
-                  <button type="button" onClick={onCloseNewSamples}>
-                    {newSampleCandidates.length === 0 ? 'Close' : 'Cancel'}
-                  </button>
-                  {newSampleCandidates.length > 0 && (
-                    <Tooltip field="btnLibAddNewSamplesConfirm" helpText={helpText}>
-                      <button type="button" disabled={newSampleSelection.size === 0} onClick={confirmImportNewSamples}>
-                        Add {newSampleSelection.size} {newSampleSelection.size === 1 ? 'Sample' : 'Samples'}
-                      </button>
-                    </Tooltip>
-                  )}
-                </div>
+                {!importNewSamplesProgress && (
+                  <div className="confirm-dialog-actions">
+                    <button type="button" onClick={onCloseNewSamples}>
+                      {newSampleCandidates.length === 0 ? 'Close' : 'Cancel'}
+                    </button>
+                    {newSampleCandidates.length > 0 && (
+                      <Tooltip field="btnLibAddNewSamplesConfirm" helpText={helpText}>
+                        <button type="button" disabled={newSampleSelection.size === 0} onClick={confirmImportNewSamples}>
+                          Add {newSampleSelection.size} {newSampleSelection.size === 1 ? 'Sample' : 'Samples'}
+                        </button>
+                      </Tooltip>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           );

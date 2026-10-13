@@ -422,6 +422,14 @@ export default function App() {
   // visible sign was the toolbar button's own icon flipping from 🔒 to 🔓, easy to miss. Shown
   // once performLockTaxonomy/performLockUpdates finish.
   const [lockSuccessMessage, setLockSuccessMessage] = useState<string | null>(null);
+  // James's ask: Unlock deserves the same real friction as Lock (signed-in email shown, type
+  // the word to confirm) rather than a plain window.confirm() — same reasoning as lockConfirm
+  // above, just for the opposite direction.
+  const [unlockConfirm, setUnlockConfirm] = useState(false);
+  const [unlockConfirmTyped, setUnlockConfirmTyped] = useState('');
+  useEffect(() => {
+    if (unlockConfirm) setUnlockConfirmTyped('');
+  }, [unlockConfirm]);
 
   // Audit Taxonomy (James's spec, considerably elaborated in review): Lock Taxonomy no longer
   // runs its own separate integrity check — it launches this walkthrough instead, and can't
@@ -556,6 +564,17 @@ export default function App() {
   // LibrarySidebar. Kept here rather than inside the sidebar itself since fetching it is a
   // network call through library.ts, same as every other Library mutation/query in this file.
   const [newSampleCandidates, setNewSampleCandidates] = useState<LibraryEntry[] | null>(null);
+  // James's report: "Check for New Samples" gave no sign it was running at all with ~25 samples
+  // to check against — looking like nothing had happened, a repeated click (there was nothing to
+  // stop it) left him with everything copied in four times over. checkingNewSamples disables/
+  // labels the button itself while the check is in flight; importNewSamplesProgress does the same
+  // for "Add Samples" (also disabling Cancel — the import is already running by then regardless
+  // of whether the dialog stays open), plus shows a live "Adding N of M" count via
+  // importSelectedStarterSamples's own onProgress callback.
+  const [checkingNewSamples, setCheckingNewSamples] = useState(false);
+  const [importNewSamplesProgress, setImportNewSamplesProgress] = useState<{ done: number; total: number } | null>(
+    null,
+  );
   const [libraryCategoryPrompt, setLibraryCategoryPrompt] = useState<LibraryCategory>(LIBRARY_CATEGORIES[0]);
   const [showLibraryCategoryPrompt, setShowLibraryCategoryPrompt] = useState(false);
   // James's ask: let the taxonomy's name be adjusted right here, before it's saved to the
@@ -758,16 +777,24 @@ export default function App() {
   }
 
   function handleCheckForNewSamples() {
-    listNewStarterSamples().then(setNewSampleCandidates).catch(reportLibraryError);
+    if (checkingNewSamples) return;
+    setCheckingNewSamples(true);
+    listNewStarterSamples()
+      .then(setNewSampleCandidates)
+      .catch(reportLibraryError)
+      .finally(() => setCheckingNewSamples(false));
   }
 
   function handleImportNewSamples(ids: string[]) {
-    importSelectedStarterSamples(ids)
+    if (importNewSamplesProgress) return;
+    setImportNewSamplesProgress({ done: 0, total: ids.length });
+    importSelectedStarterSamples(ids, (done, total) => setImportNewSamplesProgress({ done, total }))
       .then(() => {
         setNewSampleCandidates(null);
         refreshLibrary();
       })
-      .catch(reportLibraryError);
+      .catch(reportLibraryError)
+      .finally(() => setImportNewSamplesProgress(null));
   }
 
   function handleRemoveLibraryEntry() {
@@ -1541,17 +1568,16 @@ export default function App() {
   // Unlock: lifts the enforcement only — every row's `protected` flag from the last Lock is
   // left exactly as it is (Grid.tsx keeps greying those rows out), so a later re-lock still
   // knows what was already historical, and nothing here is silently forgotten. No file is saved
-  // here, so the native-confirm/Save-picker interaction above doesn't apply — left as a plain
-  // window.confirm().
+  // here, so the native-confirm/Save-picker interaction concern that ruled out window.confirm()
+  // for Lock doesn't apply here either way — switched over regardless, for the same real-friction
+  // reason (James's ask): type UNLOCK, not just click a dialog button.
   function handleUnlockTaxonomy() {
     if (!project) return;
-    if (
-      !confirm(
-        'Unlocking this taxonomy and changing existing codes or descriptions will potentially corrupt the existing historical data and lead to inexplicable errors and is strongly advised against.  If you unlock please be very careful with what you do.',
-      )
-    ) {
-      return;
-    }
+    setUnlockConfirm(true);
+  }
+
+  function performUnlockTaxonomy() {
+    if (!project) return;
     setProject({ ...project, settings: { ...project.settings, locked: false } });
     setDirty(true);
   }
@@ -2258,9 +2284,14 @@ export default function App() {
         onImport={handleImportLibrary}
         onSetStarterSample={handleSetStarterSample}
         newSampleCandidates={newSampleCandidates}
+        checkingNewSamples={checkingNewSamples}
         onCheckForNewSamples={handleCheckForNewSamples}
         onImportNewSamples={handleImportNewSamples}
-        onCloseNewSamples={() => setNewSampleCandidates(null)}
+        importNewSamplesProgress={importNewSamplesProgress}
+        onCloseNewSamples={() => {
+          if (importNewSamplesProgress) return;
+          setNewSampleCandidates(null);
+        }}
         onBulkReplaceComplete={refreshLibrary}
       />
       <div className="app">
@@ -3666,6 +3697,44 @@ export default function App() {
                 }}
               >
                 {lockConfirm === 'lock' ? 'Continue and Lock' : 'Continue and Lock Updates'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {unlockConfirm && (
+        <div className="validation-overlay" onClick={() => setUnlockConfirm(false)}>
+          <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <p className="lock-confirm-signed-in-as">Signed in as {authedEmail}</p>
+            <p>
+              Unlocking this taxonomy and changing existing codes or descriptions will potentially
+              corrupt the existing historical data and lead to inexplicable errors and is strongly
+              advised against. If you unlock please be very careful with what you do.
+            </p>
+            <label className="lock-confirm-type-label">
+              Type UNLOCK to confirm
+              <input
+                value={unlockConfirmTyped}
+                onChange={(e) => setUnlockConfirmTyped(e.target.value)}
+                autoFocus
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </label>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setUnlockConfirm(false)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={unlockConfirmTyped !== 'UNLOCK'}
+                onClick={() => {
+                  setUnlockConfirm(false);
+                  performUnlockTaxonomy();
+                }}
+              >
+                Continue and Unlock
               </button>
             </div>
           </div>
