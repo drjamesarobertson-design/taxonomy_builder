@@ -1707,6 +1707,28 @@ body.app-dark-theme .taxonomy-meta .purpose {
   cursor: not-allowed;
 }
 
+/* Lock Taxonomy confirmation (James's ask): a real "type to confirm" step, not a single click. */
+.lock-confirm-signed-in-as {
+  font-size: 0.85rem;
+  color: #666;
+  margin: 0 0 0.75rem;
+}
+
+.lock-confirm-type-label {
+  display: block;
+  text-align: left;
+  font-weight: 600;
+  margin: 0.75rem 0 1rem;
+}
+
+.lock-confirm-type-label input {
+  display: block;
+  width: 100%;
+  margin-top: 0.25rem;
+  font-weight: 400;
+  box-sizing: border-box;
+}
+
 .validation-dialog input[type='text'] {
   display: block;
   width: 100%;

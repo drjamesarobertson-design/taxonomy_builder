@@ -162,22 +162,6 @@ export default function Grid({
   // Check Ascending Order jumping the cursor to the first offending cell, so the user lands
   // right where they need to fix it instead of having to hunt for it themselves.
   const validationFollowUpRef = useRef<(() => void) | null>(null);
-  // A one-time reminder shown the first time text is typed into the very first description
-  // cell (row 1, column 1) of a taxonomy — explains why it's forced to ALL CAPS (Section 4.3)
-  // rather than leaving the user to wonder. Grid remounts (via its key in App.tsx) on every
-  // genuinely new or freshly-loaded project, so this naturally resets per taxonomy rather than
-  // firing only once ever.
-  const [showCapsNotice, setShowCapsNotice] = useState(false);
-  const capsNoticeShownRef = useRef(false);
-  // James's report (more than once now): the ALL CAPS notice above should only fire when the
-  // force-uppercase actually changed something the user typed (i.e. they weren't already typing
-  // real capitals, so the app's own auto-caps is otherwise invisible to them and worth
-  // explaining) — a prior attempt tried to detect this via the physical Caps Lock key's state
-  // (KeyboardEvent.getModifierState('CapsLock')), but that proved unreliable in practice and kept
-  // firing regardless of the real state. Set directly by updateDescription instead, from the raw
-  // keystrokes it receives for row 1/column 1 specifically — a fact about this app's own input,
-  // not a hardware signal it has to guess at.
-  const firstHeadingHadLowercaseRef = useRef(false);
   // James's report: dismissing a description-side warning (item count, orphan child, ALL CAPS
   // notice, etc.) left nothing focused, forcing a click back in with the mouse to keep going —
   // e.g. to start the next row after Insert Row. Every one of these warnings fires from the
@@ -387,7 +371,6 @@ export default function Grid({
 
   const contextMenuRef = useRef<HTMLUListElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
-  const capsNoticeDialogRef = useRef<HTMLDivElement>(null);
   const confirmDialogRef = useRef<HTMLDivElement>(null);
   const promoteDemoteDialogRef = useRef<HTMLDivElement>(null);
   const suffixDuplicateDialogRef = useRef<HTMLDivElement>(null);
@@ -429,10 +412,6 @@ export default function Grid({
       el.style.left = `${Math.max(8, contextMenu.x - overflowX - 8)}px`;
     }
   }, [contextMenu]);
-
-  useEffect(() => {
-    if (showCapsNotice) capsNoticeDialogRef.current?.focus();
-  }, [showCapsNotice]);
 
   useEffect(() => {
     if (confirmDialog) confirmDialogRef.current?.focus();
@@ -1176,11 +1155,6 @@ export default function Grid({
     // entirely when this taxonomy opted into Proper Case throughout (James's ask, offered when
     // Column 1 Code Length is raised above 1) — Toggle Case remains available manually either way.
     const value = level === 0 && !properCaseOnly ? rawValue.toUpperCase() : rawValue;
-    // The ALL CAPS explanatory notice (far below) only needs to fire for row 1 — recorded here,
-    // from the raw keystrokes themselves, rather than guessed at from Caps Lock hardware state.
-    if (editIndex === 0 && level === 0 && /[a-z]/.test(rawValue)) {
-      firstHeadingHadLowercaseRef.current = true;
-    }
 
     // A row has exactly one populated description column — the one matching its level
     // (Section 4.1). Typing into a second column while another already holds text would
@@ -1502,8 +1476,8 @@ export default function Grid({
       setContextMenu(null);
       showValidationError(
         count > 1
-          ? `There isn't room for ${count} new codes between "${aboveCode}" and "${belowCode}" at this level — inserting that many entries here would require renumbering an existing entry while the taxonomy is locked, which is not allowed. Unlock the taxonomy first if this is genuinely necessary.`
-          : `There is no available code between "${aboveCode}" and "${belowCode}" at this level — inserting a new entry here would require renumbering an existing entry while the taxonomy is locked, which is not allowed. Unlock the taxonomy first if this is genuinely necessary.`,
+          ? `There isn't room for ${count} new codes between "${aboveCode}" and "${belowCode}" at this level — inserting that many entries here would require renumbering an existing entry while the taxonomy is locked, which is not allowed.`
+          : `There is no available code between "${aboveCode}" and "${belowCode}" at this level — inserting a new entry here would require renumbering an existing entry while the taxonomy is locked, which is not allowed.`,
       );
       return;
     }
@@ -2179,7 +2153,7 @@ export default function Grid({
     if (!contextMenu || contextMenu.kind !== 'code') return;
     setContextMenu(null);
     if (locked) {
-      showValidationError('This taxonomy is locked and codes cannot be auto-filled. Unlock it first if this is genuinely necessary.');
+      showValidationError('This taxonomy is locked and codes cannot be auto-filled.');
       return;
     }
     const level = contextMenu.level;
@@ -2350,8 +2324,8 @@ export default function Grid({
       ) {
         showValidationError(
           neededAtAnchorLevel > 1
-            ? `There isn't room for ${neededAtAnchorLevel} new codes between "${aboveCode}" and "${belowCode}" at this level — importing this block here would require renumbering an existing entry while the taxonomy is locked, which is not allowed. Unlock the taxonomy first if this is genuinely necessary.`
-            : `There is no available code between "${aboveCode}" and "${belowCode}" at this level — importing a block here would require renumbering an existing entry while the taxonomy is locked, which is not allowed. Unlock the taxonomy first if this is genuinely necessary.`,
+            ? `There isn't room for ${neededAtAnchorLevel} new codes between "${aboveCode}" and "${belowCode}" at this level — importing this block here would require renumbering an existing entry while the taxonomy is locked, which is not allowed.`
+            : `There is no available code between "${aboveCode}" and "${belowCode}" at this level — importing a block here would require renumbering an existing entry while the taxonomy is locked, which is not allowed.`,
         );
         return;
       }
@@ -3291,30 +3265,15 @@ export default function Grid({
                         } else {
                           orphanChildWarnedRef.current.delete(row.id);
                         }
-                        // James's report (twice now): gating this on getModifierState('CapsLock')
-                        // still fired the notice regardless of the physical key's real state --
-                        // that API has proven unreliable enough times in this project (see the
-                        // "turn Caps Lock on" suggestion dropped elsewhere in this file for the
-                        // same reason) that it's not worth a third attempt at reading it. Instead,
-                        // updateDescription itself now records whether the RAW keystrokes it
-                        // received for this row actually contained lowercase (i.e. the force-
-                        // uppercase genuinely changed something the user typed, so the auto-caps
-                        // behaviour was visible to them and is worth explaining) -- the stored
-                        // description text can't be used for this check since it's already been
-                        // force-uppercased by the time it lands here, always.
-                        const capsNoticeFiredThisBlur =
-                          !itemCountFiredThisBlur &&
-                          !orphanFiredThisBlur &&
-                          !properCaseOnly &&
-                          rowIndex === 0 &&
-                          level === 0 &&
-                          !capsNoticeShownRef.current &&
-                          firstHeadingHadLowercaseRef.current &&
-                          !!(row.descriptions[0] ?? '').trim();
-                        if (capsNoticeFiredThisBlur) {
-                          capsNoticeShownRef.current = true;
-                          openDescDialogDeferred(() => setShowCapsNotice(true));
-                        }
+                        // James's report, three times now: the ALL CAPS heading notice kept
+                        // firing in cases that read as wrong from the outside -- first on a
+                        // getModifierState('CapsLock') misread, then even once that was replaced
+                        // with a "did the raw keystrokes actually contain lowercase" check, since
+                        // by the time Enter is pressed the force-uppercase has already made the
+                        // text visibly correct and a notice saying "should be capitalized" reads
+                        // as contradicting what's right there on screen. Removed outright rather
+                        // than attempt a fourth refinement -- the force-uppercase itself is silent
+                        // and self-explanatory enough not to need one.
                         // James's report: a currently-childless (leaf) entry typed in ALL CAPS
                         // while its nearest sibling at the same level already reads Proper Case —
                         // likely an accidental Caps Lock rather than "this one will have
@@ -3324,7 +3283,6 @@ export default function Grid({
                         const leafCaseMismatchFiredThisBlur =
                           !itemCountFiredThisBlur &&
                           !orphanFiredThisBlur &&
-                          !capsNoticeFiredThisBlur &&
                           !!leafCaseMismatchRowId &&
                           !leafCaseMismatchWarnedRef.current.has(leafCaseMismatchRowId);
                         if (leafCaseMismatchRowId) {
@@ -3354,7 +3312,6 @@ export default function Grid({
                         const multiCharOrderNoticeFiredThisBlur =
                           !itemCountFiredThisBlur &&
                           !orphanFiredThisBlur &&
-                          !capsNoticeFiredThisBlur &&
                           !leafCaseMismatchFiredThisBlur &&
                           !toWarn &&
                           column1CodeLength > 1 &&
@@ -3367,10 +3324,10 @@ export default function Grid({
                         }
                         // The earlier, softer nudge — fires the moment this row's own text reads
                         // as Other/Miscellaneous, regardless of position — skipped when the
-                        // stronger not-last dialog, or the unrelated caps notice, is already
-                        // firing this same blur, so no two overlays ever stack; not marked as
-                        // "warned" when skipped this way, so it still gets its own turn on a
-                        // later blur once nothing else is competing for the dialog.
+                        // stronger not-last dialog is already firing this same blur, so no two
+                        // overlays ever stack; not marked as "warned" when skipped this way, so
+                        // it still gets its own turn on a later blur once nothing else is
+                        // competing for the dialog.
                         const startsOtherOrMisc = isOtherOrMiscellaneousLabel(row.descriptions[level] ?? '');
                         if (!startsOtherOrMisc) {
                           otherEncounteredWarnedRef.current.delete(row.id);
@@ -3379,7 +3336,6 @@ export default function Grid({
                           !itemCountFiredThisBlur &&
                           !orphanFiredThisBlur &&
                           !toWarn &&
-                          !capsNoticeFiredThisBlur &&
                           !leafCaseMismatchFiredThisBlur &&
                           !multiCharOrderNoticeFiredThisBlur
                         ) {
@@ -4063,37 +4019,6 @@ export default function Grid({
         </div>
       )}
 
-      {showCapsNotice && (
-        <div
-          className="validation-overlay"
-          onClick={() => {
-            setShowCapsNotice(false);
-            restoreFocusAfterDescDialog();
-          }}
-        >
-          <div
-            ref={capsNoticeDialogRef}
-            className="validation-dialog"
-            tabIndex={-1}
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-          >
-            <p>All headings should be capitalized.</p>
-            <button
-              type="button"
-              onClick={() => {
-                setShowCapsNotice(false);
-                restoreFocusAfterDescDialog();
-              }}
-            >
-              OK
-            </button>
-          </div>
-        </div>
-      )}
 
       {showMultiCharOrderNotice && (
         <div
