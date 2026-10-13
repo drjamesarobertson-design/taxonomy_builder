@@ -1737,7 +1737,8 @@ body.app-dark-theme .taxonomy-meta .purpose {
 }
 
 /* Lock Taxonomy confirmation (James's ask): a real "type to confirm" step, not a single click. */
-.lock-confirm-signed-in-as {
+.lock-confirm-signed-in-as,
+.lock-confirm-library-note {
   font-size: 0.85rem;
   color: #666;
   margin: 0 0 0.75rem;

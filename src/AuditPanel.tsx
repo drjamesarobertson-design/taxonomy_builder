@@ -16,15 +16,18 @@ interface AuditPanelProps {
   /** The current issue's kind (or null in checking/clean) — decides the primary action
    * button's label: "Clear Error" (code/desc, jump for a manual fix), "Fix Automatically"
    * (auto, no cell involved at all), "Fix and Resume Audit" (toggleCase — still a cell to
-   * look at, but the fix itself is one click, not manual typing). These four are Tranche 1's
-   * hard, non-dismissible checks (Section 6.7) — no Skip/Accept for any of them, only the fix
+   * look at, but the fix itself is one click, not manual typing). 'code'/'desc'/'auto' stay
+   * Tranche 1's hard, non-dismissible checks (Section 6.7) — no Skip/Accept, only the fix
    * itself, so the walkthrough can never leave an earlier one of these behind unresolved while
    * showing a later row (James's report: seven Skips in a row on "incomplete code" issues left
    * row 54 still blank while the panel had moved on to row 61 — an earlier still-broken row
    * effectively hidden from view). Tranche 2's soft, override-able checks ('otherNotLast' /
-   * 'oversized' / 'outlier') are the only ones with a dismissal option — "Accept" (Section 6.7:
-   * soft warnings inform, never block) — and, for the two with an assisted action, add
-   * "Split" / "Edit", which just jump to the cell, exactly like "Clear Error". */
+   * 'oversized' / 'outlier' / 'toggleCase') are the ones with a dismissal option — "Accept"
+   * (Section 6.7: soft warnings inform, never block) — and, for the two with an assisted
+   * action, add "Split" / "Edit", which just jump to the cell, exactly like "Clear Error".
+   * 'toggleCase' joined this group on James's report: a deliberate ALL CAPS section marker
+   * with no children (e.g. "END OF LOCATIONS") isn't a mistake to fix, just a case the
+   * walkthrough should be able to wave through once looked at. */
   currentIssueKind: 'code' | 'desc' | 'auto' | 'toggleCase' | 'otherNotLast' | 'oversized' | 'outlier' | null;
   /** Where App.tsx just scrolled/focused the current issue's cell to, in viewport coordinates —
    * null while there's no cell for this state (checking/clean/auto-fixable). James's report:
@@ -160,7 +163,10 @@ export default function AuditPanel({
                   Exit Audit
                 </button>
               </Tooltip>
-              {(currentIssueKind === 'otherNotLast' || currentIssueKind === 'oversized' || currentIssueKind === 'outlier') && (
+              {(currentIssueKind === 'otherNotLast' ||
+                currentIssueKind === 'oversized' ||
+                currentIssueKind === 'outlier' ||
+                currentIssueKind === 'toggleCase') && (
                 <Tooltip field="btnAuditAccept" helpText={helpText}>
                   <button type="button" onClick={onAccept}>
                     Accept
