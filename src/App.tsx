@@ -36,6 +36,7 @@ import PricingPage from './PricingPage';
 import { useMenuTooltip, MenuTooltipPortal } from './menuTooltip';
 import NewTaxonomyForm from './NewTaxonomyForm';
 import SimpleTaxonomySetup from './SimpleTaxonomySetup';
+import FlatListSetup from './FlatListSetup';
 import GuidanceBanner from './GuidanceBanner';
 import SettingsModal from './SettingsModal';
 import { parseDiscreteCsv, parseCompositeCodeCsv, parseMultiColumnDescriptionCsv, parseFlatCodeDescriptionCsv, buildSeparatedCsv, readFileAsText } from './csvImport';
@@ -848,6 +849,34 @@ export default function App() {
     // from ALL CAPS/Proper Case English text. Simple Taxonomy taxonomies start from the
     // upper-case-alpha restriction instead; still fully changeable in that same prompt.
     newProject.settings.codeRestriction = 'Alpha Numeric with Upper Case Alpha Only';
+    newProject.rows = [createEmptyRow(1)];
+    setProject(newProject);
+    setDirty(true);
+    setAutoFocusFirstRow(true);
+    setUndoStack([]);
+    setRedoStack([]);
+    lastEditKeyRef.current = null;
+    setCurrentLibraryEntryId(null);
+    setProjectGeneration((g) => g + 1);
+  }
+
+  // "One Column List with Multiple Character Codes" (James's ask, split out from Simple
+  // Taxonomy's own "Limit to Single Code Column" checkbox into its own dedicated menu entry) —
+  // no guidance wizard at all (no settings.guidance set): a flat list has no headings/sub-items
+  // staging to walk through, so it goes straight to the ordinary working grid, same as
+  // Experienced User and the other non-wizard levels.
+  function handleCreateFlatList(
+    title: string,
+    tableName: string,
+    purpose: string,
+    maxDescriptionLength: number,
+    column1CodeLength: number,
+    properCaseOnly: boolean,
+  ) {
+    const newProject = createProject(title, tableName, purpose, maxDescriptionLength, [], ' ', 1);
+    newProject.settings.column1CodeLength = column1CodeLength;
+    newProject.settings.properCaseOnly = properCaseOnly;
+    newProject.settings.singleCodeColumn = true;
     newProject.rows = [createEmptyRow(1)];
     setProject(newProject);
     setDirty(true);
@@ -2704,11 +2733,15 @@ export default function App() {
               ← Back
             </button>
           </Tooltip>
-          {chosenWorkflowLevel && chosenWorkflowLevel !== 'Simple Taxonomy' && (
-            <p className="chosen-workflow-level">Creating a {chosenWorkflowLevel}</p>
-          )}
+          {chosenWorkflowLevel &&
+            chosenWorkflowLevel !== 'Simple Taxonomy' &&
+            chosenWorkflowLevel !== 'One Column List with Multiple Character Codes' && (
+              <p className="chosen-workflow-level">Creating a {chosenWorkflowLevel}</p>
+            )}
           {chosenWorkflowLevel === 'Simple Taxonomy' ? (
             <SimpleTaxonomySetup onCreate={handleCreateSimpleTaxonomy} helpText={helpText} />
+          ) : chosenWorkflowLevel === 'One Column List with Multiple Character Codes' ? (
+            <FlatListSetup onCreate={handleCreateFlatList} helpText={helpText} />
           ) : (
             <NewTaxonomyForm onCreate={handleCreate} helpText={helpText} />
           )}

@@ -705,7 +705,8 @@ body.app-dark-theme .taxonomy-meta .purpose {
 
 .delimiter-setup,
 .indent-char-setup,
-.suffix-setup {
+.suffix-setup,
+.flat-list-case-choice {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -716,7 +717,8 @@ body.app-dark-theme .taxonomy-meta .purpose {
 
 .delimiter-setup legend,
 .indent-char-setup legend,
-.suffix-setup legend {
+.suffix-setup legend,
+.flat-list-case-choice legend {
   font-weight: 600;
   padding: 0 0.3rem;
 }
