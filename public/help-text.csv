@@ -56,7 +56,7 @@ menuInsertRowAbove,Insert Row Above,Insert a new, empty entry directly above thi
 menuInsertRowBelow,Insert Row Below,Insert a new, empty entry directly below this row.,
 menuDeleteRow,Delete Row,"Delete this entry. If it has children, you'll be warned before they are deleted with it.",
 menuDescMarkAsDelete,Mark as Delete,Flag this entry for deletion without removing it immediately.,
-menuExportBlock,Export Block,Export just the selected block of rows rather than the whole taxonomy.,
+menuExportBlock,Export Block,"Export just this block rather than the whole taxonomy. With rows selected, exports exactly that selection; with none selected, exports this row and everything nested under it.",
 menuImportBlock,Import Block,Import rows from a file into this position in the taxonomy.,
 menuDescFind,Find…,Search the taxonomy for matching descriptions.,
 menuDescNote,Add/Edit Note,"Add a note to this entry, or edit the note it already has. A small indicator shows on any row with a note.",

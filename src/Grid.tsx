@@ -169,15 +169,15 @@ export default function Grid({
   // firing only once ever.
   const [showCapsNotice, setShowCapsNotice] = useState(false);
   const capsNoticeShownRef = useRef(false);
-  // James's report: the ALL CAPS notice above fired even when Caps Lock was genuinely on — at
-  // that point the user is already typing real capitals themselves, so the app's own forced
-  // uppercase is invisible to them and the notice just reads as if they'd been told to do
-  // something they'd already done. Tracked from the physical key event itself (the only place
-  // Caps Lock state is actually observable — genuinely unlike the earlier, unrelated "turn Caps
-  // Lock on" suggestion removed elsewhere in this file, that one tried to infer a corrective
-  // ACTION from this same state and got it backwards; here it's used only to skip a notice that's
-  // already true), updated on every keystroke in the grid and read at blur time.
-  const capsLockOnRef = useRef(false);
+  // James's report (more than once now): the ALL CAPS notice above should only fire when the
+  // force-uppercase actually changed something the user typed (i.e. they weren't already typing
+  // real capitals, so the app's own auto-caps is otherwise invisible to them and worth
+  // explaining) — a prior attempt tried to detect this via the physical Caps Lock key's state
+  // (KeyboardEvent.getModifierState('CapsLock')), but that proved unreliable in practice and kept
+  // firing regardless of the real state. Set directly by updateDescription instead, from the raw
+  // keystrokes it receives for row 1/column 1 specifically — a fact about this app's own input,
+  // not a hardware signal it has to guess at.
+  const firstHeadingHadLowercaseRef = useRef(false);
   // James's report: dismissing a description-side warning (item count, orphan child, ALL CAPS
   // notice, etc.) left nothing focused, forcing a click back in with the mouse to keep going —
   // e.g. to start the next row after Insert Row. Every one of these warnings fires from the
@@ -1176,6 +1176,11 @@ export default function Grid({
     // entirely when this taxonomy opted into Proper Case throughout (James's ask, offered when
     // Column 1 Code Length is raised above 1) — Toggle Case remains available manually either way.
     const value = level === 0 && !properCaseOnly ? rawValue.toUpperCase() : rawValue;
+    // The ALL CAPS explanatory notice (far below) only needs to fire for row 1 — recorded here,
+    // from the raw keystrokes themselves, rather than guessed at from Caps Lock hardware state.
+    if (editIndex === 0 && level === 0 && /[a-z]/.test(rawValue)) {
+      firstHeadingHadLowercaseRef.current = true;
+    }
 
     // A row has exactly one populated description column — the one matching its level
     // (Section 4.1). Typing into a second column while another already holds text would
@@ -1488,10 +1493,17 @@ export default function Grid({
     // between its two neighbours (e.g. "1"/"3" has room for "2"; "1"/"2" doesn't) — otherwise
     // it would force recoding an existing, possibly-protected neighbour, which locking exists
     // to prevent. Unlike the soft warning below, this is a hard block with no override.
-    if (locked && hasNeighboursBothWays && bothSingleChar && !hasCodeGap(aboveCode, belowCode, codeRestriction, paddingChar)) {
+    if (
+      locked &&
+      hasNeighboursBothWays &&
+      bothSingleChar &&
+      !hasCodeGap(aboveCode, belowCode, codeRestriction, paddingChar, count)
+    ) {
       setContextMenu(null);
       showValidationError(
-        `There is no available code between "${aboveCode}" and "${belowCode}" at this level — inserting a new entry here would require renumbering an existing entry while the taxonomy is locked, which is not allowed. Unlock the taxonomy first if this is genuinely necessary.`,
+        count > 1
+          ? `There isn't room for ${count} new codes between "${aboveCode}" and "${belowCode}" at this level — inserting that many entries here would require renumbering an existing entry while the taxonomy is locked, which is not allowed. Unlock the taxonomy first if this is genuinely necessary.`
+          : `There is no available code between "${aboveCode}" and "${belowCode}" at this level — inserting a new entry here would require renumbering an existing entry while the taxonomy is locked, which is not allowed. Unlock the taxonomy first if this is genuinely necessary.`,
       );
       return;
     }
@@ -1554,12 +1566,6 @@ export default function Grid({
     level: number,
     rowIndex: number,
   ) {
-    // A real key event is the only place Caps Lock's state can actually be read — captured on
-    // every keystroke here so the ALL CAPS notice's blur handler (far below) can tell whether
-    // the user had it on while typing.
-    if (typeof e.getModifierState === 'function') {
-      capsLockOnRef.current = e.getModifierState('CapsLock');
-    }
     // Code cells handle every printable keystroke here directly, rather than letting the
     // browser insert it natively and relying on onChange: a maxLength=1 field that's
     // already focused (no fresh focus event, so nothing gets selected) silently blocks a
@@ -2187,21 +2193,52 @@ export default function Grid({
     setSelection(null);
   }
 
+  // James's ask: with no manual selection active, "Export Block" should still work from a
+  // single right-click — from the cursor's own row down through everything under it (every
+  // following row deeper than its own level), stopping the moment a row at its own level or
+  // shallower turns up (a sibling, or an ancestor's next entry — row order is depth-first, so
+  // that's exactly where this row's own subtree ends, the same boundary rule the code-cascade
+  // logic above already relies on). "With knowledge of headings": a heading with no children of
+  // its own is just itself, a one-row block.
+  function autoBlockRange(rowId: string): { start: number; end: number } | null {
+    const start = rows.findIndex((r) => r.id === rowId);
+    if (start === -1) return null;
+    const level = levelOf(rows[start]);
+    let end = start + 1;
+    while (end < rows.length && levelOf(rows[end]) > level) end++;
+    return { start, end };
+  }
+
   // Right-click "Export Block" (item 3) — an alternative to the toolbar's whole-table Create
-  // Block, for exporting just a range: highlight from a top-left code cell down to a
-  // bottom-right description cell (or any other multi-row selection) and export only that
-  // contiguous run of rows. Available from either the code or description context menu,
-  // whichever the selection happens to be in, since the exported block always carries each
-  // row's full code path and description regardless of which cell kind was dragged over.
+  // Block, for exporting just a range. With a genuine multi-row selection active (highlight from
+  // a top-left code cell down to a bottom-right description cell, or any other selection),
+  // exports exactly that contiguous run. Otherwise falls back to the cursor row's own subtree
+  // (autoBlockRange above) — James's ask, so a single right-click on a heading exports that
+  // heading's whole block without first having to drag-select it. "Otherwise" rather than "with
+  // no selection" deliberately: handleCellContextMenu above always sets a one-row selection as a
+  // side effect of the right-click itself (other menu actions need that), so `selection` is never
+  // actually empty here — checking for more than one row is what actually distinguishes "the user
+  // deliberately drag-selected a range" from "this is just the row that got right-clicked".
+  // Available from either the code or description context menu, whichever the click happens to
+  // land in, since the exported block always carries each row's full code path and description
+  // regardless of which cell kind was clicked.
   function handleExportBlockMenuClick() {
-    if (!contextMenu || !selection || selection.rowIds.size === 0) return;
-    const selectedIndices = rows
-      .map((r, i) => (selection.rowIds.has(r.id) ? i : -1))
-      .filter((i) => i !== -1)
-      .sort((a, b) => a - b);
-    if (selectedIndices.length === 0) return;
-    const start = selectedIndices[0];
-    const end = selectedIndices[selectedIndices.length - 1] + 1;
+    if (!contextMenu) return;
+    let start: number;
+    let end: number;
+    if (selection && selection.rowIds.size > 1) {
+      const selectedIndices = rows
+        .map((r, i) => (selection.rowIds.has(r.id) ? i : -1))
+        .filter((i) => i !== -1)
+        .sort((a, b) => a - b);
+      if (selectedIndices.length === 0) return;
+      start = selectedIndices[0];
+      end = selectedIndices[selectedIndices.length - 1] + 1;
+    } else {
+      const range = autoBlockRange(contextMenu.rowId);
+      if (!range) return;
+      ({ start, end } = range);
+    }
     onExportBlock(rows.slice(start, end));
     setContextMenu(null);
   }
@@ -2296,6 +2333,12 @@ export default function Grid({
     if (locked && anchorIndex > 0) {
       const aboveCode = rows[anchorIndex - 1].codes[anchorLevel] ?? '';
       const belowCode = rows[anchorIndex].codes[anchorLevel] ?? '';
+      // Only entries whose OWN level is the anchor's level need a distinct code in this column —
+      // a deeper entry inherits/reuses an ancestor's code there instead of consuming its own
+      // slot, same reasoning as fillCodesDown (guidance.ts). James's report: the single-row
+      // Insert Row gap check (above) didn't account for how many new codes were actually needed
+      // either — same fix applied here.
+      const neededAtAnchorLevel = block.entries.filter((entry) => entry.codes.length - 1 === anchorLevel).length;
       // Single-character-only check (see the same guard in handleInsertRow above) — skipped
       // for a real multi-character column-1 value rather than risk a false hard block.
       if (
@@ -2303,10 +2346,12 @@ export default function Grid({
         belowCode !== '' &&
         aboveCode.length <= 1 &&
         belowCode.length <= 1 &&
-        !hasCodeGap(aboveCode, belowCode, codeRestriction, paddingChar)
+        !hasCodeGap(aboveCode, belowCode, codeRestriction, paddingChar, neededAtAnchorLevel)
       ) {
         showValidationError(
-          `There is no available code between "${aboveCode}" and "${belowCode}" at this level — importing a block here would require renumbering an existing entry while the taxonomy is locked, which is not allowed. Unlock the taxonomy first if this is genuinely necessary.`,
+          neededAtAnchorLevel > 1
+            ? `There isn't room for ${neededAtAnchorLevel} new codes between "${aboveCode}" and "${belowCode}" at this level — importing this block here would require renumbering an existing entry while the taxonomy is locked, which is not allowed. Unlock the taxonomy first if this is genuinely necessary.`
+            : `There is no available code between "${aboveCode}" and "${belowCode}" at this level — importing a block here would require renumbering an existing entry while the taxonomy is locked, which is not allowed. Unlock the taxonomy first if this is genuinely necessary.`,
         );
         return;
       }
@@ -3246,6 +3291,17 @@ export default function Grid({
                         } else {
                           orphanChildWarnedRef.current.delete(row.id);
                         }
+                        // James's report (twice now): gating this on getModifierState('CapsLock')
+                        // still fired the notice regardless of the physical key's real state --
+                        // that API has proven unreliable enough times in this project (see the
+                        // "turn Caps Lock on" suggestion dropped elsewhere in this file for the
+                        // same reason) that it's not worth a third attempt at reading it. Instead,
+                        // updateDescription itself now records whether the RAW keystrokes it
+                        // received for this row actually contained lowercase (i.e. the force-
+                        // uppercase genuinely changed something the user typed, so the auto-caps
+                        // behaviour was visible to them and is worth explaining) -- the stored
+                        // description text can't be used for this check since it's already been
+                        // force-uppercased by the time it lands here, always.
                         const capsNoticeFiredThisBlur =
                           !itemCountFiredThisBlur &&
                           !orphanFiredThisBlur &&
@@ -3253,7 +3309,7 @@ export default function Grid({
                           rowIndex === 0 &&
                           level === 0 &&
                           !capsNoticeShownRef.current &&
-                          !capsLockOnRef.current &&
+                          firstHeadingHadLowercaseRef.current &&
                           !!(row.descriptions[0] ?? '').trim();
                         if (capsNoticeFiredThisBlur) {
                           capsNoticeShownRef.current = true;
@@ -3522,22 +3578,15 @@ export default function Grid({
               <li onClick={handleMarkAsDelete} onMouseEnter={showMenuTooltip('menuDescMarkAsDelete')} onMouseLeave={hideMenuTooltip}>
                 Mark as Delete
               </li>
-              {selection && selection.rowIds.size > 0 && (
-                <li
-                  className="context-menu-separator"
-                  onClick={handleExportBlockMenuClick}
-                  onMouseEnter={showMenuTooltip('menuExportBlock')}
-                  onMouseLeave={hideMenuTooltip}
-                >
-                  Export Block
-                </li>
-              )}
               <li
-                className={selection && selection.rowIds.size > 0 ? undefined : 'context-menu-separator'}
-                onClick={handleImportBlockMenuClick}
-                onMouseEnter={showMenuTooltip('menuImportBlock')}
+                className="context-menu-separator"
+                onClick={handleExportBlockMenuClick}
+                onMouseEnter={showMenuTooltip('menuExportBlock')}
                 onMouseLeave={hideMenuTooltip}
               >
+                Export Block
+              </li>
+              <li onClick={handleImportBlockMenuClick} onMouseEnter={showMenuTooltip('menuImportBlock')} onMouseLeave={hideMenuTooltip}>
                 Import Block
               </li>
               <li
@@ -3618,22 +3667,15 @@ export default function Grid({
                   Width of Col 1…
                 </li>
               )}
-              {selection && selection.rowIds.size > 0 && (
-                <li
-                  className="context-menu-separator"
-                  onClick={handleExportBlockMenuClick}
-                  onMouseEnter={showMenuTooltip('menuExportBlock')}
-                  onMouseLeave={hideMenuTooltip}
-                >
-                  Export Block
-                </li>
-              )}
               <li
-                className={selection && selection.rowIds.size > 0 ? undefined : 'context-menu-separator'}
-                onClick={handleImportBlockMenuClick}
-                onMouseEnter={showMenuTooltip('menuImportBlock')}
+                className="context-menu-separator"
+                onClick={handleExportBlockMenuClick}
+                onMouseEnter={showMenuTooltip('menuExportBlock')}
                 onMouseLeave={hideMenuTooltip}
               >
+                Export Block
+              </li>
+              <li onClick={handleImportBlockMenuClick} onMouseEnter={showMenuTooltip('menuImportBlock')} onMouseLeave={hideMenuTooltip}>
                 Import Block
               </li>
               <li

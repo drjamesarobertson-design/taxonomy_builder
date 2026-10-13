@@ -12,6 +12,7 @@ import {
   maxLevelUsed,
   padCodes,
   sortAllCodesAscending,
+  stripTrailingBlankRows,
   suggestMnemonicCodes,
 } from './guidance';
 import { codeInputId } from './domIds';
@@ -77,7 +78,7 @@ export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExi
     const newNumLevels = Math.max(project.settings.numLevels + 1, 2);
     onSettingsAndRowsChange(
       { ...project.settings, numLevels: newNumLevels, guidance: { level: guidanceLevel, stage: 'subItems' } },
-      growRowsToLevels(rows, newNumLevels),
+      growRowsToLevels(stripTrailingBlankRows(rows), newNumLevels),
     );
   }
 
@@ -106,9 +107,10 @@ export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExi
   }
 
   function beginCoding() {
-    const level = maxLevelUsed(rows);
+    const codingRows = stripTrailingBlankRows(rows);
+    const level = maxLevelUsed(codingRows);
     const newNumLevels = level + 1;
-    const trimmedRows = rows.map((row) => ({
+    const trimmedRows = codingRows.map((row) => ({
       ...row,
       codes: row.codes.slice(0, newNumLevels),
       descriptions: row.descriptions.slice(0, newNumLevels),
