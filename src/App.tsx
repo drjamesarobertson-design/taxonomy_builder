@@ -629,11 +629,22 @@ export default function App() {
   }
 
   // James's ask: move the Library from browser-local storage to per-account cloud storage, so
-  // each signed-in user's Library is their own and follows them to any device. On first mount,
+  // each signed-in user's Library is their own and follows them to any device. Once signed in,
   // before the first refreshLibrary() below, offer this browser's old local Library (if any) a
   // one-time ride across — migrateLegacyLocalLibrary itself no-ops once the cloud Library already
-  // has anything in it, so this is safe to run on every startup, not just the first.
+  // has anything in it, so this is safe to run on every sign-in, not just the first.
+  //
+  // James's report: a brand-new account's starter samples weren't copying across. Root cause —
+  // this used to run once on mount (`[]` deps), but every Library call here needs a real signed-
+  // in Supabase session, and `authedEmail` above is only set asynchronously (getSession()'s own
+  // promise, or the auth-state-change listener) — so on an actual fresh sign-in this fired before
+  // that session existed yet, failed outright with "you need to be signed in", and — since it
+  // never re-ran — never got a second chance once the session actually was ready. Gating on
+  // `authedEmail` itself means it now runs exactly when a session first becomes available
+  // (initial load with an existing session, or completing sign-in with none), and again on a
+  // later sign-in as a different user.
   useEffect(() => {
+    if (!authedEmail) return;
     // Chained, not parallel: seedStarterSamplesForNewAccount only acts while the cloud Library is
     // still empty, so it has to run AFTER migrateLegacyLocalLibrary has had its own chance to
     // fill it from this browser's old local copy — an existing subscriber's local data always
@@ -643,7 +654,7 @@ export default function App() {
       .then(() => seedStarterSamplesForNewAccount())
       .catch((err) => console.error('Starter sample seeding failed:', err))
       .finally(refreshLibrary);
-  }, []);
+  }, [authedEmail]);
 
   function flashAddedToLibrary() {
     if (libraryAddedFlashTimer.current) clearTimeout(libraryAddedFlashTimer.current);
