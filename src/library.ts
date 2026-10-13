@@ -374,16 +374,26 @@ export async function listNewStarterSamples(): Promise<LibraryEntry[]> {
  * as the initial seeding). Returns how many were actually added — a sample id that's vanished (no
  * longer flagged, or deleted) since the list was fetched is silently skipped rather than failing
  * the whole batch, since the list the user ticked boxes against may be slightly stale by the time
- * they click Import. */
-export async function importSelectedStarterSamples(ids: string[]): Promise<number> {
+ * they click Import. Each entry is still a separate sequential network round trip, so with two
+ * dozen-odd samples this can take a visible few seconds — James's report: with nothing on screen
+ * saying so, a second click on "Add Samples" before the first run finished re-ran the whole batch
+ * on top of itself, each duplicated. `onProgress`, when given, is called after every id is
+ * processed (whether or not it actually added anything) — the caller's own busy state, not this
+ * function, is what should actually stop a second click from starting a second run. */
+export async function importSelectedStarterSamples(
+  ids: string[],
+  onProgress?: (done: number, total: number) => void,
+): Promise<number> {
   const samples = await listAllStarterSamples();
   const byId = new Map(samples.map((s) => [s.id, s]));
   let added = 0;
-  for (const id of ids) {
-    const sample = byId.get(id);
-    if (!sample) continue;
-    await addLibraryEntry(migrateProjectData(sample.project), sample.category, sample.id);
-    added++;
+  for (let i = 0; i < ids.length; i++) {
+    const sample = byId.get(ids[i]);
+    if (sample) {
+      await addLibraryEntry(migrateProjectData(sample.project), sample.category, sample.id);
+      added++;
+    }
+    onProgress?.(i + 1, ids.length);
   }
   return added;
 }
