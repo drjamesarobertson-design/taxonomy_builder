@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { TaxonomyProject, TaxonomyRow, TaxonomySettings, SuffixField, CodeRestriction, WorkflowLevel } from './types';
 import { createEmptyRow, createProject, growRowsToLevels, CODE_RESTRICTIONS } from './types';
-import { saveProjectToFile, loadProjectFromFile, saveAutosave, loadAutosave } from './storage';
+import { saveProjectToFile, loadProjectFromFile, saveAutosave, loadAutosave, clearAutosave } from './storage';
 import {
   exportDiscreteCsv,
   exportDiscreteXlsx,
@@ -141,6 +141,20 @@ export default function App() {
   useEffect(() => {
     if (project) saveAutosave(project);
   }, [project]);
+  // James's report: "Resume Work in Progress" had no way to dismiss it, and kept reappearing
+  // even after it had already been acted on. Tracked as real state rather than reading
+  // loadAutosave() fresh on every render, so an explicit dismiss (the ✕) and a genuine save can
+  // both make it actually go away. Refreshed every time the landing menu comes into view — the
+  // one place this banner is ever shown — rather than only on mount, so logging back in or
+  // returning from a taxonomy still picks up whatever's actually in the autosave slot right now.
+  const [resumeAutosaveTitle, setResumeAutosaveTitle] = useState<string | null>(null);
+  useEffect(() => {
+    if (!project && signOnStage === 'menu') setResumeAutosaveTitle(loadAutosave()?.title ?? null);
+  }, [project, signOnStage]);
+  function handleDismissResume() {
+    clearAutosave();
+    setResumeAutosaveTitle(null);
+  }
 
   // James's ask: every popup/dialog in the app (there are dozens, scattered across this file,
   // Grid.tsx, GuidanceBanner.tsx, SettingsModal.tsx, NewTaxonomyForm.tsx, CsvImportConfirm.tsx
@@ -2630,8 +2644,9 @@ export default function App() {
           <WorkflowMenu
             onChooseNew={handleChooseWorkflowLevel}
             onChooseExisting={() => setSignOnStage('existing')}
-            resumeTitle={loadAutosave()?.title ?? null}
+            resumeTitle={resumeAutosaveTitle}
             onResume={handleResumeWorkInProgress}
+            onDismissResume={handleDismissResume}
             onLoadGLAnalyser={() => setShowGLAnalyserNotice(true)}
             onOpenGLBuilder={openGLBuilder}
             onViewPricing={() => setShowPricingPage(true)}

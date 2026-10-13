@@ -20,6 +20,10 @@ interface WorkflowMenuProps {
    * strands an open taxonomy with no way back to it. */
   resumeTitle?: string | null;
   onResume?: () => void;
+  /** James's report: no way to dismiss this if it's not actually wanted (e.g. already dealt
+   * with some other way) — it just sat there indefinitely. Clears the autosave slot itself,
+   * not just this one render, so it stays gone rather than reappearing next visit. */
+  onDismissResume?: () => void;
   /** James's ask: two more entries under "Work on an Existing Taxonomy" pointing at future,
    * separate pieces of software — GL Analyser (not built yet, this button just explains that)
    * and GL Builder (the four-CSV Cubic Business Model export James asked for now, a placeholder
@@ -41,6 +45,7 @@ export default function WorkflowMenu({
   onChooseExisting,
   resumeTitle,
   onResume,
+  onDismissResume,
   onLoadGLAnalyser,
   onOpenGLBuilder,
   onViewPricing,
@@ -55,11 +60,25 @@ export default function WorkflowMenu({
         </a>
       </p>
       {resumeTitle && onResume && (
-        <Tooltip field="btnResumeWorkInProgress" helpText={helpText}>
-          <button type="button" className="workflow-resume-btn" onClick={onResume}>
-            ▶ Resume Work in Progress — "{resumeTitle}"
-          </button>
-        </Tooltip>
+        <div className="workflow-resume-row">
+          <Tooltip field="btnResumeWorkInProgress" helpText={helpText}>
+            <button type="button" className="workflow-resume-btn" onClick={onResume}>
+              ▶ Resume Work in Progress — "{resumeTitle}"
+            </button>
+          </Tooltip>
+          {onDismissResume && (
+            <Tooltip field="btnDismissResume" helpText={helpText}>
+              <button
+                type="button"
+                className="workflow-resume-dismiss"
+                onClick={onDismissResume}
+                aria-label="Dismiss"
+              >
+                ✕
+              </button>
+            </Tooltip>
+          )}
+        </div>
       )}
       <div className="workflow-menu-columns">
         <div className="workflow-menu-column">
