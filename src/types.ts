@@ -22,6 +22,7 @@ export type CodeRestriction = (typeof CODE_RESTRICTIONS)[number];
 // guided wizard) — per-level guided workflows for the rest are a later piece of work.
 export const WORKFLOW_LEVELS = [
   'Simple Taxonomy',
+  'One Column List with Multiple Character Codes',
   'Advanced Complexity Taxonomy',
   'Experienced User',
   'Item / Product Master',
