@@ -6,18 +6,55 @@ he shares this with) rather than as an engineering log — for the detailed,
 round-by-round build history, see `PROGRESS.md`; for the original functional
 specification, see `CLAUDE.md`.*
 
-*Last updated: 2026-09-28, after PR #190.*
+*Last updated: 2026-10-13, after PR #210.*
 
 ---
 
 ## 0. Where things stand right now — read this first
 
-James is away from the project until **Friday 2026-10-02 at the earliest**
-(moving house Wednesday 2026-09-30; packing takes up Tuesday). Nothing is
-blocked on the engineering side — the app is fully shipped and deployed as of
-PR #190. What's paused is the **commercial setup conversation**, which was
-mid-flow when James stepped away. Here's exactly where that stands, so it can
-pick up without re-deriving anything:
+**Engineering is fully caught up as of PR #210 (2026-10-13)** — every item
+from James's last several rounds of live testing has been addressed and
+deployed. Most recent rounds covered: four showcase-recording bugs (a false
+ALL CAPS notice, a stray blank row, Export Block, Lock Taxonomy's
+confirmation); a dismissible "Resume Work in Progress" banner on the landing
+menu; "One Column List with Multiple Character Codes" split out as its own
+menu entry; Lock Taxonomy now also adds the taxonomy to the Library
+(prompting which category) if it isn't there already, and keeps that
+Library entry in sync on every later Lock/Lock Updates, with a note in the
+dialog when it's just syncing; a fix for starter samples not seeding into a
+brand-new subscriber's Library (a timing race against Supabase's own async
+auth check); Audit Taxonomy now also catches a heading left in the wrong
+case when it has children, not just the reverse (an ALL CAPS entry with no
+children), and the latter can now be explicitly accepted as deliberate
+(e.g. a section marker like "END OF LOCATIONS") rather than only fixed;
+Unlock Taxonomy now gets the same signed-in-email-plus-type-to-confirm
+treatment as Lock, instead of a plain browser confirm; and "Check for New
+Samples"/"Add Samples" now show a visible busy/progress state, fixing a
+no-feedback bug that had quadrupled entries in James's test Library.
+Several CSV-import and Library-bulk-management rounds (PRs #192–#202) also
+shipped in between — a fourth CSV import shape (flat code/description
+list), specific fixable-error messages for common import mistakes, GL
+Analyser support additions, bulk Export to Excel/CSV for the whole Library,
+and "Import from Folder (Replace)" for batch-replacing Library entries.
+
+**Commercial-setup status below (§4/§5) is carried over unchanged from
+2026-09-28** — this stretch of work has been entirely engineering
+testing-and-fix rounds, with no visibility from here into whether the
+Stripe account, the WordPress pricing page, or the Outlook 365 app
+registration moved forward in the meantime. **Confirm with James, next
+time, whether any of those moved** before assuming §4/§5 below still
+reflects where things actually stand — the rest of this section is the
+last known state as of that date, kept for reference, not a current report.
+
+<details>
+<summary>Commercial-setup status as last recorded (2026-09-28) — click to expand</summary>
+
+James was away from the project until **Friday 2026-10-02 at the earliest**
+(moving house Wednesday 2026-09-30; packing takes up Tuesday). Nothing was
+blocked on the engineering side — the app was fully shipped and deployed as
+of PR #190. What was paused is the **commercial setup conversation**, which
+was mid-flow when James stepped away. Here's exactly where that stood, so it
+can pick up without re-deriving anything:
 
 **Delivered to James, not yet actioned by him:**
 - The WordPress-ready pricing page (a self-contained `<div>` + `<style>`
@@ -66,6 +103,8 @@ the order — let him pick up wherever he wants):**
 4. Sign-off still needed on the draft pricing numbers themselves (§4/§5
    below) before any tier-limit enforcement gets built into the app.
 
+</details>
+
 ---
 
 ## 1. What this is
@@ -106,17 +145,32 @@ minute.
 - **Guided wizard** ("Simple Taxonomy"): a step-by-step build flow —
   headings, then sub-items, then coding — for a first-time or less technical
   user, with live Numeric/Alpha code-restriction prompts and mnemonic code
-  suggestions.
+  suggestions. "One Column List with Multiple Character Codes" is its own
+  separate menu entry for a genuinely flat list (no guided-wizard staging,
+  since there's no hierarchy to build up through).
 - **Audit Taxonomy**: a structured integrity walkthrough (missing codes,
   out-of-order codes, "Other" not last, oversized descriptions, outlier
-  entries), runnable standalone or required before Lock Taxonomy / offered
-  before CSV export.
+  entries, a childless ALL CAPS heading, and — the other half of that same
+  check — a heading with children left in the wrong case) that is required
+  before Lock Taxonomy and offered before CSV export, or runnable standalone
+  any other time. Most checks are hard (must be fixed or accepted before
+  continuing); a deliberate ALL CAPS entry with no children (e.g. a section
+  marker like "END OF LOCATIONS") can be explicitly accepted as correct
+  rather than only fixed.
 - **Lock Taxonomy**: freezes a taxonomy once it's live in an ERP — protects
   existing rows from destructive edits while still allowing controlled,
-  audited additions ("Lock updates").
+  audited additions ("Lock updates"). Both Lock and Unlock require typing
+  the word (LOCK/UNLOCK) to confirm, with the signed-in account shown. Lock
+  also adds the taxonomy to the Library if it isn't there already
+  (prompting which category), and keeps that Library copy in sync on every
+  later Lock/Lock Updates.
+- **Format Descriptions**: a whole-taxonomy (or selected-range) bulk
+  clean-up — "Capitalise and Proper Case All" brings every heading to ALL
+  CAPS and every posting-level entry to Proper Case in one action, useful
+  after importing scrappy or inconsistently-cased source data.
 
 ### Import
-Three CSV import shapes, each recognised automatically from the file's own
+Four CSV import shapes, each recognised automatically from the file's own
 structure and reachable from one "Import CSV ▾" toolbar menu:
 1. **ERP Doctor Delimited Format** — this app's own one-character-per-column
    layout (also accepts the app's own Discrete Columns export).
@@ -129,6 +183,12 @@ structure and reachable from one "Import CSV ▾" toolbar menu:
    structure export). Codes are left blank; the grid automatically hides its
    (empty) code columns until the user is ready to code it — toggleable
    anytime from Settings ("Hide Code Columns").
+4. **Flat Code and Description List** — a plain two-column (code,
+   description) file with no hierarchy at all.
+
+Common import mistakes (wrong file type, unrecognised shape, structural
+problems) are now flagged with a specific, fixable message rather than a
+generic failure.
 
 ### Export
 - **CSV**: Discrete Columns (matches the on-screen grid) or Concatenated
@@ -145,9 +205,15 @@ structure and reachable from one "Import CSV ▾" toolbar menu:
   following them across devices.
 - New subscribers are automatically seeded with a curated set of starter
   sample taxonomies on first sign-in; a "Check for New Samples" button lets
-  existing subscribers pull in newly-published samples later.
+  existing subscribers pull in newly-published samples later, voluntarily
+  rather than automatically — both this and the import step now show a
+  visible progress/busy state so a slow check (with a few dozen samples to
+  compare against) doesn't look stalled and invite a duplicate-triggering
+  repeat click.
 - Import/export a Library bundle as a file (backup, migration, sharing a demo
-  set).
+  set); bulk Export to Excel/CSV for the whole Library in one action; "Import
+  from Folder (Replace)" for batch-replacing a set of Library entries'
+  content from a folder of files, fuzzy-matched against each entry's title.
 
 ### Folders (create real folders from a taxonomy)
 Toolbar "Folders ▾" menu:
