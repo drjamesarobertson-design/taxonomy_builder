@@ -328,7 +328,8 @@
   font-size: 0.95rem;
 }
 
-.library-name-label {
+.library-name-label,
+.library-category-label {
   display: block;
   font-size: 0.85rem;
   color: #444;

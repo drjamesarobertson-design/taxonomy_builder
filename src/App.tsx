@@ -413,7 +413,10 @@ export default function App() {
   // considered action rather than a reflexive click.
   const [lockConfirmTyped, setLockConfirmTyped] = useState('');
   useEffect(() => {
-    if (lockConfirm) setLockConfirmTyped('');
+    if (lockConfirm) {
+      setLockConfirmTyped('');
+      setLibraryCategoryPrompt(LIBRARY_CATEGORIES[0]);
+    }
   }, [lockConfirm]);
   // James's report: nothing confirmed the Lock actually went through afterwards — the only
   // visible sign was the toolbar button's own icon flipping from 🔒 to 🔓, easy to miss. Shown
@@ -1492,6 +1495,24 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audit?.status, audit?.currentIssue, project]);
 
+  // James's ask: Lock should also make sure the taxonomy ends up in the Library — not already
+  // there is the one case this needs the dialog's own category choice (lockConfirm's JSX asks
+  // for it right alongside "type LOCK"); already linked, this just keeps that existing entry's
+  // content in step with the newly-locked state rather than leaving it showing a stale,
+  // pre-lock copy.
+  function syncLockedProjectToLibrary(lockedProject: TaxonomyProject) {
+    if (currentLibraryEntryId) {
+      updateLibraryEntryProject(currentLibraryEntryId, lockedProject).then(refreshLibrary).catch(reportLibraryError);
+    } else {
+      addLibraryEntry(lockedProject, libraryCategoryPrompt)
+        .then((entry) => {
+          setCurrentLibraryEntryId(entry.id);
+          refreshLibrary();
+        })
+        .catch(reportLibraryError);
+    }
+  }
+
   function performLockTaxonomy() {
     if (!project) return;
     const lockedProject: TaxonomyProject = {
@@ -1502,6 +1523,7 @@ export default function App() {
     setProject(lockedProject);
     setDirty(false);
     performSave(lockedProject);
+    syncLockedProjectToLibrary(lockedProject);
     setLockSuccessMessage('Table Locked');
   }
 
@@ -1543,6 +1565,7 @@ export default function App() {
     setProject(lockedProject);
     setDirty(false);
     performSave(lockedProject);
+    syncLockedProjectToLibrary(lockedProject);
     setLockSuccessMessage('Updates Locked');
   }
 
@@ -3589,6 +3612,22 @@ export default function App() {
                 ? 'Confirm Lock. Every row currently in the table becomes protected — its code and description can no longer be edited or deleted (Mark as Delete can still retire an entry), and new rows can only be inserted where a code gap already exists. The file will be saved. This should only ever be undone deliberately, through a separate Unlock action.'
                 : 'Confirm Lock Updates. Every row currently in the table — including whatever has been added since the last Lock — becomes protected, and the taxonomy shows the original plus the updates as one locked list. The file will be saved. This should only ever be undone deliberately, through a separate Unlock action.'}
             </p>
+            {!currentLibraryEntryId && (
+              <label className="library-category-label">
+                Save to Library under
+                <select
+                  className="library-category-select"
+                  value={libraryCategoryPrompt}
+                  onChange={(e) => setLibraryCategoryPrompt(e.target.value as LibraryCategory)}
+                >
+                  {LIBRARY_CATEGORIES.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="lock-confirm-type-label">
               Type LOCK to confirm
               <input
