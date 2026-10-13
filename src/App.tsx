@@ -389,6 +389,17 @@ export default function App() {
   // handleLockTaxonomy's own comment for why: a native confirm() dialog can consume the click's
   // user activation before the save afterward gets to call the native Save-As picker.
   const [lockConfirm, setLockConfirm] = useState<'lock' | 'lockUpdates' | null>(null);
+  // James's ask: Lock needs real friction, not a single click -- it's meant to be hard to do by
+  // accident. No password: this is a client-side-only app with no server to check one against,
+  // so a "password" here would just be a string compared in the browser, easily bypassed and
+  // giving false confidence rather than real protection -- the genuine auth boundary is already
+  // the signed-in account itself. Typing the word LOCK, in caps, is the same "type to confirm"
+  // pattern used elsewhere for hard-to-reverse actions, and actually requires a deliberate,
+  // considered action rather than a reflexive click.
+  const [lockConfirmTyped, setLockConfirmTyped] = useState('');
+  useEffect(() => {
+    if (lockConfirm) setLockConfirmTyped('');
+  }, [lockConfirm]);
   // James's report: nothing confirmed the Lock actually went through afterwards — the only
   // visible sign was the toolbar button's own icon flipping from 🔒 to 🔓, easy to miss. Shown
   // once performLockTaxonomy/performLockUpdates finish.
@@ -1747,7 +1758,7 @@ export default function App() {
     // Grid.tsx's per-cell protected-row guards at all, so it's the one path that could
     // silently wipe out a locked taxonomy's protected rows if it weren't blocked here.
     if (project?.settings.locked) {
-      alert('This taxonomy is locked and cannot be replaced by a CSV import. Unlock it first if this is genuinely necessary.');
+      alert('This taxonomy is locked and cannot be replaced by a CSV import.');
       return;
     }
     if (project && hasAnyContent(project.rows) && !confirm('This will clear the existing table content — proceed?')) {
@@ -1815,7 +1826,7 @@ export default function App() {
     // Same Lock Taxonomy / existing-content guards as the plain CSV import above — this also
     // replaces the whole working project wholesale.
     if (project?.settings.locked) {
-      alert('This taxonomy is locked and cannot be replaced by a CSV import. Unlock it first if this is genuinely necessary.');
+      alert('This taxonomy is locked and cannot be replaced by a CSV import.');
       return;
     }
     if (project && hasAnyContent(project.rows) && !confirm('This will clear the existing table content — proceed?')) {
@@ -1858,7 +1869,7 @@ export default function App() {
   function handleMultiColumnDescCsvClick() {
     // Same Lock Taxonomy / existing-content guards as the other two CSV import paths above.
     if (project?.settings.locked) {
-      alert('This taxonomy is locked and cannot be replaced by a CSV import. Unlock it first if this is genuinely necessary.');
+      alert('This taxonomy is locked and cannot be replaced by a CSV import.');
       return;
     }
     if (project && hasAnyContent(project.rows) && !confirm('This will clear the existing table content — proceed?')) {
@@ -1889,7 +1900,7 @@ export default function App() {
   function handleFlatCodeDescCsvClick() {
     // Same Lock Taxonomy / existing-content guards as the other three CSV import paths above.
     if (project?.settings.locked) {
-      alert('This taxonomy is locked and cannot be replaced by a CSV import. Unlock it first if this is genuinely necessary.');
+      alert('This taxonomy is locked and cannot be replaced by a CSV import.');
       return;
     }
     if (project && hasAnyContent(project.rows) && !confirm('This will clear the existing table content — proceed?')) {
@@ -1995,7 +2006,7 @@ export default function App() {
     // Bulk, whole-table structural operation — same precedent as CSV Import, blocked outright
     // while locked rather than trying to thread protected-row guards through it.
     if (project.settings.locked) {
-      alert('This taxonomy is locked and cannot be auto-coded. Unlock it first if this is genuinely necessary.');
+      alert('This taxonomy is locked and cannot be auto-coded.');
       return;
     }
     setAutoCodeType(AUTO_CODE_TYPES[0]);
@@ -2023,7 +2034,7 @@ export default function App() {
     // Bulk, whole-table content operation — same precedent as Auto Code / CSV Import: blocked
     // outright while locked rather than threading protected-row guards through a bulk rewrite.
     if (project.settings.locked) {
-      alert('This taxonomy is locked and descriptions cannot be bulk-formatted. Unlock it first if this is genuinely necessary.');
+      alert('This taxonomy is locked and descriptions cannot be bulk-formatted.');
       return;
     }
     setFormatMode(FORMAT_MODES[2]);
@@ -3524,17 +3535,29 @@ export default function App() {
       {lockConfirm && (
         <div className="validation-overlay" onClick={() => setLockConfirm(null)}>
           <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <p className="lock-confirm-signed-in-as">Signed in as {authedEmail}</p>
             <p>
               {lockConfirm === 'lock'
-                ? 'Lock this taxonomy? Every row currently in the table becomes protected — its code and description can no longer be edited or deleted (Mark as Delete can still retire an entry), and new rows can only be inserted where a code gap already exists. The file will be saved.'
-                : 'Lock these updates? Every row currently in the table — including whatever has been added since the last Lock — becomes protected, and the taxonomy shows the original plus the updates as one locked list. The file will be saved.'}
+                ? 'Confirm Lock. Every row currently in the table becomes protected — its code and description can no longer be edited or deleted (Mark as Delete can still retire an entry), and new rows can only be inserted where a code gap already exists. The file will be saved. This should only ever be undone deliberately, through a separate Unlock action.'
+                : 'Confirm Lock Updates. Every row currently in the table — including whatever has been added since the last Lock — becomes protected, and the taxonomy shows the original plus the updates as one locked list. The file will be saved. This should only ever be undone deliberately, through a separate Unlock action.'}
             </p>
+            <label className="lock-confirm-type-label">
+              Type LOCK to confirm
+              <input
+                value={lockConfirmTyped}
+                onChange={(e) => setLockConfirmTyped(e.target.value)}
+                autoFocus
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </label>
             <div className="confirm-dialog-actions">
               <button type="button" onClick={() => setLockConfirm(null)}>
                 Cancel
               </button>
               <button
                 type="button"
+                disabled={lockConfirmTyped !== 'LOCK'}
                 onClick={() => {
                   const kind = lockConfirm;
                   setLockConfirm(null);
