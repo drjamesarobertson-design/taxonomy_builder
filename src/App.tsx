@@ -52,6 +52,9 @@ import Grid from './Grid';
 import Logo from './Logo';
 import LibrarySidebar from './LibrarySidebar';
 import WorkflowMenu from './WorkflowMenu';
+import NewSignupsBanner from './NewSignupsBanner';
+import { listRecentSignups } from './signups';
+import type { SignupRecord } from './signups';
 import Login from './Login';
 import ResetPassword from './ResetPassword';
 import { getSession, onAuthStateChange, signOut } from './auth';
@@ -628,6 +631,31 @@ export default function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [supervisor]);
+
+  // James's ask (2026-10-14): see new sign-ups right in the app, on the landing menu, rather
+  // than relying on the outbound Resend email (0008) -- which proved hard to confirm/debug.
+  // lastSeenSignupAt is a plain localStorage marker (there's only ever one supervisor account,
+  // so no per-account scoping is needed the way autosave's was) -- "everything created after
+  // this timestamp is new". Dismissing moves the marker forward to the newest entry actually
+  // shown, not just to "now", so a sign-up that arrives in the few seconds between the fetch and
+  // the dismiss click is never silently skipped.
+  const [newSignups, setNewSignups] = useState<SignupRecord[]>([]);
+  useEffect(() => {
+    if (!supervisor) return;
+    const lastSeenAt = localStorage.getItem('taxonomy-builder-last-seen-signup-at');
+    listRecentSignups()
+      .then((all) => {
+        setNewSignups(lastSeenAt ? all.filter((s) => s.createdAt > lastSeenAt) : all);
+      })
+      .catch((err) => console.error('Failed to load recent sign-ups:', err));
+  }, [supervisor]);
+  function handleDismissNewSignups() {
+    if (newSignups.length > 0) {
+      const newest = newSignups.reduce((max, s) => (s.createdAt > max ? s.createdAt : max), newSignups[0].createdAt);
+      localStorage.setItem('taxonomy-builder-last-seen-signup-at', newest);
+    }
+    setNewSignups([]);
+  }
 
   // Worksheet Guidance (process/convention guidance for building this taxonomy, as opposed to
   // the per-field help icons): collapsed to a short preview by default since it's expected to
@@ -2828,6 +2856,7 @@ export default function App() {
 
       {!project && signOnStage === 'menu' && (
         <>
+          {supervisor && <NewSignupsBanner signups={newSignups} onDismiss={handleDismissNewSignups} />}
           <WorkflowMenu
             onChooseNew={handleChooseWorkflowLevel}
             onChooseExisting={() => setSignOnStage('existing')}
