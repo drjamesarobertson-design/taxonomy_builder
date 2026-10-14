@@ -2860,29 +2860,160 @@ export default function Grid({
     // descendant swept along with it) blocks the whole move.
     if (blockIfAnyProtected([...affected].map((i) => rows[i].id))) return;
 
-    onChange(
-      rows.map((row, i) => {
-        if (!affected.has(i)) return row;
-        const oldLevel = levelOf(row);
-        const newLevel = oldLevel + offset;
-        // Only the description moves; colour follows the column automatically since it's
-        // never stored per-row. The code cell at the entry's new column is blanked — that's
-        // the one whose value is no longer trustworthy at the new level and needs a fresh
-        // code — and so is the one at its old column, since the entry no longer sits there;
-        // leaving a stale value behind would make it look like an untouched ancestor code.
-        // Every other code cell on the row (its actual ancestor path) is left alone
-        // (Section 6.3).
-        const descriptions = row.descriptions.map((d, idx) => {
-          if (idx === newLevel) return row.descriptions[oldLevel];
-          if (idx === oldLevel) return '';
-          return d;
-        });
-        const codes = row.codes.map((c, idx) => (idx === newLevel || idx === oldLevel ? '' : c));
-        return { ...row, descriptions, codes };
-      }),
-    );
+    // James's report (2026-10-14): promoting or demoting an entry whose nearest unmoved
+    // neighbour was previously its own SIBLING (same old level) silently re-parents something
+    // that was never meant to relate that way:
+    // - Promote moves the block to a SHALLOWER level — an unmoved sibling immediately BELOW,
+    //   scanning backward for its own parent, would now land on the promoted block instead of
+    //   whatever heading it actually belongs under.
+    // - Demote moves the block to a DEEPER level — an unmoved sibling immediately ABOVE becomes
+    //   the nearest shallower row, i.e. the moved block's new (unintended) parent.
+    // Only that one direction's neighbour actually risks reparenting in each case — the other
+    // side is unaffected (a promoted block can't un-become a row's parent by moving away from
+    // it; a demoted block scanning backward for its own parent simply skips over something
+    // that's now shallower than before, exactly as it always would).
+    const headingCandidates: { atIndex: number; level: number; clearRange?: { start: number; end: number } }[] = [];
+    for (const { start, end } of ranges) {
+      const topOldLevel = levelOf(rows[start]);
+      const newLevel = topOldLevel + offset;
+      if (direction === 'promote') {
+        for (let i = end; i < rows.length; i++) {
+          if (affected.has(i)) continue;
+          if (levelOf(rows[i]) === topOldLevel) {
+            // The unmoved neighbour (and its own descendants, if any) kept its old ancestor
+            // code at this level — now stale, since its real new ancestor is the heading about
+            // to be inserted, not whatever used to sit above the promoted block. Cleared below,
+            // in performPromoteDemoteMove, so fillCodesDown has a genuinely blank slot to
+            // recompute rather than a real (but now wrong) value it would never overwrite.
+            headingCandidates.push({ atIndex: end, level: newLevel, clearRange: { start: i, end: getDescendantEndIndex(i) } });
+          }
+          break;
+        }
+      } else {
+        for (let i = start - 1; i >= 0; i--) {
+          if (affected.has(i)) continue;
+          // One level shallower than the demoted block's own new level — a fresh sibling for
+          // the unmoved row above, so the demoted block nests under THAT instead of directly
+          // under a row it was only ever a sibling of. No clearRange needed here: the demoted
+          // block's own old-level code (exactly this level) is already blanked by the ordinary
+          // move transform above, which is the one slot that needs recomputing.
+          if (levelOf(rows[i]) === topOldLevel) headingCandidates.push({ atIndex: start, level: newLevel - 1 });
+          break;
+        }
+      }
+    }
+
+    if (headingCandidates.length > 0) {
+      setConfirmDialog({
+        message:
+          'Moving this would leave another entry without a heading of its own at its level — it would read as a child of an unrelated entry instead. Insert a new heading row (auto-coded) to keep the hierarchy correct?',
+        confirmLabel: 'Proceed Without Heading',
+        cancelLabel: 'Cancel',
+        suggestLabel: 'Insert Heading Row',
+        onConfirm: () => performPromoteDemoteMove(direction, affected),
+        onSuggest: () => {
+          if (locked) {
+            setMemoPrompt({
+              message:
+                'This taxonomy is locked — enter a reason for inserting this heading row (recorded on the row as a Note):',
+              onConfirm: (memo) => performPromoteDemoteMove(direction, affected, headingCandidates, memo),
+            });
+          } else {
+            performPromoteDemoteMove(direction, affected, headingCandidates);
+          }
+        },
+      });
+      return;
+    }
+
+    performPromoteDemoteMove(direction, affected);
+  }
+
+  // Applies the actual level/code/description change for every affected row, and — when
+  // headingCandidates is non-empty (handlePromoteDemote's own ask, accepted) — inserts a blank,
+  // auto-coded heading row at each flagged position first. Insertions are applied highest-index
+  // first so earlier, still-pending insertion points stay valid.
+  function performPromoteDemoteMove(
+    direction: 'promote' | 'demote',
+    affected: Set<number>,
+    headingCandidates: { atIndex: number; level: number; clearRange?: { start: number; end: number } }[] = [],
+    memo?: string,
+  ) {
+    const offset = direction === 'promote' ? -1 : 1;
+    let newRows = rows.map((row, i) => {
+      if (!affected.has(i)) return row;
+      const oldLevel = levelOf(row);
+      const newLevel = oldLevel + offset;
+      // Only the description moves; colour follows the column automatically since it's
+      // never stored per-row. The code cell at the entry's new column is blanked — that's
+      // the one whose value is no longer trustworthy at the new level and needs a fresh
+      // code — and so is the one at its old column, since the entry no longer sits there;
+      // leaving a stale value behind would make it look like an untouched ancestor code.
+      // Every other code cell on the row (its actual ancestor path) is left alone
+      // (Section 6.3).
+      const descriptions = row.descriptions.map((d, idx) => {
+        if (idx === newLevel) return row.descriptions[oldLevel];
+        if (idx === oldLevel) return '';
+        return d;
+      });
+      const codes = row.codes.map((c, idx) => (idx === newLevel || idx === oldLevel ? '' : c));
+      return { ...row, descriptions, codes };
+    });
+
+    // Promote's clearRange only (see handlePromoteDemote's own comment): the unmoved subtree
+    // that's about to gain a fresh heading above it still carries its OLD ancestor code at that
+    // level — genuinely wrong now, but not blank, so fillCodesDown (below) would never touch it
+    // on its own. Cleared here, on the still index-aligned array, before any insertion shifts
+    // positions.
+    for (const { clearRange, level } of headingCandidates) {
+      if (!clearRange) continue;
+      for (let i = clearRange.start; i < clearRange.end; i++) {
+        newRows[i] = { ...newRows[i], codes: newRows[i].codes.map((c, idx) => (idx === level ? '' : c)) };
+      }
+    }
+
+    let firstHeadingRowId: string | null = null;
+    let firstHeadingLevel = 0;
+    if (headingCandidates.length > 0) {
+      const levelsTouched = new Set<number>();
+      for (const { atIndex, level } of [...headingCandidates].sort((a, b) => b.atIndex - a.atIndex)) {
+        const blank = createEmptyRow(numLevels, settings.suffixes);
+        if (memo) blank.note = formatChangeMemo(memo);
+        // fillMissingCodesAtLevel (below) only recognises a row as belonging to a level once it
+        // has a description there — levelOf() reads a row's level from its deepest non-blank
+        // description, so a genuinely blank row is invisible to the sibling-grouping it codes
+        // by. A clear, obviously-placeholder ALL CAPS heading (Section 4.3's own convention for
+        // a structural entry) gets it recognised and included in the same gap-coding sweep as
+        // the row it's bracketing, rather than left with no code at all.
+        blank.descriptions[level] = 'NEW HEADING';
+        newRows = [...newRows.slice(0, atIndex), blank, ...newRows.slice(atIndex)];
+        levelsTouched.add(level);
+        firstHeadingRowId = blank.id;
+        firstHeadingLevel = level;
+      }
+      // Auto-codes each newly-inserted heading (James's ask: "you have the information to
+      // fill the codes") — the same gap-respecting logic Auto Code itself uses, not a blank
+      // cell left for the user to work out by hand.
+      for (const level of levelsTouched) {
+        newRows = fillMissingCodesAtLevel(newRows, level, paddingChar, codeRestriction, autoCodeGapIncrement);
+      }
+    }
+
+    onChange(newRows);
     setSelection(null);
     setContextMenu(null);
+    // Pre-selects the placeholder text (same convention as Find/Go-to-Code's own jump-and-
+    // select) so the first keystroke replaces "NEW HEADING" outright, rather than requiring a
+    // manual clear first.
+    if (firstHeadingRowId) {
+      const rowId = firstHeadingRowId;
+      const level = firstHeadingLevel;
+      requestAnimationFrame(() => {
+        const input = document.getElementById(descInputId(level, rowId)) as HTMLInputElement | null;
+        input?.focus();
+        input?.select();
+      });
+    }
   }
 
   // Right-click "Alpha Sort" (Section 6.4) — sorts a selected block of sibling entries within
