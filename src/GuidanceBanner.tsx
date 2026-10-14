@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { CodeRestriction, TaxonomyProject, TaxonomyRow, TaxonomySettings } from './types';
-import { CODE_RESTRICTIONS, growRowsToLevels } from './types';
+import { CODE_RESTRICTIONS, growRowsToLevels, MAX_LEVELS } from './types';
 import {
   countChildrenPerHeading,
   countHeadings,
@@ -85,9 +85,19 @@ export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExi
   // James's ask: a taxonomy limited to a single code column is a genuinely flat list (Reason
   // Codes, say) — there's no second level to ever offer, so headings go straight to coding
   // rather than asking "Another Description Column?" first.
+  //
+  // Same reasoning applies once numLevels has reached MAX_LEVELS (James's report, 2026-10-14:
+  // the right-click "Add Column" control let this climb with no ceiling at all, since unlike the
+  // Settings dialog's own numLevels field, nothing here checked it) — there's no room left to add
+  // another column, so offering the choice at all would be misleading.
+  function offerAnotherColumnOrCoding() {
+    if (project.settings.numLevels >= MAX_LEVELS) beginCoding();
+    else setAnotherColumnPrompt(true);
+  }
+
   function proceedPastHeadings() {
     if (project.settings.singleCodeColumn) beginCoding();
-    else setAnotherColumnPrompt(true);
+    else offerAnotherColumnOrCoding();
   }
 
   function handleHeadingsNext() {
@@ -133,12 +143,12 @@ export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExi
         } an unusual number of sub-items (recommended 5 to 9, when used at all). Continue anyway?`,
         onConfirm: () => {
           setConfirmOverride(null);
-          setAnotherColumnPrompt(true);
+          offerAnotherColumnOrCoding();
         },
       });
       return;
     }
-    setAnotherColumnPrompt(true);
+    offerAnotherColumnOrCoding();
   }
 
   // James's ask: this used to jump straight from headings to exactly one further column
