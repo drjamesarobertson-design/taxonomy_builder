@@ -7,6 +7,7 @@
 // RLS policy that makes this table readable to his account at all.
 
 import { supabase } from './supabaseClient';
+import { saveExportFile } from './exportFolder';
 
 export interface SignupRecord {
   id: string;
@@ -32,4 +33,28 @@ export async function listRecentSignups(limit = 50): Promise<SignupRecord[]> {
     mobileNumber: row.mobile_number as string | null,
     createdAt: row.created_at as string,
   }));
+}
+
+function csvEscape(value: string): string {
+  if (/[",\r\n]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+/** James's ask (2026-10-14): download the sign-ups list shown in NewSignupsBanner as a CSV, so
+ * he can use it to send welcome emails -- same "Save As" download behaviour (remembered export
+ * folder, etc.) as every other CSV/XLSX export in the app, via the same shared saveExportFile. */
+export async function exportSignupsToCsv(signups: SignupRecord[]): Promise<void> {
+  const header = ['Name', 'Email', 'Company', 'Mobile', 'Signed up at'];
+  const rows = signups.map((s) => [
+    s.fullName ?? '',
+    s.email ?? '',
+    s.companyName ?? '',
+    s.mobileNumber ?? '',
+    new Date(s.createdAt).toLocaleString(),
+  ]);
+  const csv = [header, ...rows].map((r) => r.map((v) => csvEscape(v)).join(',')).join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  await saveExportFile(blob, `taxonomy-builder-new-signups-${new Date().toISOString().slice(0, 10)}.csv`);
 }

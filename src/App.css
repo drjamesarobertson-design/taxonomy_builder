@@ -655,6 +655,29 @@
   gap: 0.5rem;
 }
 
+.new-signups-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.new-signups-banner-download {
+  cursor: pointer;
+  background: #1d8a4c;
+  color: #fff;
+  border: 1px solid #1d8a4c;
+  border-radius: 6px;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.new-signups-banner-download:hover {
+  background: #166b3a;
+  border-color: #166b3a;
+}
+
 .new-signups-banner-dismiss {
   flex-shrink: 0;
   width: 2.25rem;
