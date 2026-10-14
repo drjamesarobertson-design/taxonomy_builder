@@ -6,45 +6,68 @@ he shares this with) rather than as an engineering log — for the detailed,
 round-by-round build history, see `PROGRESS.md`; for the original functional
 specification, see `CLAUDE.md`.*
 
-*Last updated: 2026-10-13, after PR #210.*
+*Last updated: 2026-10-14, after PR #214, and a correction pass against
+James's own full conversation record (see note below).*
 
 ---
 
 ## 0. Where things stand right now — read this first
 
-**Engineering is fully caught up as of PR #210 (2026-10-13)** — every item
-from James's last several rounds of live testing has been addressed and
-deployed. Most recent rounds covered: four showcase-recording bugs (a false
-ALL CAPS notice, a stray blank row, Export Block, Lock Taxonomy's
-confirmation); a dismissible "Resume Work in Progress" banner on the landing
-menu; "One Column List with Multiple Character Codes" split out as its own
-menu entry; Lock Taxonomy now also adds the taxonomy to the Library
-(prompting which category) if it isn't there already, and keeps that
-Library entry in sync on every later Lock/Lock Updates, with a note in the
-dialog when it's just syncing; a fix for starter samples not seeding into a
-brand-new subscriber's Library (a timing race against Supabase's own async
-auth check); Audit Taxonomy now also catches a heading left in the wrong
-case when it has children, not just the reverse (an ALL CAPS entry with no
-children), and the latter can now be explicitly accepted as deliberate
-(e.g. a section marker like "END OF LOCATIONS") rather than only fixed;
-Unlock Taxonomy now gets the same signed-in-email-plus-type-to-confirm
-treatment as Lock, instead of a plain browser confirm; and "Check for New
-Samples"/"Add Samples" now show a visible busy/progress state, fixing a
-no-feedback bug that had quadrupled entries in James's test Library.
-Several CSV-import and Library-bulk-management rounds (PRs #192–#202) also
-shipped in between — a fourth CSV import shape (flat code/description
-list), specific fixable-error messages for common import mistakes, GL
-Analyser support additions, bulk Export to Excel/CSV for the whole Library,
-and "Import from Folder (Replace)" for batch-replacing Library entries.
+**A documentation gap, found and fixed 2026-10-14:** this file was missing
+real, already-shipped work — most importantly, Resend was already fully
+configured as Supabase's custom SMTP provider (DNS verified, confirmed
+working by James's own test) well before this file's previous "last
+updated" date, and was never recorded here at all. Relying on this file
+being current, an earlier reply in this same session wrongly told James
+the email setup still needed doing from scratch. James supplied his own
+complete record of the project conversation to correct this; §2–§6 below
+have been reconciled against it. **The lesson driving this**: nothing said
+in any one session persists to the next except what's written into this
+file (or `PROGRESS.md`/`CLAUDE.md`) — a decision or a piece of completed
+setup that only ever lived in chat is, from a future session's point of
+view, exactly as if it never happened. Keep this file current as a matter
+of course, not just at natural pauses.
 
-**Commercial-setup status below (§4/§5) is carried over unchanged from
-2026-09-28** — this stretch of work has been entirely engineering
-testing-and-fix rounds, with no visibility from here into whether the
-Stripe account, the WordPress pricing page, or the Outlook 365 app
-registration moved forward in the meantime. **Confirm with James, next
-time, whether any of those moved** before assuming §4/§5 below still
-reflects where things actually stand — the rest of this section is the
-last known state as of that date, kept for reference, not a current report.
+**Engineering is fully caught up as of PR #214 (2026-10-14)** — every item
+from James's last several rounds of live testing has been addressed and
+deployed. PR #210 and earlier covered four showcase-recording bugs, a
+dismissible "Resume Work in Progress" banner, Lock Taxonomy syncing to the
+Library, a starter-sample seeding race fix, Audit's new case checks, and
+Unlock gaining Lock's own confirm treatment (full detail in §2 and
+`PROGRESS.md`). Since then: PR #211 brought this file's engineering summary
+up to date (since superseded by this correction pass); PR #212 added a
+dismissible "new version available" banner (polls a small `version.json`
+marker written alongside each deploy) and three ERP Doctor book
+recommendations on the landing menu; PR #213 fixed those book links being
+illegible against the landing page's dark blue background; PR #214 added a
+**supervisor role**, restricted to James's own account
+(`jamesar@jar-and-a.com`) — starring Library entries as starter samples
+(previously open to any subscriber) and an in-app Help editor are now
+supervisor-only, and the groundwork is in place so that if/when tier limits
+are ever built, his account is automatically exempt (see §2).
+
+**Open right now, unresolved as of 2026-10-14:**
+- **Duplicate starter-sample entries.** Traced to a stale cached login
+  session carrying old data — a genuine **Log Out + Log back in** (not
+  just a hard browser refresh, and not just closing/reopening the browser,
+  neither of which clears the stored session) resolved it on
+  `jamesar@jar-and-a.com`. The same fix has been tried twice on
+  `Jamesar@jamesarobertson.com` in Chrome without success — still
+  duplicated there. Not yet root-caused; needs picking back up.
+- **New-signup confirmation email not arriving** for a third account,
+  `james.a.robertson@the-erp-doctor.com` (created to test), despite Resend
+  SMTP having been confirmed working previously for other accounts. Given
+  the SMTP setup already exists (see §4), this is now a "something broke"
+  investigation, not a "needs setting up" one — not yet started.
+
+**Commercial-setup status below (§4/§6) has been reconciled against
+James's full record as of 2026-10-14**, but the Stripe account, the
+WordPress pricing page publication, and the Outlook 365 registration are
+all still exactly where the 2026-09-28 snapshot left them — nothing in
+James's own record since then shows any of those three moving forward.
+**Still worth confirming directly with James** rather than assuming,
+since a gap exactly like this is what caused today's correction in the
+first place.
 
 <details>
 <summary>Commercial-setup status as last recorded (2026-09-28) — click to expand</summary>
@@ -129,6 +152,38 @@ minute.
 
 ## 2. What it can do today
 
+### Account & sign-up
+- Real accounts via Supabase Auth — Create Account, Log In, Forgot
+  Password, all live.
+- **Create Account collects Name, Company Name, and Mobile Number**
+  (required, with an international dialling code, e.g. `+44 7700 900123`,
+  validated client-side before submission) alongside the usual email/
+  password. A "check your email to confirm your account" popup shows
+  immediately after submitting.
+- That contact data is stored two ways: in Supabase Auth's own user
+  metadata (visible per-user under Authentication → Users → click a user →
+  User Metadata), and copied automatically into a separate `profiles`
+  table (`supabase/0001_create_profiles.sql`) purpose-built so James can
+  pull a clean contact list — email, full_name, company_name,
+  mobile_number, created_at — straight out of Supabase's Table Editor as a
+  CSV (Table Editor → `profiles` → export), ready for Excel or a mail-merge
+  tool. The app itself has no access to that table at all (Row Level
+  Security with zero policies — reachable only from inside the Supabase
+  dashboard, which bypasses RLS as the project owner).
+- **Email delivery runs through Resend**, not Supabase's own default
+  mailer (see §4 for the full setup record) — this is what makes
+  confirmation/password-reset emails arrive reliably at any real inbox
+  rather than hitting Supabase's test-only rate limit.
+- **Supervisor role** (James's own account, `jamesar@jar-and-a.com`
+  specifically, hardcoded — see `src/supervisor.ts`): two capabilities
+  restricted to this one account — marking/unmarking a Library entry as a
+  starter sample (open to any subscriber until 2026-10-14; a database
+  trigger now enforces this server-side, not just a hidden button), and an
+  in-app Help editor (edit any tooltip/help-page field directly, in place
+  of downloading `help-text.csv` and editing it in Excel). Built as
+  reusable infrastructure — no paywall exists yet to bypass (see §4), but
+  his account will be automatically exempt the moment one is.
+
 ### Core taxonomy editing
 - The full coded-hierarchy grid: single-character code columns, configurable
   delimiter columns, description columns, per-level colour coding, ALL
@@ -209,7 +264,8 @@ generic failure.
   rather than automatically — both this and the import step now show a
   visible progress/busy state so a slow check (with a few dozen samples to
   compare against) doesn't look stalled and invite a duplicate-triggering
-  repeat click.
+  repeat click. Marking an entry as a starter sample is supervisor-only
+  (James's account) as of 2026-10-14 — see "Account & sign-up" above.
 - Import/export a Library bundle as a file (backup, migration, sharing a demo
   set); bulk Export to Excel/CSV for the whole Library in one action; "Import
   from Folder (Replace)" for batch-replacing a set of Library entries'
@@ -236,7 +292,17 @@ Toolbar "Folders ▾" menu:
 - A dedicated, searchable Help page (toolbar "Help" button).
 - Both are driven by one editable file (`public/help-text.csv`), downloadable
   in-app (Help page → "Download Help CSV") so James can edit and resend it
-  without touching GitHub directly.
+  without touching GitHub directly — or edited directly in-app via the
+  supervisor-only "Edit Help" button (see "Account & sign-up" above), which
+  still produces that same downloadable file at the end.
+
+### Staying current
+- A small, dismissible "A new version of Taxonomy Builder is available"
+  banner appears for anyone with the app open in a tab across a new deploy
+  (polls a small `version.json` marker written alongside each release),
+  with a one-click Refresh.
+- Three ERP Doctor book recommendations (Amazon links) on the bottom of the
+  signed-in landing menu.
 
 ### Commercial groundwork (not yet live)
 - A **Pricing** page (reachable from the Login screen and the signed-in
@@ -253,9 +319,16 @@ Toolbar "Folders ▾" menu:
 - **Frontend**: React + TypeScript, built with Vite, hosted as a static
   single-page app on GitHub Pages. No server of its own.
 - **Backend**: Supabase — Postgres (with Row Level Security) for accounts,
-  Library storage, and starter samples; Supabase Auth for sign-in/sign-up.
-  Four one-time SQL migrations have been run (`supabase/0001`–`0004`) to set
-  this up; each was a one-off manual step in Supabase's SQL Editor.
+  Library storage, and starter samples; Supabase Auth for sign-in/sign-up;
+  Resend as the custom SMTP provider for auth emails (see §4). Five
+  one-time SQL migrations have been run (`supabase/0001`–`0005`), each a
+  one-off manual step in Supabase's SQL Editor: `0001` creates the
+  `profiles` table (James's own exportable contact list — see "Account &
+  sign-up" in §2); `0002` creates `library_entries` (cloud Library
+  storage); `0003` adds the starter-sample flag and its cross-account read
+  policy; `0004` adds `source_sample_id` (for "Check for New Samples");
+  `0005` restricts starter-sample flagging to James's supervisor account
+  at the database level.
 - **Local file system integration**: the File System Access API (Chromium
   browsers only — Chrome, Edge) powers "Choose Export Folder" and "Folders →
   Local Hard Drive". No equivalent exists in Firefox/Safari; both features
@@ -292,6 +365,39 @@ still need to be wired into the app itself (a `plan` field, enforcement
 logic) — deliberately not done yet, since that's a business-critical change
 better made once the numbers are final and the app has active users who
 shouldn't be surprised by new restrictions overnight.
+
+**Subscription/renewal mechanics James has specified** (not yet built —
+captured here so it isn't lost before the Stripe wiring happens): billing
+renews monthly, quarterly, or annually, with a discounted rate for the
+longer periods. On expiry, login is hard-blocked (no grace-period access)
+with a clear "your subscription has expired — renew here" screen in place
+of the app. Staged reminder emails before that point: one month out, one
+week out, one day out, then an expired notice, then a follow-up nudge if
+still unrenewed — each one sent through the same Resend infrastructure as
+the auth emails (see below).
+
+### Email delivery — Resend, configured and working
+Supabase's own built-in mailer is explicitly test-only (a handful of
+emails/hour, not meant to carry real traffic) — all confirmation/
+password-reset emails now route through **Resend** instead, configured as
+Supabase's custom SMTP provider:
+- Resend account: `jamesar@jar-and-a.com`. Sending domain
+  `the-erp-doctor.com`, DNS-verified (SPF/DKIM records at the registrar).
+- Supabase → Authentication → Emails (relocated from "SMTP Settings" in an
+  earlier Supabase UI) → Custom SMTP: host `smtp.resend.com`, port `465`,
+  username the literal word `resend`, password a Resend API key (starts
+  `re_...`, generated from Resend → API Keys — **not** an arbitrary chosen
+  password), sender an address on the verified domain (e.g.
+  `noreply@the-erp-doctor.com`).
+- **Confirmed working** by James's own end-to-end test (Create Account +
+  Forgot Password, both arrived correctly) once this was set up.
+- **As of 2026-10-14, a new signup confirmation email did not arrive** for
+  `james.a.robertson@the-erp-doctor.com` after waiting ~20 minutes and
+  checking junk — unresolved, not yet investigated. Given the setup above
+  already works, treat this as "something changed" (a Resend-side issue,
+  a Supabase SMTP setting reverted, a sending-domain hiccup, or a genuine
+  rate/delivery issue on this specific send) rather than "needs setting up
+  from scratch."
 
 ### Payment processing — recommendation: Stripe direct, skip WooCommerce
 - The product is a software subscription, not a shopping-cart purchase —
@@ -347,19 +453,74 @@ says otherwise — so wait for him to ask before giving the step-by-step for
 this, rather than starting it unprompted.
 
 ### The website (the-erp-doctor.com) — admin access not needed for the above
-None of the billing or Outlook work above touches the WordPress marketing
-site — the paywall logic lives entirely in this app plus Supabase plus
-Stripe. If James wants an actual Pricing page live on the marketing site
-itself (rather than just linking to the one already in this app), the
-content is ready to hand over. If direct edits to the WordPress site are
-ever needed, the safe way to grant access is a WordPress **Application
-Password** (Users → Profile → Application Passwords in `wp-admin`) scoped
-just for that purpose — not the real admin login.
+Site: `https://the-erp-doctor.com/`; admin: `https://the-erp-doctor.com/admin`
+(WordPress, with WooCommerce already installed but unused). None of the
+billing or Outlook work above touches the WordPress marketing site — the
+paywall logic lives entirely in this app plus Supabase plus Stripe. If
+James wants an actual Pricing page live on the marketing site itself
+(rather than just linking to the one already in this app), the content is
+ready to hand over. If direct edits to the WordPress site are ever needed,
+the safe way to grant access is a WordPress **Application Password**
+(Users → Profile → Application Passwords in `wp-admin`) scoped just for
+that purpose — not the real admin login.
 
 ---
 
-## 5. Open items awaiting James's input
+## 5. GL Analyser Management Application — a separate, parked future product
 
+A second, substantially bigger product, deliberately set aside (James's own
+call, "let us park what I will call the GL Analyser Management Application
+for now... I still have quite a bit to do on Taxonomy Builder") to return
+to once there's bandwidth — not started, no repo or Supabase project set
+up for it yet. Recorded here in full so picking it back up doesn't require
+re-deriving any of this.
+
+- **What it is**: a from-a-trial-balance tool that produces first-draft
+  Division/Location/Function/Chart-of-Accounts tables from a client's real
+  data — a genuinely new product, not an extension of Taxonomy Builder.
+  James and a separate "Claude Chat" conversation (not this codebase)
+  already produced a full business workflow document and an application
+  specification for it — both exist as files outside this repository, not
+  yet reviewed line-by-line against this repo's own conventions.
+- **Proposed delivery shape, as last discussed**: Phase 1 (core wizard, no
+  billing — auth, file upload, a four-step wizard calling Claude
+  server-side with code execution, review/download, iterative refine,
+  usage logging), ballparked at 12–22 sessions to a deployed, free-Beta-
+  ready state; Phase 2 (Stripe billing) ~3–6 sessions; Phase 3 (dashboards/
+  hardening) ~3–6 sessions — roughly 18–34 sessions end to end, Phase 1
+  alone enough to run real Beta engagements on.
+- **Licensing model, as James specified it**: separate from Taxonomy
+  Builder's own recurring subscription — GL Analyser priced as an initial
+  one-off per engagement, not a subscription (possibly unified into one
+  combined subscription across all three tools later, but not now). GL
+  Builder (the third, long-mentioned tool) is explicitly "NOT on the radar
+  yet" — no plan, no timeline.
+- **Cost ceiling**: James set a rough ~£50/month ceiling on the AI/compute
+  cost per engagement as a constraint to design within — not yet validated
+  against real numbers (needs the actual prompt/spec files sized for token
+  cost, and a technical spike against one real anonymised trial balance,
+  before a confident per-engagement cost figure can be given).
+- **Payment shape under discussion**: James's own suggestion — 50% upfront,
+  50% on delivery — fits a "payment before AI work" constraint and would be
+  straightforward in Stripe once Phase 2 is reached.
+- **To pick this back up**: review the business workflow + specification
+  files James supplied, run one technical spike against a real (anonymised)
+  trial balance to tighten the Phase 1 estimate, confirm the domain/
+  subdomain it should live at, and set up a new repo + Supabase project
+  only once actually starting (deliberately not done ahead of time — "no
+  benefit to an empty repo sitting idle").
+
+---
+
+## 6. Open items awaiting James's input
+
+- [ ] **Active investigation:** duplicate starter-sample Library entries —
+      fixed on `jamesar@jar-and-a.com` via Log Out + Log back in, still
+      reproducing on `Jamesar@jamesarobertson.com` after the same steps.
+      See §0.
+- [ ] **Active investigation:** new-signup confirmation email not arriving
+      for `james.a.robertson@the-erp-doctor.com`, despite Resend SMTP
+      being confirmed working previously. See §4's Email delivery section.
 - [ ] Confirm or adjust the three pricing tiers and their dollar amounts.
 - [ ] **In progress, step 1 given:** create a new Stripe account (see §4 —
       being walked through one step at a time, at James's request).
@@ -378,7 +539,7 @@ just for that purpose — not the real admin login.
 
 ---
 
-## 6. Where to look for more detail
+## 7. Where to look for more detail
 
 - **`CLAUDE.md`** — the original functional specification (data model,
   facilitation workflow, conventions) plus a standing amendment noting the
