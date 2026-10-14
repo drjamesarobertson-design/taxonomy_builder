@@ -439,7 +439,7 @@ export default function LibrarySidebar({
               handleDrop(category, index);
             }}
             onDoubleClick={() => startRename(entry)}
-            title={entry.project.title}
+            title={entry.project.purpose.trim() || entry.project.title}
           >
             <span
               className="library-lock-icon"
