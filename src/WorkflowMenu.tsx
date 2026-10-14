@@ -148,6 +148,29 @@ export default function WorkflowMenu({
           </div>
         </div>
       </div>
+      <div className="workflow-menu-books">
+        <p>
+          To learn more about taxonomies please read the ERP Doctor{' '}
+          <a href="https://www.amazon.com/dp/B0HFXF7BZQ" target="_blank" rel="noopener noreferrer">
+            "ERP Taxonomy Handbook"
+          </a>{' '}
+          available on Amazon (Paperback / Hardcover / Kindle).
+        </p>
+        <p>
+          For business context please read the ERP Doctor book{' '}
+          <a href="https://www.amazon.com/dp/B0HG78SGHW" target="_blank" rel="noopener noreferrer">
+            "Unlocking the Full Potential of ERP"
+          </a>{' '}
+          available on Amazon (Paperback / Hardcover / Kindle).
+        </p>
+        <p>
+          For broader context please read the ERP Doctor book{' '}
+          <a href="https://www.amazon.com/dp/B0HFTL6LD5" target="_blank" rel="noopener noreferrer">
+            "The Critical Factors for Information Technology (ERP) Investment Success"
+          </a>{' '}
+          available on Amazon (Paperback / Hardcover / Kindle).
+        </p>
+      </div>
     </section>
   );
 }

@@ -39,6 +39,13 @@ jobs:
       - run: npm run build
         env:
           VITE_PR_NUMBER: ${{ steps.pr.outputs.number }}
+      # James's ask: some way for an already-open tab to notice a newer version has shipped
+      # (the running JS bundle itself is static once loaded — it only ever gets the latest by
+      # a genuine fresh request, i.e. a reload). version.json sits at a fixed, non-hashed path
+      # alongside the hashed JS bundle, cheap for the running app to poll (versionCheck.ts) and
+      # compare against its own build-time VITE_PR_NUMBER.
+      - name: Write version marker for the in-app update-available check
+        run: echo "{\"pr\":\"${{ steps.pr.outputs.number }}\"}" > dist/version.json
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

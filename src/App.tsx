@@ -71,6 +71,7 @@ import {
 } from './library';
 import type { LibraryCategory, LibraryEntry, LibraryExportBundle } from './library';
 import { bumpFileVersion } from './fileVersion';
+import { fetchDeployedVersion } from './versionCheck';
 import './App.css';
 
 export default function App() {
@@ -82,6 +83,50 @@ export default function App() {
   const buildInfoTag = (
     <div className="build-info-tag" aria-hidden="true">
       {import.meta.env.VITE_PR_NUMBER ? `PR #${import.meta.env.VITE_PR_NUMBER}` : 'Local build'}
+    </div>
+  );
+
+  // James's ask: a tab left open across a deploy is still running the OLD build indefinitely —
+  // nothing short of a genuine reload ever picks up a newer one. Polls version.json (a fixed,
+  // non-hashed path written alongside the hashed JS bundle — see deploy-pages.yml) every few
+  // minutes and compares its PR number against this build's own VITE_PR_NUMBER; a mismatch means
+  // a newer version has shipped since this tab loaded. Skipped entirely for a local dev build
+  // (no VITE_PR_NUMBER, and no version.json to poll either) — there's nothing to compare against.
+  // dismissedUpdatePr remembers which newer PR the user already dismissed, so closing the banner
+  // doesn't just reopen it on the very next poll — only a DIFFERENT (even newer) PR will re-show it.
+  const [updateAvailablePr, setUpdateAvailablePr] = useState<string | null>(null);
+  const [dismissedUpdatePr, setDismissedUpdatePr] = useState<string | null>(null);
+  useEffect(() => {
+    const currentPr = import.meta.env.VITE_PR_NUMBER;
+    if (!currentPr) return;
+    let cancelled = false;
+    function check() {
+      fetchDeployedVersion().then((marker) => {
+        if (cancelled || !marker) return;
+        if (marker.pr !== currentPr) setUpdateAvailablePr(marker.pr);
+      });
+    }
+    check();
+    const interval = setInterval(check, 10 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+  const updateBanner = updateAvailablePr && updateAvailablePr !== dismissedUpdatePr && (
+    <div className="update-available-banner">
+      <span>A new version of Taxonomy Builder is available.</span>
+      <button type="button" onClick={() => window.location.reload()}>
+        Refresh Now
+      </button>
+      <button
+        type="button"
+        className="update-available-dismiss"
+        aria-label="Dismiss"
+        onClick={() => setDismissedUpdatePr(updateAvailablePr)}
+      >
+        ✕
+      </button>
     </div>
   );
 
@@ -2259,6 +2304,7 @@ export default function App() {
       <>
         <ResetPassword onDone={() => setPasswordRecovery(false)} />
         {buildInfoTag}
+        {updateBanner}
       </>
     );
   }
@@ -2267,6 +2313,7 @@ export default function App() {
       <>
         <Login onSuccess={setAuthedEmail} />
         {buildInfoTag}
+        {updateBanner}
       </>
     );
   }
@@ -3760,6 +3807,7 @@ export default function App() {
       </div>
     </div>
     {buildInfoTag}
+    {updateBanner}
     </>
   );
 }
