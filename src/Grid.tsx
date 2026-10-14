@@ -1482,11 +1482,20 @@ export default function Grid({
       return;
     }
 
-    const noGap = hasNeighboursBothWays && bothSingleChar && belowCode.charCodeAt(0) - aboveCode.charCodeAt(0) === 1;
+    // James's report (2026-10-14): this used to just check the two neighbours' codes were
+    // ASCII-adjacent (e.g. "1"/"2"), regardless of how many rows were actually being inserted —
+    // so a gap of exactly 1 ("1"/"3", room for a single "2") raised no warning at all when
+    // inserting 3 rows at once, even though 2 of the 3 would have nowhere valid to go. Reusing
+    // the same count-aware hasCodeGap the hard block above already uses fixes that.
+    const noGap =
+      hasNeighboursBothWays && bothSingleChar && !hasCodeGap(aboveCode, belowCode, codeRestriction, paddingChar, count);
     if (noGap) {
       setContextMenu(null);
       setConfirmDialog({
-        message: 'There is no gap in the codes to insert this row',
+        message:
+          count > 1
+            ? `There isn't a code gap wide enough for ${count} new rows between "${aboveCode}" and "${belowCode}" at this level — at least one will need recoding.`
+            : 'There is no gap in the codes to insert this row',
         confirmLabel: 'Insert Anyway',
         defaultToCancel: true,
         onConfirm: doInsert,
