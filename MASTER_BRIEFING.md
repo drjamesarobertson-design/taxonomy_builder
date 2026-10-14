@@ -6,7 +6,7 @@ he shares this with) rather than as an engineering log — for the detailed,
 round-by-round build history, see `PROGRESS.md`; for the original functional
 specification, see `CLAUDE.md`.*
 
-*Last updated: 2026-10-14, after PR #214, and a correction pass against
+*Last updated: 2026-10-14, after PR #219, and a correction pass against
 James's own full conversation record (see note below).*
 
 ---
@@ -44,21 +44,40 @@ illegible against the landing page's dark blue background; PR #214 added a
 (`jamesar@jar-and-a.com`) — starring Library entries as starter samples
 (previously open to any subscriber) and an in-app Help editor are now
 supervisor-only, and the groundwork is in place so that if/when tier limits
-are ever built, his account is automatically exempt (see §2).
+are ever built, his account is automatically exempt (see §2). PR #218 fixed
+sign-up silently showing "check your email" for an already-registered
+address; PR #219 root-caused and fixed the duplicate starter-sample Library
+entries (see below).
 
-**Open right now, unresolved as of 2026-10-14:**
-- **Duplicate starter-sample entries.** Traced to a stale cached login
-  session carrying old data — a genuine **Log Out + Log back in** (not
-  just a hard browser refresh, and not just closing/reopening the browser,
-  neither of which clears the stored session) resolved it on
-  `jamesar@jar-and-a.com`. The same fix has been tried twice on
-  `Jamesar@jamesarobertson.com` in Chrome without success — still
-  duplicated there. Not yet root-caused; needs picking back up.
-- **New-signup confirmation email not arriving** for a third account,
-  `james.a.robertson@the-erp-doctor.com` (created to test), despite Resend
-  SMTP having been confirmed working previously for other accounts. Given
-  the SMTP setup already exists (see §4), this is now a "something broke"
-  investigation, not a "needs setting up" one — not yet started.
+**Both of the previously-open investigations below were root-caused and
+resolved on 2026-10-14 (PRs #218, #219):**
+- **Duplicate starter-sample entries — resolved.** Root cause: `Login.tsx`
+  passed the signed-in email to `App.tsx` exactly as typed, while Supabase's
+  own auth-state-change listener reports it lowercase-normalized moments
+  later; any typed uppercase meant the app saw two distinct sign-in events
+  for one login and ran starter-sample seeding twice, each pass's own "is my
+  Library still empty?" check landing before the other's inserts had
+  committed — confirmed via a brand-new test account that already showed 2
+  copies of every sample on its very first sign-in, which ruled out stale
+  session data as the cause. Fixed in three layers: `Login.tsx` now
+  normalizes the email it reports; `library.ts` upserts seeded/imported
+  copies on `(user_id, source_sample_id)` instead of always inserting a
+  fresh row; and a new database constraint
+  (`supabase/0007_prevent_duplicate_starter_sample_copies.sql`) makes a
+  duplicate copy structurally impossible regardless of any future timing
+  quirk — a real guarantee, not just a client-side check. All existing
+  duplicates (3 affected accounts, 98 rows) were cleaned up via
+  `supabase/0006_dedupe_existing_library_entries.sql`, and James confirmed
+  all three accounts now show each sample once.
+- **New-signup confirmation email not arriving — resolved, not a bug.** The
+  test address (`james.a.robertson@the-erp-doctor.com`) had actually been
+  used before; Supabase deliberately sends no email and gives no error when
+  `signUp()` is called with an already-registered address (an
+  anti-enumeration measure), which the app was silently treating the same
+  as a genuine new signup. Fixed in `auth.ts` (PR #218): this case is now
+  detected and reported honestly ("An account already exists for this
+  email..."). Resend/SMTP itself was never broken — confirmed working again
+  with a genuinely new test address.
 
 **Commercial-setup status below (§4/§6) has been reconciled against
 James's full record as of 2026-10-14**, but the Stripe account, the
@@ -320,15 +339,19 @@ Toolbar "Folders ▾" menu:
   single-page app on GitHub Pages. No server of its own.
 - **Backend**: Supabase — Postgres (with Row Level Security) for accounts,
   Library storage, and starter samples; Supabase Auth for sign-in/sign-up;
-  Resend as the custom SMTP provider for auth emails (see §4). Five
-  one-time SQL migrations have been run (`supabase/0001`–`0005`), each a
+  Resend as the custom SMTP provider for auth emails (see §4). Seven
+  one-time SQL migrations have been run (`supabase/0001`–`0007`), each a
   one-off manual step in Supabase's SQL Editor: `0001` creates the
   `profiles` table (James's own exportable contact list — see "Account &
   sign-up" in §2); `0002` creates `library_entries` (cloud Library
   storage); `0003` adds the starter-sample flag and its cross-account read
   policy; `0004` adds `source_sample_id` (for "Check for New Samples");
   `0005` restricts starter-sample flagging to James's supervisor account
-  at the database level.
+  at the database level; `0006` was the one-time cleanup of the duplicate
+  Library entries found 2026-10-14 (see §0); `0007` adds a unique
+  constraint on `(user_id, source_sample_id)` so no account can ever again
+  hold two copies of the same starter sample, closing that bug at the
+  database level rather than relying on application timing.
 - **Local file system integration**: the File System Access API (Chromium
   browsers only — Chrome, Edge) powers "Choose Export Folder" and "Folders →
   Local Hard Drive". No equivalent exists in Firefox/Safari; both features
@@ -391,13 +414,14 @@ Supabase's custom SMTP provider:
   `noreply@the-erp-doctor.com`).
 - **Confirmed working** by James's own end-to-end test (Create Account +
   Forgot Password, both arrived correctly) once this was set up.
-- **As of 2026-10-14, a new signup confirmation email did not arrive** for
-  `james.a.robertson@the-erp-doctor.com` after waiting ~20 minutes and
-  checking junk — unresolved, not yet investigated. Given the setup above
-  already works, treat this as "something changed" (a Resend-side issue,
-  a Supabase SMTP setting reverted, a sending-domain hiccup, or a genuine
-  rate/delivery issue on this specific send) rather than "needs setting up
-  from scratch."
+- **2026-10-14 incident, resolved same day:** a signup confirmation email
+  didn't arrive for `james.a.robertson@the-erp-doctor.com`. Cause: that
+  address had been used before — Supabase deliberately sends no email and
+  gives no error for an already-registered address (an anti-enumeration
+  measure), which the app was silently treating as a normal new signup. Not
+  a Resend/SMTP problem at all; confirmed still working correctly with a
+  genuinely new address. Fixed in `auth.ts` (PR #218) so this case is now
+  reported honestly instead of silently.
 
 ### Payment processing — recommendation: Stripe direct, skip WooCommerce
 - The product is a software subscription, not a shopping-cart purchase —
@@ -514,13 +538,12 @@ re-deriving any of this.
 
 ## 6. Open items awaiting James's input
 
-- [ ] **Active investigation:** duplicate starter-sample Library entries —
-      fixed on `jamesar@jar-and-a.com` via Log Out + Log back in, still
-      reproducing on `Jamesar@jamesarobertson.com` after the same steps.
-      See §0.
-- [ ] **Active investigation:** new-signup confirmation email not arriving
-      for `james.a.robertson@the-erp-doctor.com`, despite Resend SMTP
-      being confirmed working previously. See §4's Email delivery section.
+- [x] ~~Duplicate starter-sample Library entries~~ — resolved 2026-10-14
+      (PR #219): root-caused, fixed in code, existing duplicates cleaned up,
+      and a database constraint now prevents recurrence. See §0.
+- [x] ~~New-signup confirmation email not arriving~~ — resolved 2026-10-14
+      (PR #218): was a reused test address, not a broken setup; fixed so the
+      app now reports this honestly. See §0.
 - [ ] Confirm or adjust the three pricing tiers and their dollar amounts.
 - [ ] **In progress, step 1 given:** create a new Stripe account (see §4 —
       being walked through one step at a time, at James's request).
