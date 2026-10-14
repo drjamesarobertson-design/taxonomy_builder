@@ -224,6 +224,19 @@ follow it:
    (as opposed to just under-specified, where a sensible default is fine), ask — but default to
    acting on a clear, well-reasoned interpretation rather than stalling on minor ambiguity,
    consistent with James's own evident preference for forward progress over back-and-forth.
+10. **Version every standalone document James is handed** (a briefing, a spec, a complaint
+    draft, anything outside the app's own codebase) in its title/header as "v 1.nn" — a
+    two-digit, zero-padded sequence number (v 1.01, v 1.02, ...), incrementing by one on every
+    revision sent to him, never reused. Established 2026-10-14, after he asked for this
+    explicitly.
+11. **At the end of every session where James signs off**, proactively refresh and re-send him
+    the full set of reference files (`MASTER_BRIEFING.md`, `PROGRESS.md`, `CLAUDE.md`,
+    `ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md`, `README.md`,
+    `Taxonomy_Builder_Build_Sequence.md`, and any other standalone document generated that
+    session) — don't wait for him to ask. This is a direct, standing instruction from James
+    (2026-10-14), given after a documentation gap in this same file set caused a real,
+    costly mistake (recorded in `MASTER_BRIEFING.md` §0). The point is that his own copies stay
+    current without him having to notice and request it each time.
 
 ## 6. A few running themes worth knowing up front
 
