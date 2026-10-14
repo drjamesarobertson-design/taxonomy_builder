@@ -72,6 +72,7 @@ import {
 import type { LibraryCategory, LibraryEntry, LibraryExportBundle } from './library';
 import { bumpFileVersion } from './fileVersion';
 import { fetchDeployedVersion } from './versionCheck';
+import { isSupervisor } from './supervisor';
 import './App.css';
 
 export default function App() {
@@ -140,6 +141,9 @@ export default function App() {
   const [authedEmail, setAuthedEmail] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [passwordRecovery, setPasswordRecovery] = useState(false);
+  // James's ask: a small set of admin-only capabilities (starring Library entries, editing Help
+  // content in-app) restricted to his own account — see supervisor.ts for the full reasoning.
+  const supervisor = isSupervisor(authedEmail);
   // Automated testing hook, dev builds only: Supabase now owns real sign-on, but the sandboxed
   // environment this is developed in has no network path to Supabase's own domain (a hard
   // gateway policy, confirmed via the proxy's own status endpoint) — so every Playwright test
@@ -2324,6 +2328,7 @@ export default function App() {
       <LibrarySidebar
         entries={libraryEntries}
         helpText={helpText}
+        isSupervisor={supervisor}
         onRename={handleRenameLibraryEntry}
         onReorder={handleReorderLibrary}
         onMoveToWorkArea={handleMoveToWorkArea}
@@ -2934,7 +2939,9 @@ export default function App() {
         />
       )}
 
-      {showHelpPage && <HelpPage helpText={helpText} onClose={() => setShowHelpPage(false)} />}
+      {showHelpPage && (
+        <HelpPage helpText={helpText} isSupervisor={supervisor} onClose={() => setShowHelpPage(false)} />
+      )}
       {showPricingPage && <PricingPage onClose={() => setShowPricingPage(false)} />}
 
       {hddSubfolderPrompt && (

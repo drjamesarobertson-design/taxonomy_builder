@@ -19,6 +19,12 @@ import Tooltip from './Tooltip';
 interface LibrarySidebarProps {
   entries: LibraryEntry[];
   helpText: HelpTextMap;
+  /** James's ask: only his own (supervisor) account may mark/unmark an entry as a starter
+   * sample — every other signed-in subscriber could previously do this to their own entries,
+   * which then gets copied into every new subscriber's Library on first sign-in. Gates the
+   * "Mark as Starter Sample" context menu item only — a UI convenience, the real enforcement is
+   * a database trigger (supabase/0005_restrict_starter_sample_to_supervisor.sql). */
+  isSupervisor: boolean;
   onRename: (id: string, title: string) => void;
   onReorder: (category: LibraryCategory, orderedIds: string[]) => void;
   onMoveToWorkArea: (entry: LibraryEntry) => void;
@@ -67,6 +73,7 @@ interface ContextMenuState {
 export default function LibrarySidebar({
   entries,
   helpText,
+  isSupervisor,
   onRename,
   onReorder,
   onMoveToWorkArea,
@@ -645,18 +652,25 @@ export default function LibrarySidebar({
               >
                 Move to Category…
               </li>
+              {isSupervisor && (
+                <li
+                  className="context-menu-separator"
+                  onClick={() => {
+                    setContextMenu(null);
+                    onSetStarterSample(entry.id, !entry.isStarterSample);
+                  }}
+                  onMouseEnter={showMenuTooltip('libMenuStarterSample')}
+                  onMouseLeave={hideMenuTooltip}
+                >
+                  {entry.isStarterSample ? 'Remove Starter Sample' : 'Mark as Starter Sample'}
+                </li>
+              )}
               <li
-                className="context-menu-separator"
-                onClick={() => {
-                  setContextMenu(null);
-                  onSetStarterSample(entry.id, !entry.isStarterSample);
-                }}
-                onMouseEnter={showMenuTooltip('libMenuStarterSample')}
+                className={isSupervisor ? undefined : 'context-menu-separator'}
+                onClick={() => onRemove(entry)}
+                onMouseEnter={showMenuTooltip('libMenuRemove')}
                 onMouseLeave={hideMenuTooltip}
               >
-                {entry.isStarterSample ? 'Remove Starter Sample' : 'Mark as Starter Sample'}
-              </li>
-              <li onClick={() => onRemove(entry)} onMouseEnter={showMenuTooltip('libMenuRemove')} onMouseLeave={hideMenuTooltip}>
                 Remove from Library
               </li>
             </ul>
