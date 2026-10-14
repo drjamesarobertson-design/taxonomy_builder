@@ -660,6 +660,12 @@ export default function App() {
   const [importNewSamplesProgress, setImportNewSamplesProgress] = useState<{ done: number; total: number } | null>(
     null,
   );
+  // James's report (2026-10-14): a brand-new account's automatic first-sign-in seeding (below)
+  // gave no sign it was running either — the same silent-wait problem as "Add Samples" above,
+  // just with nothing to click a second time. He assumed nothing was happening and refreshed the
+  // browser partway through. Same shape as importNewSamplesProgress, shown in the Library pane
+  // itself since there's no dialog open yet to show it in.
+  const [seedingStarterSamples, setSeedingStarterSamples] = useState<{ done: number; total: number } | null>(null);
   const [libraryCategoryPrompt, setLibraryCategoryPrompt] = useState<LibraryCategory>(LIBRARY_CATEGORIES[0]);
   const [showLibraryCategoryPrompt, setShowLibraryCategoryPrompt] = useState(false);
   // James's ask: let the taxonomy's name be adjusted right here, before it's saved to the
@@ -755,9 +761,14 @@ export default function App() {
     // wins over the starter samples, never the other way round.
     migrateLegacyLocalLibrary()
       .catch((err) => console.error('Legacy Library migration failed:', err))
-      .then(() => seedStarterSamplesForNewAccount())
+      .then(() =>
+        seedStarterSamplesForNewAccount((done, total) => setSeedingStarterSamples({ done, total })),
+      )
       .catch((err) => console.error('Starter sample seeding failed:', err))
-      .finally(refreshLibrary);
+      .finally(() => {
+        setSeedingStarterSamples(null);
+        refreshLibrary();
+      });
   }, [authedEmail]);
 
   function flashAddedToLibrary() {
@@ -2393,6 +2404,7 @@ export default function App() {
           if (importNewSamplesProgress) return;
           setNewSampleCandidates(null);
         }}
+        seedingStarterSamples={seedingStarterSamples}
         onBulkReplaceComplete={refreshLibrary}
       />
       <div className="app">

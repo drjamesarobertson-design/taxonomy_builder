@@ -78,6 +78,15 @@
   cursor: pointer;
 }
 
+/* James's report (2026-10-14): a brand-new account's automatic first-sign-in Library seeding
+   gave no visible sign it was running — looked identical to "nothing in here yet". */
+.library-seeding-notice {
+  font-size: 0.8rem;
+  font-style: italic;
+  opacity: 0.8;
+  margin: 0 0 0.6rem;
+}
+
 /* Export/Import Library (James's request): kept small and unobtrusive, in keeping with the
    rest of this sidebar, directly under the collapse toggle rather than a second location. */
 .library-transfer-buttons {
