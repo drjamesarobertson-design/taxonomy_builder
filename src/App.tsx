@@ -636,24 +636,29 @@ export default function App() {
   // than relying on the outbound Resend email (0008) -- which proved hard to confirm/debug.
   // lastSeenSignupAt is a plain localStorage marker (there's only ever one supervisor account,
   // so no per-account scoping is needed the way autosave's was) -- "everything created after
-  // this timestamp is new". Dismissing moves the marker forward to the newest entry actually
-  // shown, not just to "now", so a sign-up that arrives in the few seconds between the fetch and
-  // the dismiss click is never silently skipped.
+  // this timestamp is new".
+  //
+  // James's report (2026-10-14): requiring an explicit dismiss click left the panel reappearing
+  // on every refresh or re-login if he'd just glanced at it (or downloaded the CSV) without
+  // clicking the X -- the marker is now advanced the moment the panel is actually fetched/shown,
+  // not only on dismiss, so a plain refresh or a log-out/log-in on its own clears it. The X
+  // button still hides it instantly within the current view.
   const [newSignups, setNewSignups] = useState<SignupRecord[]>([]);
   useEffect(() => {
     if (!supervisor) return;
     const lastSeenAt = localStorage.getItem('taxonomy-builder-last-seen-signup-at');
     listRecentSignups()
       .then((all) => {
-        setNewSignups(lastSeenAt ? all.filter((s) => s.createdAt > lastSeenAt) : all);
+        const fresh = lastSeenAt ? all.filter((s) => s.createdAt > lastSeenAt) : all;
+        setNewSignups(fresh);
+        if (fresh.length > 0) {
+          const newest = fresh.reduce((max, s) => (s.createdAt > max ? s.createdAt : max), fresh[0].createdAt);
+          localStorage.setItem('taxonomy-builder-last-seen-signup-at', newest);
+        }
       })
       .catch((err) => console.error('Failed to load recent sign-ups:', err));
   }, [supervisor]);
   function handleDismissNewSignups() {
-    if (newSignups.length > 0) {
-      const newest = newSignups.reduce((max, s) => (s.createdAt > max ? s.createdAt : max), newSignups[0].createdAt);
-      localStorage.setItem('taxonomy-builder-last-seen-signup-at', newest);
-    }
     setNewSignups([]);
   }
 
