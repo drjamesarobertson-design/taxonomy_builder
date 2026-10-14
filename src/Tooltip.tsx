@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
 import type { HelpTextMap } from './helpText';
+import { setActiveHelpField } from './activeHelpField';
 
 interface TooltipProps {
   /** Looked up in `helpText` for its wording — the usual case, every toolbar button. */
@@ -62,14 +63,36 @@ export default function Tooltip({ field, helpText, text, videoUrl, popupClassNam
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show]);
 
+  // F1 "edit this tooltip" (App.tsx, supervisor-only) only applies to a field-backed tooltip --
+  // a fixed `text` tooltip (no `field`) has no row in help-text.csv to edit, so it's never
+  // reported as the active field.
+  function reportActive() {
+    if (field) setActiveHelpField(field);
+  }
+  function reportInactive() {
+    if (field) setActiveHelpField(null);
+  }
+
   return (
     <span
       ref={wrapperRef}
       className="app-tooltip-wrapper"
-      onMouseEnter={() => setVisible(true)}
-      onMouseLeave={() => setVisible(false)}
-      onFocus={() => setVisible(true)}
-      onBlur={() => setVisible(false)}
+      onMouseEnter={() => {
+        setVisible(true);
+        reportActive();
+      }}
+      onMouseLeave={() => {
+        setVisible(false);
+        reportInactive();
+      }}
+      onFocus={() => {
+        setVisible(true);
+        reportActive();
+      }}
+      onBlur={() => {
+        setVisible(false);
+        reportInactive();
+      }}
     >
       {children}
       {show &&

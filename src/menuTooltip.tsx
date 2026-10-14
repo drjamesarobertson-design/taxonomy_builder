@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { HelpTextMap } from './helpText';
+import { setActiveHelpField } from './activeHelpField';
 
 interface MenuTooltipState {
   field: string;
@@ -28,11 +29,13 @@ export function useMenuTooltip() {
     return (e: React.MouseEvent<HTMLElement>) => {
       const rect = e.currentTarget.getBoundingClientRect();
       setTooltip({ field, anchorTop: rect.top, anchorLeft: rect.left, anchorRight: rect.right });
+      setActiveHelpField(field);
     };
   }
 
   function hideTooltip() {
     setTooltip(null);
+    setActiveHelpField(null);
   }
 
   return { tooltip, showTooltip, hideTooltip };
