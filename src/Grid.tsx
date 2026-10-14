@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { TaxonomyRow, TaxonomySettings } from './types';
-import { createEmptyRow, growRowsToLevels } from './types';
+import { createEmptyRow, growRowsToLevels, MAX_LEVELS } from './types';
 import { getLevelColor } from './colors';
 import { toggleCase } from './caseUtils';
 import { toProperCasePreservingAbbreviations } from './abbreviations';
@@ -2461,6 +2461,13 @@ export default function Grid({
   function handleAddColumnClick() {
     if (!contextMenu) return;
     setContextMenu(null);
+    // James's report (2026-10-14): this control had no ceiling at all -- unlike the Settings
+    // dialog's own numLevels field, which already clamps to MAX_LEVELS, a user could keep
+    // right-clicking "Add Column" past it indefinitely with no warning.
+    if (numLevels >= MAX_LEVELS) {
+      showValidationError(`This taxonomy is already at the maximum of ${MAX_LEVELS} levels.`);
+      return;
+    }
     // James's gap: column 1 of a flat, single-level taxonomy may hold a multi-character code
     // (singleCodeColumn / column1CodeLength -- see Width of Col 1 below, and the Flat Code and
     // Description List CSV import). The moment a second level is added this stops being a flat
