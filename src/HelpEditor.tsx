@@ -157,6 +157,13 @@ export default function HelpEditor({ helpText, onClose }: HelpEditorProps) {
             Close
           </button>
         </div>
+        <p className="help-page-publish-instructions">
+          <strong>To make downloaded edits live for everyone:</strong> send the downloaded file to
+          Claude in this Taxonomy Builder session and ask it to replace{' '}
+          <code>public/help-text.csv</code> with it. Claude commits it, pushes it, and the update
+          goes live for every subscriber within a few minutes, once the next deploy finishes — you
+          don't need to touch GitHub directly.
+        </p>
       </div>
     </div>
   );

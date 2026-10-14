@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { HelpTextMap } from './helpText';
+import { setActiveHelpField } from './activeHelpField';
 
 interface HelpIconProps {
   field: string;
@@ -14,6 +15,14 @@ const FALLBACK = 'No help text has been added for this field yet.';
 export default function HelpIcon({ field, helpText }: HelpIconProps) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLSpanElement>(null);
+
+  // Reports this field as the current F1 "edit this help text" target (App.tsx, supervisor-only)
+  // for exactly as long as this popover is open -- same mechanism Tooltip.tsx/menuTooltip.tsx use.
+  useEffect(() => {
+    if (!open) return;
+    setActiveHelpField(field);
+    return () => setActiveHelpField(null);
+  }, [open, field]);
 
   useEffect(() => {
     if (!open) return;

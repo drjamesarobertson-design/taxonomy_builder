@@ -30,6 +30,8 @@ import { FORMAT_MODES, applyFormatDescriptions, collectUnknownAbbreviationWords 
 import type { FormatMode } from './formatDescriptions';
 import { loadHelpText } from './helpText';
 import type { HelpTextMap } from './helpText';
+import { getActiveHelpField } from './activeHelpField';
+import TooltipQuickEdit from './TooltipQuickEdit';
 import Tooltip from './Tooltip';
 import HelpPage from './HelpPage';
 import PricingPage from './PricingPage';
@@ -592,6 +594,29 @@ export default function App() {
   useEffect(() => {
     loadHelpText().then(setHelpText);
   }, []);
+
+  // James's ask (2026-10-14): edit a specific tooltip/"?" popup's help text right where it's
+  // shown, rather than hunting for it in the full Help Editor's flat list. F1, while any
+  // Tooltip/menuTooltip/HelpIcon is showing, opens TooltipQuickEdit prefilled with that one
+  // field's text (activeHelpField.ts tracks which field that is, since there's no single React
+  // owner of "which tooltip is currently hovered" across the whole app). Supervisor-only, like
+  // every other Help-editing capability -- a plain client-side check is enough here, unlike
+  // Library starring, because nothing this writes is shared, multi-user data: it only ever
+  // changes this browser's own in-memory copy of help text, and still requires a manual CSV
+  // download + push (same as before) to actually go live for anyone else.
+  const [f1EditField, setF1EditField] = useState<string | null>(null);
+  useEffect(() => {
+    if (!supervisor) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'F1') return;
+      const field = getActiveHelpField();
+      if (!field) return;
+      e.preventDefault();
+      setF1EditField(field);
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [supervisor]);
 
   // Worksheet Guidance (process/convention guidance for building this taxonomy, as opposed to
   // the per-field help icons): collapsed to a short preview by default since it's expected to
@@ -2941,6 +2966,15 @@ export default function App() {
 
       {showHelpPage && (
         <HelpPage helpText={helpText} isSupervisor={supervisor} onClose={() => setShowHelpPage(false)} />
+      )}
+
+      {f1EditField && (
+        <TooltipQuickEdit
+          field={f1EditField}
+          entry={helpText[f1EditField]}
+          onSave={(field, entry) => setHelpText((prev) => ({ ...prev, [field]: entry }))}
+          onClose={() => setF1EditField(null)}
+        />
       )}
       {showPricingPage && <PricingPage onClose={() => setShowPricingPage(false)} />}
 

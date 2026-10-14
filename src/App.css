@@ -1116,6 +1116,32 @@ body.app-dark-theme .taxonomy-meta .purpose {
   padding: 1.5rem 0;
 }
 
+.help-page-publish-instructions {
+  margin: 0.75rem 0 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid #e2e2e2;
+  color: #555;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.tooltip-quick-edit {
+  width: min(480px, 92vw);
+}
+
+.tooltip-quick-edit label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0.6rem 0;
+  font-size: 0.85rem;
+}
+
+.tooltip-quick-edit input,
+.tooltip-quick-edit textarea {
+  font-size: 0.9rem;
+}
+
 .help-page-entry {
   border-bottom: 1px solid #eee;
   padding-bottom: 0.8rem;

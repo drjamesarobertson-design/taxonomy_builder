@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { HelpTextMap } from './helpText';
+import { stringifyHelpTextCsv } from './helpText';
 import { saveExportFile } from './exportFolder';
 import HelpEditor from './HelpEditor';
 
@@ -23,13 +24,14 @@ export default function HelpPage({ helpText, isSupervisor, onClose }: HelpPagePr
   // James's report: unable to get help-text.csv out of the app any other way. Same
   // save-picker-with-download-fallback every other Export button already uses (exportFolder.ts)
   // -- known to work for him, so this is the most reliable path rather than a new mechanism.
+  //
+  // Serializes the live `helpText` state rather than re-fetching the static file: once F1 quick-
+  // editing (TooltipQuickEdit.tsx) exists, those edits only ever land in this in-memory map, never
+  // in the file on the server -- re-fetching here would silently drop them from the download.
   async function handleDownloadCsv() {
     setDownloadError(null);
     try {
-      const res = await fetch(`${import.meta.env.BASE_URL}help-text.csv`);
-      if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
-      const text = await res.text();
-      const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
+      const blob = new Blob([stringifyHelpTextCsv(helpText)], { type: 'text/csv;charset=utf-8' });
       await saveExportFile(blob, 'help-text.csv');
     } catch {
       setDownloadError('Could not download help-text.csv. Please try again, or ask for it to be sent another way.');
@@ -109,6 +111,15 @@ export default function HelpPage({ helpText, isSupervisor, onClose }: HelpPagePr
             Close
           </button>
         </div>
+        {isSupervisor && (
+          <p className="help-page-publish-instructions">
+            <strong>To make downloaded edits live for everyone:</strong> send the downloaded
+            file to Claude in this Taxonomy Builder session and ask it to replace{' '}
+            <code>public/help-text.csv</code> with it. Claude commits it, pushes it, and the
+            update goes live for every subscriber within a few minutes, once the next deploy
+            finishes — you don't need to touch GitHub directly.
+          </p>
+        )}
       </div>
       {showEditor && <HelpEditor helpText={helpText} onClose={() => setShowEditor(false)} />}
     </div>
