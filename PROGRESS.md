@@ -3115,5 +3115,164 @@ real repro; new `smoke_wizard_manual_entry.mjs` for the genuine
 
 ---
 
+### Documentation gap: PR #85 through #229 not individually logged here (noted 2026-10-14)
+This History section's entries stop at PR #84 (2026-09-xx) above, while the
+app's actual PR history on GitHub continues well past that — `MASTER_BRIEFING.md`
+references PR #219 as already shipped before tonight's round, and the
+"Current status" section near the top of this file carries its own, later
+"as of PR #151" note plus a follow-up note about PRs #180–#190. In short:
+this file's detailed, round-by-round History narrative was not kept current
+for roughly 145 PRs' worth of work — a real documentation gap, not a sign
+that nothing happened in that period. For what shipped in that window,
+`MASTER_BRIEFING.md` (the current business/product-facing summary) and the
+PR history on GitHub (`drjamesarobertson-design/taxonomy_builder`) are the
+reliable record; this file's own entries resume below, starting from
+tonight's round, and should be kept current from here on rather than left to
+drift again.
+
+### Promote/Demote simplified, Unlock cursor, per-account autosave, Library seeding progress, and an in-app new-sign-ups panel (PRs #230–#235, 2026-10-14 evening)
+A single evening's round, after the item-by-item rounds already recorded in
+`MASTER_BRIEFING.md` through PR #229. Six items from James's testing, plus a
+feature built out in conversation with him over several follow-up messages:
+
+**Promote/Demote simplified (PR #231, correcting PR #230).** PR #230 (the
+previous round, summarized in `MASTER_BRIEFING.md` but not individually
+logged here per the gap above) had built an auto-insert-heading mechanism
+for Promote/Demote — offering to insert and auto-code a new heading row
+whenever the move would otherwise silently re-parent an unmoved sibling.
+James's direct feedback: "sorry, promote cannot automate heading rather
+change to warning" — he wanted both directions simplified to a plain
+post-move warning, even though Demote's version of the auto-insert was
+confirmed working correctly; consistency and simplicity won over the more
+sophisticated (but real-bug-prone, per PR #230's own fix-during-build
+history) approach. The entire auto-insert mechanism (heading candidates,
+stale-ancestor-code clearing, the `'NEW HEADING'` placeholder, focus/select
+logic, the 3-button confirm dialog) was removed; `handlePromoteDemoteMove`
+now just performs the move, then shows a single dismissible message
+("Promote/Demote requires changes to headings, please make changes as you
+require after Promote/Demote.") if an unmoved sibling's position means a
+heading relationship needs manual attention afterward.
+
+**Unlock cursor fix (PR #231).** James's report: after Unlocking a
+taxonomy, a protected row's cells still showed the "not-allowed" cursor even
+though typing in them worked correctly. Root cause: `.row-protected
+.code-cell/.desc-cell { cursor: not-allowed; }` in `App.css` keyed only off
+the row's own `protected` flag (which deliberately persists after Unlock as
+a permanent historical marker — see `TaxonomyRow.protected`'s own comment),
+with no awareness of whether the taxonomy was *currently* locked — while the
+actual JS edit-block condition is `locked && row.protected` together.
+Fixed by adding a conditional `taxonomy-grid-locked` class to the grid's
+`<table>` element and rescoping the CSS cursor rule to require both; the
+row's grey/desaturated look (deliberately unscoped, since it's meant to
+persist after Unlock) was left untouched.
+
+**Session autosave scoped per account (PR #231).** James's report: signing
+into a brand-new account (`drjamesa@jar-and-a.com`) that had never been used
+on that browser before showed a "Resume Work in Progress" banner for a
+*different* account's in-progress taxonomy. Root cause: `storage.ts`'s
+autosave used one single, global `localStorage` key with no notion of which
+account it belonged to. Fixed by keying `saveAutosave`/`loadAutosave`/
+`clearAutosave` off the signed-in email (`taxonomy-builder-autosave:<email>`,
+lowercased to match Supabase's own normalization), with matching updates to
+all four call sites in `App.tsx`.
+
+**Library starter-sample star shown on a subscriber's own copy (PR #231).**
+James's report: the Library correctly showed the seeded starter-sample
+entries in a new account, but with no star icon on them, even though he
+expected one. By design, a subscriber's own *copy* of a starter sample has
+`isStarterSample` reset to `false` (not `true`) — this is deliberate and
+load-bearing: flipping it back to `true` would make that personal copy
+itself get picked up by `listAllStarterSamples()` and re-seeded into every
+*other* new subscriber's Library, a real data-leak bug, not a cosmetic one.
+Fixed by keying the star icon's display condition on `entry.isStarterSample
+|| entry.sourceSampleId !== null` instead — `sourceSampleId` already
+tracked "this came from a starter sample" separately and correctly, without
+affecting the seeding semantics at all.
+
+**First-sign-in Library seeding progress (PR #232).** James's report: a
+brand-new account's Library sat empty with no indication anything was
+happening while starter samples seeded in the background sequentially (each
+one its own network round trip) — he assumed it had stalled and refreshed
+the browser partway through, which only "worked" because the original
+attempt had progressed far enough in the background by the time the reload
+re-checked. `seedStarterSamplesForNewAccount` gained an `onProgress(done,
+total)` callback (same shape as the existing `importSelectedStarterSamples`,
+built for the identical problem on the manual "Add Samples" flow), surfaced
+as a small "Setting up your Library — adding sample N of M… please wait."
+notice directly in the Library pane.
+
+**New sign-ups panel — the evening's main piece (PRs #233–#235).** James
+asked twice for detailed instructions on the Supabase Vault step from PR
+#229's migration (`0008_notify_supervisor_of_new_signup.sql`) — given in
+full, James ran it. A follow-up test signup (`drjamesa@jar-and-a.com`)
+produced no notification email, which read as the Resend/pg_net mechanism
+being broken. Two read-only diagnostic queries (chosen to rule out a
+duplicate Vault secret, and to read pg_net's own request/response log)
+showed the opposite: `vault.secrets` had exactly one `resend_api_key` row,
+and `net._http_response` showed `status_code: 200` with a
+`{"id": "01a13baf-..."}` body — Resend's own success-response shape,
+confirming the email had actually been accepted and queued. The real
+question was deliverability (spam folder, Resend's own dashboard), not a
+sending bug — and a later signup did in fact arrive by email, confirming
+this directly.
+
+Independent of that diagnosis, James asked for an in-app alternative: "a
+message like you are posting about updates... so I see it when I next log
+in." Considered and rejected a Supabase Edge Function (would have needed
+its own secret and dashboard deploy — more moving parts than the ask
+warranted) in favour of reading directly from the existing `profiles`
+table, which the already-working `on_auth_user_created` trigger (PR #1 era,
+`0001_create_profiles.sql`) populates reliably on every sign-up regardless
+of the email question. `profiles` had deliberately zero RLS policies since
+it was first built (admin-dashboard-only, by design) — `supabase/
+0009_allow_supervisor_read_profiles.sql` adds exactly one read-only policy,
+scoped to James's own account via `auth.email() = 'jamesar@jar-and-a.com'`,
+the same gating pattern already used for restricting starter-sample
+flagging (`0005`). New `signups.ts` (`listRecentSignups`) and
+`NewSignupsBanner.tsx` (supervisor-only, same placement/shape as "Resume
+Work in Progress" on the landing menu) ship the panel itself; a
+`localStorage` "last seen" timestamp tracks what's already been shown.
+
+James then asked for a "Download CSV" button on the panel, to use for
+sending welcome emails (PR #234) — a pure client-side addition
+(`exportSignupsToCsv`, reusing the same `csvEscape`/`saveExportFile`
+convention as every other CSV/XLSX export in the app), no database
+involvement needed since the data's already loaded into the panel.
+
+Finally, James reported the panel kept reappearing after a plain refresh or
+a log-out/log-in, even without a genuinely new sign-up — only an explicit
+click on the dismiss (✕) button actually stopped it (PR #235). Root cause:
+the "last seen" marker only advanced inside the dismiss handler; viewing
+the panel (or downloading its CSV) without clicking ✕ left everything shown
+marked as still-unseen, so it reappeared identically on every subsequent
+load. Fixed by advancing the marker the moment the panel is fetched/shown,
+not only on dismiss — a plain refresh or a fresh login now clears it on its
+own, and only a sign-up that happened *after* the last time the panel was
+actually shown will reappear.
+
+Several points in this round (recorded here since a future session
+reading this file should see the actual back-and-forth, not just the end
+state) involved James pushing back hard on process, not just outcome — most
+notably asking for one script at a time with waits for his reply after
+repeated requests that got run ahead of, and a sharp, correct challenge
+("why can the app not do what the email does?") that surfaced the real
+reason cross-account reads need an explicit RLS policy in Postgres
+regardless of which direction the data flows. Both are worth remembering:
+go slower and more literally step-by-step than feels natural when he asks
+for it, and when a security/permissions question seems to not make sense to
+him, it usually means the actual mechanism hasn't been explained in plain
+terms yet, not that the ask itself is wrong.
+
+No Playwright regression suite exists for this round — verified via
+`npx tsc --noEmit`, `npm run lint`, `npm run build` on every change, plus
+targeted live-dev-server checks (a hand-built Playwright script per fix,
+using `?test-bypass-auth=1` and direct `localStorage` seeding to simulate
+multiple accounts/locked-taxonomy states without needing real Supabase
+sign-ins) for the autosave account-scoping (three separate accounts/
+timings), the lock-state class toggle, and the new-sign-ups panel's full
+render/dismiss/persist cycle.
+
+---
+
 *Maintained alongside each PR — update the "Current status" section and add
 a new history entry whenever a round ships.*

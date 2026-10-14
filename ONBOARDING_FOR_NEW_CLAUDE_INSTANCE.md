@@ -70,18 +70,34 @@ started (Stage 1 through Stage 5). It's useful background on the original intent
 
 ## 3. Technology stack
 
+**This section was out of date until 2026-10-14 — it described a fully client-side, no-backend
+app with a hardcoded login list, which stopped being true once real accounts/cloud Library
+shipped (roughly PR #180 onward, per `MASTER_BRIEFING.md`). Corrected here; if anything below
+still doesn't match the code, trust `MASTER_BRIEFING.md` (kept current as of PR #235) over this
+file, and fix this file to match.**
+
 - **React + TypeScript**, built with **Vite**.
-- **Fully client-side** — no backend, no server, no database. Everything runs in the browser.
-  This is a deliberate v1 constraint (CLAUDE.md Section 2), not an oversight — it shapes real
-  design decisions (e.g. the login gate is explicitly a "speed bump, not real security," since
-  there's no backend to actually guard anything; see `src/auth.ts`'s own file-level comment).
+- **Backend: Supabase** — Postgres with Row Level Security, Supabase Auth for real sign-in/
+  sign-up (not a hardcoded login list — see "Logging in" below), and Resend (configured as
+  Supabase's custom SMTP provider) for confirmation/password-reset/notification emails. A
+  growing set of one-time SQL migrations lives in `supabase/0001...` onward, each a manual,
+  one-off step run in Supabase's own SQL Editor — see `MASTER_BRIEFING.md` §3 for the full,
+  current list and what each one does; a new feature needing its own database access (a new
+  table, a new RLS policy) needs its own next-numbered migration file, with clear instructions
+  for James to run it himself (he is not a SQL-comfortable user — see §5 below for how
+  carefully this needs to be explained).
 - **Persistence**: taxonomy project files are saved/loaded as local JSON files (via the
   File System Access API where supported, with a plain-download fallback) — see `src/storage.ts`.
-  A separate "Library" feature persists multiple taxonomies in the browser's own IndexedDB —
-  see `src/library.ts`. Session autosave uses `localStorage`.
+  The "Library" feature (multiple saved taxonomies) is per-account **cloud** storage in Supabase
+  (`src/library.ts`, table `library_entries`) — NOT browser-local IndexedDB, despite what an
+  older version of this file said; it follows a subscriber to any device they sign into. Session
+  autosave uses `localStorage`, scoped per signed-in account.
 - **Deployment**: static hosting on **GitHub Pages**, auto-deployed by a GitHub Actions
   workflow (`.github/workflows/deploy-pages.yml`) on every push to `main`. There is no manual
-  deploy step — merging to `main` IS the deploy trigger.
+  deploy step — merging to `main` IS the deploy trigger. The app itself remains a static
+  single-page app with no server of its own; anything needing a secret credential (a Stripe
+  secret key, a Resend API key) lives in Supabase (Vault, or Edge Function secrets), never in
+  this repository or in the frontend bundle.
 - **Excel export** uses the `exceljs` library (see `src/gridExport.ts`).
 
 ### Running it locally
@@ -99,18 +115,23 @@ on GitHub Pages, see `vite.config.ts`).
 
 ### Logging in
 
-The app has a simple email/password sign-on gate (`src/Login.tsx` / `src/auth.ts`) shown before
-anything else — explicitly a speed bump against casual access, not real security (read
-`auth.ts`'s file comment for why). Test credentials, all seeded in `AUTH_USERS` in `auth.ts`:
+**Also out of date until 2026-10-14**: the app used to have a hardcoded, client-side login list
+(`AUTH_USERS` in `auth.ts`) — this was replaced by real Supabase Auth accounts a while before
+this correction, and the hardcoded list no longer exists in the code. The sign-on gate
+(`src/Login.tsx` / `src/auth.ts`) is now genuine email/password authentication via
+`supabase.auth.signUp()` / `signInWithPassword()`, with real account creation (name, company,
+mobile number collected and stored — see `MASTER_BRIEFING.md` §2's "Account & sign-up"), email
+confirmation, and password reset, all real emails sent via Resend.
 
-- James's own: username `jamesar@jar-and-a.com`, password `jamesar@jar-and-a.com` (yes, the
-  password is the same string as the username — this is intentional, see PROGRESS.md's login
-  history). Both the username and password fields are compared case-insensitively.
-- Nine simple friend accounts: username `Friend_1` through `Friend_9`, password same as
-  username, for James to hand out to people trying the app without sharing his own credential.
-
-If you ever need to add or change a login, `auth.ts`'s own comment gives the exact Node snippet
-to generate a fresh salt + hash.
+James's own account is `jamesar@jar-and-a.com` — this is also the **supervisor** account
+(`src/supervisor.ts`, `SUPERVISOR_EMAIL`), hardcoded by design (there's exactly one supervisor
+today) and gating a small, growing set of admin-only capabilities (marking Library entries as
+starter samples, editing in-app Help text, the new-sign-ups panel — see `MASTER_BRIEFING.md` §2
+for the current full list). There is no other seeded test account — a genuinely new session
+testing sign-up flows needs to register a real new email address through the app's own Create
+Account form, or use the `?test-bypass-auth=1` dev-only query param (only active in
+`import.meta.env.DEV`, never in a production build) to skip straight past login as a fake
+`dev-test@local` session for Playwright/local testing.
 
 ## 4. Repository structure (source of truth is the code — this is an orientation, not a full map)
 
@@ -149,7 +170,10 @@ src/
                               detection heuristics in detail — read them before changing this
                               logic, it has accumulated a lot of hard-won nuance.
   gridExport.ts              — CSV/XLSX export (Discrete Columns and Concatenated modes).
-  library.ts                 — the Library sidebar's IndexedDB persistence.
+  library.ts                 — the Library sidebar's persistence (Supabase, per-account cloud
+                              storage — see §3's correction above).
+  signups.ts / NewSignupsBanner.tsx — supervisor-only "new sign-ups" panel (§2, Account &
+                              sign-up) on the landing menu, reading from Supabase `profiles`.
   storage.ts                  — save/load project files, session autosave, and the version-
                               migration logic for older project file shapes.
   auth.ts                     — the login gate.

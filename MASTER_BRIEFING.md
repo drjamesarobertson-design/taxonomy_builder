@@ -1,6 +1,6 @@
 # Taxonomy Builder — Master Briefing
 
-*Version: v 1.01*
+*Version: v 1.02*
 
 *A one-stop orientation document: what this is, what it does today, where the
 business stands, and what's still outstanding. Written for James (or anyone
@@ -8,17 +8,64 @@ he shares this with) rather than as an engineering log — for the detailed,
 round-by-round build history, see `PROGRESS.md`; for the original functional
 specification, see `CLAUDE.md`.*
 
-*Last updated: 2026-10-14, after PR #219, and a correction pass against
-James's own full conversation record (see note below).*
+*Last updated: 2026-10-14, after PR #235.*
 
 *Version history: v 1.01 — first version stamp applied to this file
-(2026-10-14), at James's request. Increment this by one, and add a line
-here, every time this file is next updated and re-sent to him — see
+(2026-10-14). v 1.02 — same evening, after PRs #230–#235 (see §0): Promote/
+Demote warning simplified, the Unlock cursor fix, per-account autosave, the
+Library "starter sample" star shown on a subscriber's own copy, visible
+progress during first-sign-in Library seeding, and — the evening's main
+piece — an in-app "new sign-ups" panel (with CSV download) as a more
+reliable alternative to the outbound Resend email, which turned out to be
+working all along (see §0). Increment this by one, and add a line here,
+every time this file is next updated and re-sent to him — see
 `ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md` §5, item 10.*
 
 ---
 
 ## 0. Where things stand right now — read this first
+
+**Evening round, 2026-10-14 (PRs #230–#235) — a sign-up-notification feature
+built in stages, settling on an in-app panel:**
+- Promote/Demote (PR #230's own auto-insert-heading mechanism) was tried,
+  found more trouble than it was worth, and simplified per James's own
+  direct correction: both directions now just warn *after* the move
+  ("...requires changes to headings, please make changes as you require
+  after Promote/Demote") rather than attempting to auto-insert a heading row.
+- Fixed the "not-allowed" cursor visibly lingering on a protected row after
+  Unlock, even though editing was already working correctly — a CSS rule
+  had no awareness of lock state, only of the row's permanent `protected`
+  flag; rescoped to require both.
+- Session autosave ("Resume Work in Progress") is now scoped per signed-in
+  account — a brand-new account signing into a browser previously used by a
+  different account no longer sees that other account's in-progress work.
+- The Library's starter-sample star indicator now also shows on a
+  subscriber's own copy of a sample (not only on James's master flagged
+  entry) — their copy correctly still carries `isStarterSample: false`
+  underneath (that's what stops it being re-seeded to every other new
+  subscriber), the star is just keyed off a separate "came from a sample"
+  field for display purposes.
+- First-sign-in Library seeding (new account, starter samples copying in)
+  now shows a visible "Setting up your Library — adding sample N of M…"
+  notice — it was previously silent while running (each sample is its own
+  network round trip, visibly a few seconds for the full set), which read
+  as "nothing is happening" and led to a mid-seed browser refresh.
+- **New-signup email notification investigated at length, turned out to be
+  working.** The Resend/pg_net trigger from PR #229 (`supabase/0008`) was
+  suspected broken when a test signup produced no email — diagnosis (two
+  read-only SQL checks James ran himself) showed Resend had actually
+  accepted and queued the email (`status_code: 200`, an `{"id": ...}`
+  response) — a deliverability/spam-folder question, not a sending bug.
+  Confirmed working for a later signup. **Built regardless, as a more
+  robust alternative James asked for directly**: a supervisor-only panel on
+  the landing menu listing anyone who's signed up since last checked (name,
+  email, company, mobile, date), reading straight from the existing
+  `profiles` table rather than depending on outbound email at all —
+  `supabase/0009_allow_supervisor_read_profiles.sql` is the one new
+  one-time SQL step this needed (profiles was previously unreadable by the
+  app under any account, by original design — see §2). Includes a
+  "Download CSV" button (for sending welcome emails) and clears itself on a
+  plain refresh or a fresh login, not only on an explicit dismiss.
 
 **A documentation gap, found and fixed 2026-10-14:** this file was missing
 real, already-shipped work — most importantly, Resend was already fully
@@ -35,7 +82,7 @@ setup that only ever lived in chat is, from a future session's point of
 view, exactly as if it never happened. Keep this file current as a matter
 of course, not just at natural pauses.
 
-**Engineering is fully caught up as of PR #214 (2026-10-14)** — every item
+**Engineering is fully caught up as of PR #235 (2026-10-14)** — every item
 from James's last several rounds of live testing has been addressed and
 deployed. PR #210 and earlier covered four showcase-recording bugs, a
 dismissible "Resume Work in Progress" banner, Lock Taxonomy syncing to the
@@ -189,17 +236,33 @@ minute.
 - That contact data is stored two ways: in Supabase Auth's own user
   metadata (visible per-user under Authentication → Users → click a user →
   User Metadata), and copied automatically into a separate `profiles`
-  table (`supabase/0001_create_profiles.sql`) purpose-built so James can
-  pull a clean contact list — email, full_name, company_name,
-  mobile_number, created_at — straight out of Supabase's Table Editor as a
-  CSV (Table Editor → `profiles` → export), ready for Excel or a mail-merge
-  tool. The app itself has no access to that table at all (Row Level
-  Security with zero policies — reachable only from inside the Supabase
-  dashboard, which bypasses RLS as the project owner).
+  table (`supabase/0001_create_profiles.sql`) — still pullable as a clean
+  contact list straight out of Supabase's Table Editor as a CSV (Table
+  Editor → `profiles` → export) if ever needed, but as of 2026-10-14 James
+  doesn't need to go there day to day: see the in-app "new sign-ups" panel
+  below. Originally this table had zero RLS policies at all (reachable only
+  from inside the Supabase dashboard); `supabase/0009_allow_supervisor_read_
+  profiles.sql` added one read-only policy scoped to James's own account,
+  specifically so the app itself could show it to him.
+- **New sign-ups panel** (James's ask, 2026-10-14, supervisor-only): a
+  panel on the landing menu — same placement/shape as "Resume Work in
+  Progress" — listing anyone who's signed up since James last saw it (name,
+  email, company, mobile, sign-up date), with a "Download CSV" button for
+  pulling the list to send welcome emails. Clears itself automatically on a
+  plain browser refresh or a fresh log-in (not only on an explicit
+  dismiss), so only genuinely new sign-ups since the last time he actually
+  saw the panel ever show. Built as a more reliable, no-email-deliverability-
+  question alternative to the Resend notification below, after James found
+  the "did it even send" question hard to reason about from the email alone
+  — see §0 for the full story (the email was in fact confirmed working).
 - **Email delivery runs through Resend**, not Supabase's own default
   mailer (see §4 for the full setup record) — this is what makes
   confirmation/password-reset emails arrive reliably at any real inbox
-  rather than hitting Supabase's test-only rate limit.
+  rather than hitting Supabase's test-only rate limit. A separate trigger
+  (`supabase/0008_notify_supervisor_of_new_signup.sql`) also emails James
+  directly on every new sign-up, confirmed working 2026-10-14 — the new
+  sign-ups panel above is a second, independent way to see the same thing,
+  not a replacement for this.
 - **Supervisor role** (James's own account, `jamesar@jar-and-a.com`
   specifically, hardcoded — see `src/supervisor.ts`): two capabilities
   restricted to this one account — marking/unmarking a Library entry as a
@@ -346,8 +409,8 @@ Toolbar "Folders ▾" menu:
   single-page app on GitHub Pages. No server of its own.
 - **Backend**: Supabase — Postgres (with Row Level Security) for accounts,
   Library storage, and starter samples; Supabase Auth for sign-in/sign-up;
-  Resend as the custom SMTP provider for auth emails (see §4). Seven
-  one-time SQL migrations have been run (`supabase/0001`–`0007`), each a
+  Resend as the custom SMTP provider for auth emails (see §4). Nine
+  one-time SQL migrations have been run (`supabase/0001`–`0009`), each a
   one-off manual step in Supabase's SQL Editor: `0001` creates the
   `profiles` table (James's own exportable contact list — see "Account &
   sign-up" in §2); `0002` creates `library_entries` (cloud Library
@@ -358,7 +421,11 @@ Toolbar "Folders ▾" menu:
   Library entries found 2026-10-14 (see §0); `0007` adds a unique
   constraint on `(user_id, source_sample_id)` so no account can ever again
   hold two copies of the same starter sample, closing that bug at the
-  database level rather than relying on application timing.
+  database level rather than relying on application timing; `0008` adds the
+  Resend-via-pg_net trigger that emails James on every new sign-up (the
+  Resend API key itself lives in Supabase Vault, not in this file — see §4);
+  `0009` adds the one read-only policy that lets the app show James the new
+  sign-ups panel (§2) from his own account.
 - **Local file system integration**: the File System Access API (Chromium
   browsers only — Chrome, Edge) powers "Choose Export Folder" and "Folders →
   Local Hard Drive". No equivalent exists in Firefox/Safari; both features
