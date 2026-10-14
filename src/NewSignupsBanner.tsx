@@ -3,6 +3,7 @@
 // which proved hard to confirm/debug. Shown underneath "Resume Work in Progress" on the same
 // landing screen, same dismiss-and-it-stays-gone convention (App.tsx tracks the dismiss as "seen
 // up to this point in time", not just a one-render hide).
+import { exportSignupsToCsv } from './signups';
 import type { SignupRecord } from './signups';
 
 interface NewSignupsBannerProps {
@@ -18,9 +19,18 @@ export default function NewSignupsBanner({ signups, onDismiss }: NewSignupsBanne
         <strong>
           {signups.length} new sign-up{signups.length === 1 ? '' : 's'} since you last checked
         </strong>
-        <button type="button" className="new-signups-banner-dismiss" onClick={onDismiss} aria-label="Dismiss">
-          ✕
-        </button>
+        <div className="new-signups-banner-actions">
+          <button
+            type="button"
+            className="new-signups-banner-download"
+            onClick={() => exportSignupsToCsv(signups)}
+          >
+            Download CSV
+          </button>
+          <button type="button" className="new-signups-banner-dismiss" onClick={onDismiss} aria-label="Dismiss">
+            ✕
+          </button>
+        </div>
       </div>
       <ul className="new-signups-banner-list">
         {signups.map((s) => (
