@@ -47,6 +47,11 @@ interface LibrarySidebarProps {
    * first, duplicating every sample. */
   importNewSamplesProgress: { done: number; total: number } | null;
   onCloseNewSamples: () => void;
+  /** Non-null while a brand-new account's automatic first-sign-in Library seeding is running —
+   * same shape and same reason as importNewSamplesProgress above, just with no dialog open yet
+   * to show it in, so it's shown here instead (James's report: a silent wait during this looked
+   * like nothing was happening at all). */
+  seedingStarterSamples: { done: number; total: number } | null;
   /** "Import from Folder (Replace)" (James's ask): fired once a batch of entries has had its
    * content replaced in place, so the caller can refresh its own copy of the Library list. */
   onBulkReplaceComplete: () => void;
@@ -86,6 +91,7 @@ export default function LibrarySidebar({
   onImportNewSamples,
   importNewSamplesProgress,
   onCloseNewSamples,
+  seedingStarterSamples,
   onBulkReplaceComplete,
 }: LibrarySidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
@@ -500,6 +506,12 @@ export default function LibrarySidebar({
           </button>
         </Tooltip>
       </div>
+      {seedingStarterSamples && (
+        <p className="library-seeding-notice">
+          Setting up your Library — adding sample {Math.min(seedingStarterSamples.done + 1, seedingStarterSamples.total)}{' '}
+          of {seedingStarterSamples.total}… please wait.
+        </p>
+      )}
       <div className="library-transfer-buttons">
         <Tooltip field="btnLibExport" helpText={helpText}>
           <button

@@ -373,13 +373,24 @@ export async function migrateLegacyLocalLibrary(): Promise<number> {
  * the original). Called on every app startup (App.tsx), after migrateLegacyLocalLibrary — only
  * acts when the cloud Library is still empty at that point, so an existing subscriber (or one
  * who just had their old local Library brought across) is never seeded on top of what they
- * already have. Returns how many entries were seeded, or 0. */
-export async function seedStarterSamplesForNewAccount(): Promise<number> {
+ * already have. Returns how many entries were seeded, or 0.
+ *
+ * James's report (2026-10-14): a brand-new account's Library sidebar sat empty with nothing on
+ * screen saying why, for however long this sequential round-trip-per-sample loop took — he
+ * assumed nothing was happening and refreshed the browser, which only "worked" because the
+ * first attempt had quietly carried on far enough in the background for the Library to no
+ * longer be empty by the time the reload checked it again. `onProgress`, when given, is called
+ * after every sample is processed (whether or not it actually added anything) — same shape as
+ * `importSelectedStarterSamples`' own, already-solved version of this exact problem. */
+export async function seedStarterSamplesForNewAccount(
+  onProgress?: (done: number, total: number) => void,
+): Promise<number> {
   const cloud = await listLibraryEntries();
   if (cloud.length > 0) return 0;
   const samples = await listAllStarterSamples();
-  for (const sample of samples) {
-    await addLibraryEntry(migrateProjectData(sample.project), sample.category, sample.id);
+  for (let i = 0; i < samples.length; i++) {
+    await addLibraryEntry(migrateProjectData(samples[i].project), samples[i].category, samples[i].id);
+    onProgress?.(i + 1, samples.length);
   }
   return samples.length;
 }
