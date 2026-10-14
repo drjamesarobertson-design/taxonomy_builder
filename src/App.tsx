@@ -463,9 +463,18 @@ export default function App() {
   // pattern used elsewhere for hard-to-reverse actions, and actually requires a deliberate,
   // considered action rather than a reflexive click.
   const [lockConfirmTyped, setLockConfirmTyped] = useState('');
+  // James's ask (2026-10-14): record, on every Lock or Lock Updates, who locked it (the signed-in
+  // email, already shown above), why, and who authorised it -- captured here in the same dialog,
+  // saved into settings.lockedBy/lockReason/lockAuthorisedBy by performLockTaxonomy/
+  // performLockUpdates. Reflects only the most recent lock event, not a full history of every one
+  // -- a real multi-user activity log is a separate, bigger ask, explicitly parked for now.
+  const [lockReasonInput, setLockReasonInput] = useState('');
+  const [lockAuthorisedByInput, setLockAuthorisedByInput] = useState('');
   useEffect(() => {
     if (lockConfirm) {
       setLockConfirmTyped('');
+      setLockReasonInput('');
+      setLockAuthorisedByInput('');
       setLibraryCategoryPrompt(LIBRARY_CATEGORIES[0]);
     }
   }, [lockConfirm]);
@@ -1625,11 +1634,17 @@ export default function App() {
     }
   }
 
-  function performLockTaxonomy() {
+  function performLockTaxonomy(reason: string, authorisedBy: string) {
     if (!project) return;
     const lockedProject: TaxonomyProject = {
       ...project,
-      settings: { ...project.settings, locked: true },
+      settings: {
+        ...project.settings,
+        locked: true,
+        lockedBy: authedEmail ?? '',
+        lockReason: reason,
+        lockAuthorisedBy: authorisedBy,
+      },
       rows: project.rows.map((row) => ({ ...row, protected: true })),
     };
     setProject(lockedProject);
@@ -1667,10 +1682,16 @@ export default function App() {
     runAudit('lockUpdates');
   }
 
-  function performLockUpdates() {
+  function performLockUpdates(reason: string, authorisedBy: string) {
     if (!project) return;
     const lockedProject: TaxonomyProject = {
       ...project,
+      settings: {
+        ...project.settings,
+        lockedBy: authedEmail ?? '',
+        lockReason: reason,
+        lockAuthorisedBy: authorisedBy,
+      },
       rows: project.rows.map((row) => ({ ...row, protected: true })),
     };
     setProject(lockedProject);
@@ -2914,7 +2935,22 @@ export default function App() {
           <section className="taxonomy-meta">
             <h2>
               {project.title}
-              {project.settings.locked && <span className="locked-badge">🔒 Locked</span>}
+              {project.settings.locked &&
+                (project.settings.lockedBy || project.settings.lockReason ? (
+                  <Tooltip
+                    text={[
+                      project.settings.lockedBy && `Locked by ${project.settings.lockedBy}`,
+                      project.settings.lockReason && `Reason: ${project.settings.lockReason}`,
+                      project.settings.lockAuthorisedBy && `Authorised by: ${project.settings.lockAuthorisedBy}`,
+                    ]
+                      .filter(Boolean)
+                      .join('\n')}
+                  >
+                    <span className="locked-badge">🔒 Locked</span>
+                  </Tooltip>
+                ) : (
+                  <span className="locked-badge">🔒 Locked</span>
+                ))}
             </h2>
             <p className="table-name">Table: {project.tableName}</p>
             {project.purpose && <p className="purpose">{project.purpose}</p>}
@@ -2947,6 +2983,7 @@ export default function App() {
             onExportBlock={handleExportBlockRange}
             onSelectionChange={setGridSelectionRowIds}
             auditActive={!!audit}
+            signedInEmail={authedEmail ?? ''}
           />
           <footer className="app-footer">
             The ERP Doctor Taxonomy Builder is the Intellectual Property of the ERP Doctor and
@@ -3760,6 +3797,22 @@ export default function App() {
                 </select>
               </label>
             )}
+            <label className="lock-confirm-reason-label">
+              Reason
+              <textarea
+                value={lockReasonInput}
+                onChange={(e) => setLockReasonInput(e.target.value)}
+                rows={2}
+              />
+            </label>
+            <label className="lock-confirm-reason-label">
+              Authorised by
+              <input
+                value={lockAuthorisedByInput}
+                onChange={(e) => setLockAuthorisedByInput(e.target.value)}
+                autoComplete="off"
+              />
+            </label>
             <label className="lock-confirm-type-label">
               Type LOCK to confirm
               <input
@@ -3776,12 +3829,14 @@ export default function App() {
               </button>
               <button
                 type="button"
-                disabled={lockConfirmTyped !== 'LOCK'}
+                disabled={lockConfirmTyped !== 'LOCK' || !lockReasonInput.trim() || !lockAuthorisedByInput.trim()}
                 onClick={() => {
                   const kind = lockConfirm;
+                  const reason = lockReasonInput.trim();
+                  const authorisedBy = lockAuthorisedByInput.trim();
                   setLockConfirm(null);
-                  if (kind === 'lock') performLockTaxonomy();
-                  else performLockUpdates();
+                  if (kind === 'lock') performLockTaxonomy(reason, authorisedBy);
+                  else performLockUpdates(reason, authorisedBy);
                 }}
               >
                 {lockConfirm === 'lock' ? 'Continue and Lock' : 'Continue and Lock Updates'}

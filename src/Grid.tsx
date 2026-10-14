@@ -57,6 +57,11 @@ interface GridProps {
    * purpose-built guidance during that specific workflow, so these are suppressed entirely
    * while it's open, rather than risk two dialog systems fighting for the same click. */
   auditActive?: boolean;
+  /** James's ask (2026-10-14): once locked, the only two things still possible — adding a new
+   * row, and Mark as Delete — now require a mandatory reason, recorded as that row's own Note
+   * (Section 6.9) rather than a new, parallel field: "possibly as a text suffix", in James's own
+   * words. Stamping who made the change needs to know who's actually signed in. */
+  signedInEmail: string;
 }
 
 type CellKind = 'code' | 'desc' | 'suffix';
@@ -97,6 +102,7 @@ export default function Grid({
   onExportBlock,
   onSelectionChange,
   auditActive,
+  signedInEmail,
 }: GridProps) {
   const {
     numLevels,
@@ -254,6 +260,23 @@ export default function Grid({
   // committed to `row.note` only on Save.
   const [noteEditRowId, setNoteEditRowId] = useState<string | null>(null);
   const [noteEditDraft, setNoteEditDraft] = useState('');
+  // James's ask (2026-10-14): once locked, the only two things still possible on the table —
+  // adding a new row, and Mark as Delete — now require a mandatory reason first. Recorded as a
+  // dated, attributed line appended to that row's own Note (Section 6.9) — "a text suffix", in
+  // James's own words — rather than a new, separate field, and rather than overwriting whatever
+  // note (if any) was already there.
+  const [memoPrompt, setMemoPrompt] = useState<{ message: string; onConfirm: (memo: string) => void } | null>(null);
+  const [memoDraft, setMemoDraft] = useState('');
+
+  function formatChangeMemo(reason: string): string {
+    const date = new Date().toISOString().slice(0, 10);
+    return `[${date} — ${signedInEmail || 'unknown user'}] ${reason.trim()}`;
+  }
+
+  function appendChangeMemo(existingNote: string | undefined, reason: string): string {
+    const stamped = formatChangeMemo(reason);
+    return existingNote && existingNote.trim() ? `${existingNote}\n\n${stamped}` : stamped;
+  }
   // Right-click toggle: when on, Down Arrow in a description cell always inserts a new row
   // immediately beneath the current one and focuses it (like Insert Row Below), rather than
   // only doing that at the very last row — James found the "necessary" right-click detour
@@ -1343,6 +1366,17 @@ export default function Grid({
   }
 
   function addRow() {
+    if (locked) {
+      setMemoPrompt({
+        message: 'This taxonomy is locked — enter a reason for adding this row (recorded on the row as a Note):',
+        onConfirm: (memo) => {
+          const newRow = createRowInheritingFrom(rows[rows.length - 1]);
+          newRow.note = formatChangeMemo(memo);
+          onChange([...rows, newRow]);
+        },
+      });
+      return;
+    }
     onChange([...rows, createRowInheritingFrom(rows[rows.length - 1])]);
   }
 
@@ -1455,7 +1489,21 @@ export default function Grid({
     const belowCode = below?.codes[refLevel] ?? '';
     const hasNeighboursBothWays = aboveCode !== '' && belowCode !== '';
 
-    const doInsert = () => performInsertRow(insertAt, count, refLevel);
+    // James's ask (2026-10-14): once locked, adding a row (the one structural change still
+    // possible) needs a mandatory reason first — see memoPrompt's own comment above.
+    const doInsert = () => {
+      if (locked) {
+        setMemoPrompt({
+          message:
+            count > 1
+              ? `This taxonomy is locked — enter a reason for adding these ${count} rows (recorded on each new row as a Note):`
+              : 'This taxonomy is locked — enter a reason for adding this row (recorded on the row as a Note):',
+          onConfirm: (memo) => performInsertRow(insertAt, count, refLevel, memo),
+        });
+      } else {
+        performInsertRow(insertAt, count, refLevel);
+      }
+    };
 
     // Both gap checks below are single-character-only: they can't reliably tell whether a real
     // multi-character column-1 value (e.g. "AA" vs "AB") leaves room for something between it
@@ -1505,7 +1553,7 @@ export default function Grid({
     }
   }
 
-  function performInsertRow(insertAt: number, count: number, refLevel: number) {
+  function performInsertRow(insertAt: number, count: number, refLevel: number, memo?: string) {
     // Each new row's codes are duplicated from whichever row ends up directly above it —
     // the same "inherit, then recode manually" convention Add Row already uses — rather
     // than left blank; only the descriptions start empty.
@@ -1513,6 +1561,7 @@ export default function Grid({
     const newRows: TaxonomyRow[] = [];
     for (let i = 0; i < count; i++) {
       const newRow = createRowInheritingFrom(previous);
+      if (memo) newRow.note = formatChangeMemo(memo);
       newRows.push(newRow);
       previous = newRow;
     }
@@ -1999,23 +2048,42 @@ export default function Grid({
   // the original wording — and the row's place in the sequence — stays visible. Works even on
   // an unprotected row (harmless, just not required there); a description already marked is
   // left alone rather than getting a second "XXX ".
-  function handleMarkAsDelete() {
-    if (!contextMenu || contextMenu.kind !== 'desc' || !selection) return;
-    const { level } = contextMenu;
+  function performMarkAsDelete(level: number, rowIds: Set<string>, memo?: string) {
     const prefix = 'XXX ';
     onChange(
       rows.map((row) =>
-        selection.rowIds.has(row.id)
+        rowIds.has(row.id)
           ? {
               ...row,
               descriptions: row.descriptions.map((d, i) =>
                 i === level && d && !d.startsWith(prefix) ? `${prefix}${d}` : d,
               ),
+              note: memo ? appendChangeMemo(row.note, memo) : row.note,
             }
           : row,
       ),
     );
     setContextMenu(null);
+  }
+
+  // James's ask (2026-10-14): once locked, Mark as Delete — the other structural change still
+  // possible — also needs a mandatory reason first, same as adding a row.
+  function handleMarkAsDelete() {
+    if (!contextMenu || contextMenu.kind !== 'desc' || !selection) return;
+    const { level } = contextMenu;
+    const rowIds = selection.rowIds;
+    if (locked) {
+      setContextMenu(null);
+      setMemoPrompt({
+        message:
+          rowIds.size > 1
+            ? `This taxonomy is locked — enter a reason for marking these ${rowIds.size} entries as deleted (recorded on each as a Note):`
+            : 'This taxonomy is locked — enter a reason for marking this entry as deleted (recorded on the row as a Note):',
+        onConfirm: (memo) => performMarkAsDelete(level, rowIds, memo),
+      });
+      return;
+    }
+    performMarkAsDelete(level, rowIds);
   }
 
   // Clears every selected code cell in this column, and blanks each affected row's deeper
@@ -4219,6 +4287,39 @@ export default function Grid({
               )}
               <button type="button" onClick={handleSaveNote}>
                 Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {memoPrompt && (
+        <div className="validation-overlay" onClick={() => { setMemoPrompt(null); setMemoDraft(''); }}>
+          <div className="validation-dialog note-dialog" onClick={(e) => e.stopPropagation()}>
+            <p>{memoPrompt.message}</p>
+            <textarea
+              className="note-textarea"
+              value={memoDraft}
+              onChange={(e) => setMemoDraft(e.target.value)}
+              autoFocus
+              rows={4}
+            />
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => { setMemoPrompt(null); setMemoDraft(''); }}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!memoDraft.trim()}
+                onClick={() => {
+                  const memo = memoDraft.trim();
+                  const onConfirm = memoPrompt.onConfirm;
+                  setMemoPrompt(null);
+                  setMemoDraft('');
+                  onConfirm(memo);
+                }}
+              >
+                Confirm
               </button>
             </div>
           </div>

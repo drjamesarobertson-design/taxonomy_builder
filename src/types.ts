@@ -114,6 +114,14 @@ export interface TaxonomySettings {
    * enforcement, so the taxonomy can be worked on again (with an explicit warning).
    */
   locked: boolean;
+  /** James's ask (2026-10-14): captured in the Lock confirm dialog, each time the taxonomy is
+   * locked or a later increment is locked — who locked it (the signed-in email, known at that
+   * moment), why, and who authorised it. Reflects only the most recent lock/lock-updates event,
+   * not a full history of every one — a bigger ask (a real multi-user activity log) explicitly
+   * parked for now. All three stay absent for a taxonomy that's never been locked. */
+  lockedBy?: string;
+  lockReason?: string;
+  lockAuthorisedBy?: string;
   /** Set only while the Simple Taxonomy guided wizard is active; absent for every other
    * taxonomy (including ones created via the other five workflow-menu starting points, which
    * still just open today's ordinary setup screen — their own guided wizards aren't built
