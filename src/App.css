@@ -636,6 +636,56 @@
   color: #222;
 }
 
+/* James's ask (2026-10-14): a supervisor-only "new sign-ups" panel on the landing menu, same
+   general shape/placement as the Resume-Work-in-Progress banner just above it. */
+.new-signups-banner {
+  max-width: 900px;
+  margin-bottom: 1.25rem;
+  padding: 0.9rem 1.25rem;
+  background: #fff;
+  color: #1a1a1a;
+  border: 1px solid #1d8a4c;
+  border-radius: 6px;
+}
+
+.new-signups-banner-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.new-signups-banner-dismiss {
+  flex-shrink: 0;
+  width: 2.25rem;
+  cursor: pointer;
+  background: none;
+  color: #555;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 1rem;
+  line-height: 1.8;
+}
+
+.new-signups-banner-dismiss:hover {
+  background: #f3f3f3;
+  color: #222;
+}
+
+.new-signups-banner-list {
+  margin: 0.6rem 0 0;
+  padding-left: 1.25rem;
+  font-size: 0.9rem;
+}
+
+.new-signups-banner-list li {
+  margin-bottom: 0.3rem;
+}
+
+.new-signups-banner-date {
+  color: #666;
+}
+
 .workflow-menu-columns {
   display: flex;
   gap: 1.5rem;
