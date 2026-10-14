@@ -654,17 +654,18 @@
 .workflow-menu-books {
   margin-top: 2rem;
   padding-top: 1rem;
-  border-top: 1px solid #ddd;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .workflow-menu-books p {
   margin: 0 0 0.5rem;
-  color: #555;
+  color: #b9c9ef;
   font-size: 0.85rem;
 }
 
 .workflow-menu-books a {
-  color: #1a56db;
+  color: #fff;
+  text-decoration: underline;
 }
 
 .workflow-level-buttons {
