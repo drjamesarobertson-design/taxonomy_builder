@@ -190,8 +190,8 @@ export default function App() {
   // it back after a reload, a browser restart, or a log-out/log-in cycle — none of which
   // otherwise leave anything to return to, since `project` itself is plain in-memory state.
   useEffect(() => {
-    if (project) saveAutosave(project);
-  }, [project]);
+    if (project && authedEmail) saveAutosave(project, authedEmail);
+  }, [project, authedEmail]);
   // James's report: "Resume Work in Progress" had no way to dismiss it, and kept reappearing
   // even after it had already been acted on. Tracked as real state rather than reading
   // loadAutosave() fresh on every render, so an explicit dismiss (the ✕) and a genuine save can
@@ -200,10 +200,12 @@ export default function App() {
   // returning from a taxonomy still picks up whatever's actually in the autosave slot right now.
   const [resumeAutosaveTitle, setResumeAutosaveTitle] = useState<string | null>(null);
   useEffect(() => {
-    if (!project && signOnStage === 'menu') setResumeAutosaveTitle(loadAutosave()?.title ?? null);
-  }, [project, signOnStage]);
+    if (!project && signOnStage === 'menu' && authedEmail) {
+      setResumeAutosaveTitle(loadAutosave(authedEmail)?.title ?? null);
+    }
+  }, [project, signOnStage, authedEmail]);
   function handleDismissResume() {
-    clearAutosave();
+    if (authedEmail) clearAutosave(authedEmail);
     setResumeAutosaveTitle(null);
   }
 
@@ -2325,7 +2327,8 @@ export default function App() {
   }
 
   function handleResumeWorkInProgress() {
-    const saved = loadAutosave();
+    if (!authedEmail) return;
+    const saved = loadAutosave(authedEmail);
     if (!saved) return;
     setProject(saved);
     setDirty(false);

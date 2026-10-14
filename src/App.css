@@ -2061,8 +2061,14 @@ body.app-dark-theme .taxonomy-meta .purpose {
   filter: grayscale(75%) opacity(0.8);
 }
 
-.row-protected .code-cell,
-.row-protected .desc-cell {
+/* James's report (2026-10-14): once Unlocked, a protected row's cells are genuinely editable
+   again (the actual block is `locked && row.protected` — see Grid.tsx) — but this rule used to
+   apply the "not-allowed" cursor from .row-protected alone, with no awareness of lock state, so
+   the cursor kept showing blocked even though typing worked fine. Scoped to the locked table
+   only; .row-protected's own greyed-out look (above) is unaffected and still persists after
+   Unlock, exactly as intended. */
+.taxonomy-grid-locked .row-protected .code-cell,
+.taxonomy-grid-locked .row-protected .desc-cell {
   cursor: not-allowed;
 }
 

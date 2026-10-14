@@ -136,22 +136,34 @@ export function loadProjectFromFile(file: File): Promise<TaxonomyProject> {
 // Add to Library actions. Signing out (or the browser reloading, closing, crashing) doesn't
 // otherwise lose whatever's currently open — App.tsx writes here on every change to `project`
 // and offers "Resume Work in Progress" on the landing menu whenever this holds something. Only
-// one slot, matching the app's own single-taxonomy-at-a-time model (Section 3/9.4) — starting
-// or opening a different taxonomy overwrites it, same as it would overwrite the working grid.
-const AUTOSAVE_KEY = 'taxonomy-builder-autosave';
+// one slot PER ACCOUNT, matching the app's own single-taxonomy-at-a-time model (Section 3/9.4)
+// — starting or opening a different taxonomy overwrites that same account's own slot, same as
+// it would overwrite the working grid.
+//
+// James's report (2026-10-14): a brand-new account, signed into a browser that had previously
+// autosaved a DIFFERENT account's work, saw that other account's "Resume Work in Progress"
+// banner — this key used to be a single, global slot with no notion of who it belonged to.
+// Keyed by the signed-in email (lowercased, matching Supabase's own normalization — see
+// Login.tsx) so each account only ever sees its own autosave, while still surviving a log-out/
+// log-in cycle for the SAME account, which is the actual point of this feature.
+const AUTOSAVE_KEY_PREFIX = 'taxonomy-builder-autosave';
 
-export function saveAutosave(project: TaxonomyProject): void {
+function autosaveKey(email: string): string {
+  return `${AUTOSAVE_KEY_PREFIX}:${email.trim().toLowerCase()}`;
+}
+
+export function saveAutosave(project: TaxonomyProject, email: string): void {
   try {
-    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(project));
+    localStorage.setItem(autosaveKey(email), JSON.stringify(project));
   } catch {
     // Storage full, disabled, or unavailable (private browsing) — Save to File and Add to
     // Library are unaffected; this recovery net just isn't there for this session.
   }
 }
 
-export function loadAutosave(): TaxonomyProject | null {
+export function loadAutosave(email: string): TaxonomyProject | null {
   try {
-    const raw = localStorage.getItem(AUTOSAVE_KEY);
+    const raw = localStorage.getItem(autosaveKey(email));
     if (!raw) return null;
     const data = JSON.parse(raw);
     // James's report: a taxonomy autosaved before a newer settings field existed (e.g.
@@ -166,9 +178,9 @@ export function loadAutosave(): TaxonomyProject | null {
   }
 }
 
-export function clearAutosave(): void {
+export function clearAutosave(email: string): void {
   try {
-    localStorage.removeItem(AUTOSAVE_KEY);
+    localStorage.removeItem(autosaveKey(email));
   } catch {
     // Nothing to clear if storage isn't available in the first place.
   }

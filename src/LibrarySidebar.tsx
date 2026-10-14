@@ -463,8 +463,15 @@ export default function LibrarySidebar({
             ) : (
               <span className="library-entry-title">{entry.project.title || '(untitled)'}</span>
             )}
-            {entry.isStarterSample && (
-              <span className="library-starter-sample-icon" title="Starter Sample — copied into every new subscriber's own Library">
+            {(entry.isStarterSample || entry.sourceSampleId !== null) && (
+              <span
+                className="library-starter-sample-icon"
+                title={
+                  entry.isStarterSample
+                    ? 'Starter Sample — copied into every new subscriber\'s own Library'
+                    : 'Your own copy of a Starter Sample'
+                }
+              >
                 ⭐
               </span>
             )}
