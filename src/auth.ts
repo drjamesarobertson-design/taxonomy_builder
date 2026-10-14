@@ -31,7 +31,14 @@ export interface SignUpProfile {
  * here alone isn't enough on its own.
  * `profile` (James's ask) is stored as Supabase Auth user metadata via `options.data` — no
  * separate database table needed for this; it shows up on each user's record in the Supabase
- * dashboard (Authentication -> Users). */
+ * dashboard (Authentication -> Users).
+ * James's report (2026-10-14): signing up with an email that already belongs to a confirmed
+ * account silently showed the same "check your email" notice as a real new signup, with no email
+ * actually sent and no warning that anything was wrong. Root cause: Supabase deliberately returns
+ * no error and no session for this exact case (an anti-enumeration measure, so the signup API
+ * can't be used to probe "does this email exist") — the one signal it does give is `data.user`
+ * coming back with an empty `identities` array, which a genuinely new signup never has. Checking
+ * for that here is what tells the two cases apart. */
 export async function signUp(
   email: string,
   password: string,
@@ -50,6 +57,12 @@ export async function signUp(
     },
   });
   if (error) return { error: error.message, needsEmailConfirmation: false };
+  if (data.user?.identities?.length === 0) {
+    return {
+      error: 'An account already exists for this email. Try logging in, or use "Forgot password" to reset it.',
+      needsEmailConfirmation: false,
+    };
+  }
   return { error: null, needsEmailConfirmation: data.session === null };
 }
 
