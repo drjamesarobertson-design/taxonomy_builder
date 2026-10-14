@@ -1152,6 +1152,77 @@ body.app-dark-theme .taxonomy-meta .purpose {
   text-decoration: underline;
 }
 
+/* HelpEditor (supervisor-only) — reuses .help-page's own card/search chrome, just a wider
+   dialog and editable rows instead of read-only entries. */
+.help-editor {
+  max-width: 44rem;
+}
+
+.help-editor-list {
+  overflow-y: auto;
+  max-height: 55vh;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-right: 0.2rem;
+}
+
+.help-editor-row {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.help-editor-row label {
+  display: block;
+  font-size: 0.8rem;
+  color: #555;
+  font-weight: 600;
+}
+
+.help-editor-row input,
+.help-editor-row textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 0.2rem;
+  padding: 0.4rem 0.5rem;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: normal;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.help-editor-row-header {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.help-editor-row-header label {
+  flex: 1;
+}
+
+.help-editor-delete {
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid #c33;
+  color: #c33;
+  border-radius: 4px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.help-editor-delete:hover {
+  background: #fdecec;
+}
+
 .settings-summary {
   text-align: left;
   margin: 0.5rem 0;

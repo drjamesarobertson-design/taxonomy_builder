@@ -96,3 +96,24 @@ export async function loadHelpText(): Promise<HelpTextMap> {
     return {};
   }
 }
+
+// A field needs quoting (RFC 4180) whenever it contains the delimiter, a quote, or a newline —
+// mirrors parseCsv's own understanding of what those characters mean, just in reverse.
+function csvField(value: string): string {
+  if (/[",\r\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
+/** The inverse of loadHelpText's own parsing — rebuilds the exact same four-column CSV shape
+ * (Field,Label,HelpText,VideoUrl) from a HelpTextMap, sorted by field name for a stable,
+ * reviewable diff against whatever was last pushed to the repo. Used by the in-app Help editor
+ * (HelpEditor.tsx, supervisor-only) to turn an edited map back into a downloadable file — the
+ * same file format the app already reads, so it drops straight back into public/help-text.csv
+ * with no other change needed. */
+export function stringifyHelpTextCsv(map: HelpTextMap): string {
+  const header = ['Field', 'Label', 'HelpText', 'VideoUrl'];
+  const rows = Object.entries(map)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([field, entry]) => [field, entry.label, entry.helpText, entry.videoUrl ?? '']);
+  return [header, ...rows].map((row) => row.map(csvField).join(',')).join('\r\n') + '\r\n';
+}

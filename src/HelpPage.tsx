@@ -1,9 +1,13 @@
 import { useMemo, useState } from 'react';
 import type { HelpTextMap } from './helpText';
 import { saveExportFile } from './exportFolder';
+import HelpEditor from './HelpEditor';
 
 interface HelpPageProps {
   helpText: HelpTextMap;
+  /** James's ask: an "Edit Help" entry point into HelpEditor.tsx, restricted to his own
+   * (supervisor) account — everyone else just sees the plain read-only Help page below. */
+  isSupervisor: boolean;
   onClose: () => void;
 }
 
@@ -11,9 +15,10 @@ interface HelpPageProps {
 // professional ... I want to include links to videos in some places". Reuses the exact same
 // help-text.csv data as the toolbar/menu tooltips (Tooltip.tsx / menuTooltip.tsx) and the "?"
 // HelpIcon on the setup screens, so James only ever writes a given field's wording once.
-export default function HelpPage({ helpText, onClose }: HelpPageProps) {
+export default function HelpPage({ helpText, isSupervisor, onClose }: HelpPageProps) {
   const [query, setQuery] = useState('');
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [showEditor, setShowEditor] = useState(false);
 
   // James's report: unable to get help-text.csv out of the app any other way. Same
   // save-picker-with-download-fallback every other Export button already uses (exportFolder.ts)
@@ -92,6 +97,11 @@ export default function HelpPage({ helpText, onClose }: HelpPageProps) {
         </div>
         {downloadError && <p className="help-page-empty">{downloadError}</p>}
         <div className="confirm-dialog-actions">
+          {isSupervisor && (
+            <button type="button" onClick={() => setShowEditor(true)}>
+              Edit Help
+            </button>
+          )}
           <button type="button" onClick={handleDownloadCsv}>
             Download Help CSV
           </button>
@@ -100,6 +110,7 @@ export default function HelpPage({ helpText, onClose }: HelpPageProps) {
           </button>
         </div>
       </div>
+      {showEditor && <HelpEditor helpText={helpText} onClose={() => setShowEditor(false)} />}
     </div>
   );
 }
