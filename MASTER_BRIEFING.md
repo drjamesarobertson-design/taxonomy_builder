@@ -1,5 +1,7 @@
 # Taxonomy Builder — Master Briefing
 
+*Version: v 1.01*
+
 *A one-stop orientation document: what this is, what it does today, where the
 business stands, and what's still outstanding. Written for James (or anyone
 he shares this with) rather than as an engineering log — for the detailed,
@@ -8,6 +10,11 @@ specification, see `CLAUDE.md`.*
 
 *Last updated: 2026-10-14, after PR #219, and a correction pass against
 James's own full conversation record (see note below).*
+
+*Version history: v 1.01 — first version stamp applied to this file
+(2026-10-14), at James's request. Increment this by one, and add a line
+here, every time this file is next updated and re-sent to him — see
+`ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md` §5, item 10.*
 
 ---
 
