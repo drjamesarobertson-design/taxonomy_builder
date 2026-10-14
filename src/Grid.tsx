@@ -1485,8 +1485,14 @@ export default function Grid({
     // flagging before creating a row that starts out in exactly that spot.
     const above = insertAt > 0 ? rows[insertAt - 1] : undefined;
     const below = insertAt < rows.length ? rows[insertAt] : undefined;
-    const aboveCode = above?.codes[refLevel] ?? '';
-    const belowCode = below?.codes[refLevel] ?? '';
+    // James's report (2026-10-14): inserting below a row coded "1", where the next row is a
+    // shallower heading with nothing of its own at this level (padded with "." rather than a
+    // real code), was wrongly treated as "1" and "." being adjacent real neighbours with no room
+    // between them — blocking 2-9 from ever being used. The padding character means "no code
+    // here at all", not a real value to leave room around, so it's normalized to '' (no
+    // neighbour) here, same as a genuinely blank cell.
+    const aboveCode = above?.codes[refLevel] === paddingChar ? '' : (above?.codes[refLevel] ?? '');
+    const belowCode = below?.codes[refLevel] === paddingChar ? '' : (below?.codes[refLevel] ?? '');
     const hasNeighboursBothWays = aboveCode !== '' && belowCode !== '';
 
     // James's ask (2026-10-14): once locked, adding a row (the one structural change still
@@ -2382,8 +2388,13 @@ export default function Grid({
     // neighbour.
     const anchorIndex = rows.findIndex((r) => r.id === anchorRowId);
     if (locked && anchorIndex > 0) {
-      const aboveCode = rows[anchorIndex - 1].codes[anchorLevel] ?? '';
-      const belowCode = rows[anchorIndex].codes[anchorLevel] ?? '';
+      // Same normalization as handleInsertRow's own gap check (2026-10-14 report): the padding
+      // character means "no code here at all" (a shallower heading), not a real neighbouring
+      // value to leave room around.
+      const anchorAbove = rows[anchorIndex - 1].codes[anchorLevel] ?? '';
+      const anchorBelow = rows[anchorIndex].codes[anchorLevel] ?? '';
+      const aboveCode = anchorAbove === paddingChar ? '' : anchorAbove;
+      const belowCode = anchorBelow === paddingChar ? '' : anchorBelow;
       // Only entries whose OWN level is the anchor's level need a distinct code in this column —
       // a deeper entry inherits/reuses an ancestor's code there instead of consuming its own
       // slot, same reasoning as fillCodesDown (guidance.ts). James's report: the single-row

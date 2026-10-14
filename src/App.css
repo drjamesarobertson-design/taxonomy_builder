@@ -1998,14 +1998,20 @@ body.app-dark-theme .taxonomy-meta .purpose {
    their row. Not wired to the global Enter-key handler (App.tsx) — unlike every other dialog,
    the grid stays focusable while this panel is open, so Enter needs to keep doing whatever the
    focused grid cell already does with it, not get hijacked by this panel. */
-.audit-panel-actions button:last-of-type {
+/* James's report (2026-10-14): every button here showed as blue instead of just the recommended
+   one. Root cause: each button is individually wrapped in its own <Tooltip> <span> (for the hover
+   tooltip) -- so every button is the ONLY button inside its own wrapper, and ":last-of-type"
+   (evaluated against each button's immediate siblings, i.e. none) trivially matched all of them.
+   Targeting the wrapper spans themselves, which really are siblings of each other directly under
+   .audit-panel-actions, fixes it without touching the JSX. */
+.audit-panel-actions > .app-tooltip-wrapper:last-of-type button {
   background: #1a56db;
   color: #fff;
   border-color: #1a56db;
   font-weight: 600;
 }
 
-.audit-panel-actions button:last-of-type:hover {
+.audit-panel-actions > .app-tooltip-wrapper:last-of-type button:hover {
   background: #12409e;
   border-color: #12409e;
 }

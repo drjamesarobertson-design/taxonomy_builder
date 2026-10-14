@@ -2623,18 +2623,27 @@ export default function App() {
                         >
                           Lock updates
                         </li>
+                        {/* James's ask (2026-10-14): Unlock shouldn't sit as its own permanently
+                            visible toolbar button -- moved here, a click inside the same Lock
+                            Taxonomy menu a standalone button already was, rather than
+                            permanently on display. Still goes through the exact same
+                            type-UNLOCK confirm dialog as before (handleUnlockTaxonomy). */}
+                        <li
+                          className="context-menu-separator"
+                          onClick={() => {
+                            setShowLockMenu(false);
+                            handleUnlockTaxonomy();
+                          }}
+                          onMouseEnter={showAppMenuTooltip('menuUnlockTaxonomy')}
+                          onMouseLeave={hideAppMenuTooltip}
+                        >
+                          🔓 Unlock Taxonomy
+                        </li>
                       </>
                     )}
                   </ul>
                 )}
               </div>
-            )}
-            {project && project.settings.locked && (
-              <Tooltip field="btnUnlockTaxonomy" helpText={helpText}>
-                <button type="button" className="unlock-btn" onClick={handleUnlockTaxonomy}>
-                  🔓 Unlock Taxonomy
-                </button>
-              </Tooltip>
             )}
             {project && <span className="toolbar-divider" />}
             {project && (
