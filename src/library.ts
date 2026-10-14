@@ -213,8 +213,42 @@ export async function addLibraryEntry(
     isStarterSample: false,
     sourceSampleId,
   };
-  await putEntry(entry);
+  if (sourceSampleId !== null) {
+    await upsertSeededCopy(entry);
+  } else {
+    await putEntry(entry);
+  }
   return entry;
+}
+
+/** Used only when copying a starter sample into a subscriber's own Library
+ * (seedStarterSamplesForNewAccount / importSelectedStarterSamples). James's report
+ * (2026-10-14): new accounts were ending up with 2-3 copies of every starter sample. Root cause:
+ * the sign-in effect that kicks off seeding could fire more than once for one login (each with a
+ * slightly different signed-in-email value — see the fix in Login.tsx), and each pass's own "is
+ * my Library still empty?" check could come back true before the other pass's inserts had landed
+ * — a client-side check like that can reduce the race, never close it. Upserting on
+ * (user_id, source_sample_id) instead of id (supabase/0006_prevent_duplicate_starter_sample_
+ * copies.sql) is a real database guarantee: Postgres never treats two NULLs as equal, so ordinary
+ * entries (source_sample_id always null) are untouched — only two actual copies of the same
+ * sample for the same account can ever collide, and the second one updates the first in place
+ * instead of becoming a duplicate row. */
+async function upsertSeededCopy(entry: LibraryEntry): Promise<void> {
+  const userId = await currentUserId();
+  const { error } = await supabase.from(TABLE_NAME).upsert(
+    {
+      id: entry.id,
+      user_id: userId,
+      category: entry.category,
+      entry_order: entry.order,
+      project: entry.project,
+      updated_at: entry.updatedAt,
+      is_starter_sample: entry.isStarterSample,
+      source_sample_id: entry.sourceSampleId,
+    },
+    { onConflict: 'user_id,source_sample_id' },
+  );
+  if (error) throw new Error(error.message);
 }
 
 /** Overwrites an existing entry's saved taxonomy content (category/order untouched). */

@@ -63,7 +63,11 @@ export default function Login({ onSuccess }: LoginProps) {
       setError(err);
       return;
     }
-    onSuccess(email.trim());
+    // .toLowerCase() matches Supabase's own normalization of session.user.email -- without it,
+    // this differs from what App.tsx's auth-state-change listener sets moments later whenever the
+    // typed address has any uppercase in it, which the [authedEmail] effect in App.tsx (starter-
+    // sample seeding, among other things) reads as TWO separate sign-ins rather than one.
+    onSuccess(email.trim().toLowerCase());
   }
 
   async function handleRegister(e: FormEvent) {
@@ -93,7 +97,11 @@ export default function Login({ onSuccess }: LoginProps) {
       setShowConfirmEmailNotice(true);
       return;
     }
-    onSuccess(email.trim());
+    // .toLowerCase() matches Supabase's own normalization of session.user.email -- without it,
+    // this differs from what App.tsx's auth-state-change listener sets moments later whenever the
+    // typed address has any uppercase in it, which the [authedEmail] effect in App.tsx (starter-
+    // sample seeding, among other things) reads as TWO separate sign-ins rather than one.
+    onSuccess(email.trim().toLowerCase());
   }
 
   async function handleForgot(e: FormEvent) {
