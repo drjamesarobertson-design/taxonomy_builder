@@ -1873,6 +1873,24 @@ body.app-dark-theme .taxonomy-meta .purpose {
   box-sizing: border-box;
 }
 
+.lock-confirm-reason-label {
+  display: block;
+  text-align: left;
+  font-weight: 600;
+  margin: 0 0 0.75rem;
+}
+
+.lock-confirm-reason-label input,
+.lock-confirm-reason-label textarea {
+  display: block;
+  width: 100%;
+  margin-top: 0.25rem;
+  font-weight: 400;
+  font-family: inherit;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
 .validation-dialog input[type='text'] {
   display: block;
   width: 100%;
