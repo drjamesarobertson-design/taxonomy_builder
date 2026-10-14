@@ -651,6 +651,22 @@
   font-size: 0.85rem;
 }
 
+.workflow-menu-books {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid #ddd;
+}
+
+.workflow-menu-books p {
+  margin: 0 0 0.5rem;
+  color: #555;
+  font-size: 0.85rem;
+}
+
+.workflow-menu-books a {
+  color: #1a56db;
+}
+
 .workflow-level-buttons {
   display: flex;
   flex-direction: column;
@@ -2089,4 +2105,42 @@ body.app-dark-theme .taxonomy-meta .purpose {
   border-radius: 3px;
   pointer-events: none;
   user-select: none;
+}
+
+.update-available-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  background: #1a56db;
+  color: #fff;
+  font-size: 0.9rem;
+  padding: 0.5rem 1rem;
+}
+
+.update-available-banner button {
+  font: inherit;
+  cursor: pointer;
+}
+
+.update-available-banner button:not(.update-available-dismiss) {
+  background: #fff;
+  color: #1a56db;
+  border: none;
+  border-radius: 3px;
+  padding: 0.25rem 0.75rem;
+  font-weight: 600;
+}
+
+.update-available-dismiss {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 1rem;
+  padding: 0 0.25rem;
 }
