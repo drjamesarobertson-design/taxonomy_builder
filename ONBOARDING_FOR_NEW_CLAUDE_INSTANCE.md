@@ -237,6 +237,12 @@ follow it:
     (2026-10-14), given after a documentation gap in this same file set caused a real,
     costly mistake (recorded in `MASTER_BRIEFING.md` §0). The point is that his own copies stay
     current without him having to notice and request it each time.
+12. **Every file sent to James must be a genuine download, never an inline-rendered preview.**
+    On this platform that means passing `display: "attach"` on every `SendUserFile` call,
+    with no exceptions — he reported (2026-10-14) that files sent without it opened as
+    in-browser text instead of downloading, and had to ask again each time to get an actual
+    file. He has said plainly he will always download and file what's sent, so there is no
+    case here where an inline render is what he wants instead.
 
 ## 6. A few running themes worth knowing up front
 
