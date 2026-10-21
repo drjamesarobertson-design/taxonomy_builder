@@ -1,6 +1,6 @@
 # Taxonomy Builder — Master Briefing
 
-*Version: v 1.02*
+*Version: v 1.03*
 
 *A one-stop orientation document: what this is, what it does today, where the
 business stands, and what's still outstanding. Written for James (or anyone
@@ -8,7 +8,8 @@ he shares this with) rather than as an engineering log — for the detailed,
 round-by-round build history, see `PROGRESS.md`; for the original functional
 specification, see `CLAUDE.md`.*
 
-*Last updated: 2026-10-14, after PR #235.*
+*Last updated: 2026-10-21 — noted Supabase's Data API grant change (§3);
+no app changes this round.*
 
 *Version history: v 1.01 — first version stamp applied to this file
 (2026-10-14). v 1.02 — same evening, after PRs #230–#235 (see §0): Promote/
@@ -17,8 +18,12 @@ Library "starter sample" star shown on a subscriber's own copy, visible
 progress during first-sign-in Library seeding, and — the evening's main
 piece — an in-app "new sign-ups" panel (with CSV download) as a more
 reliable alternative to the outbound Resend email, which turned out to be
-working all along (see §0). Increment this by one, and add a line here,
-every time this file is next updated and re-sent to him — see
+working all along (see §0). v 1.03 (2026-10-21) — recorded a heads-up from
+Supabase (§3): from 30 October 2026, a newly created table no longer
+automatically gets Data API access without an explicit grant; doesn't
+affect anything already shipped, but is now a required step for any future
+migration that creates a new table. Increment this by one, and add a line
+here, every time this file is next updated and re-sent to him — see
 `ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md` §5, item 10.*
 
 ---
@@ -426,6 +431,24 @@ Toolbar "Folders ▾" menu:
   Resend API key itself lives in Supabase Vault, not in this file — see §4);
   `0009` adds the one read-only policy that lets the app show James the new
   sign-ups panel (§2) from his own account.
+- **Supabase Data API grants — new requirement from 30 October 2026
+  onward.** Supabase emailed James (2026-10-21) that from that date, a
+  newly *created* table in the `public` schema no longer automatically
+  gets Data API access — without an explicit `grant` statement, PostgREST/
+  supabase-js gets "permission denied" even if RLS policies are otherwise
+  correct. Confirmed this does not affect any table that already exists in
+  the live project (every migration above predates the change, and
+  Supabase's own email says existing tables keep their current grants) —
+  nothing to do for anything already shipped. It DOES mean any *future*
+  migration creating a new table needs its own explicit grants alongside
+  its RLS policies, e.g.:
+  ```sql
+  grant select on public.your_table to anon;
+  grant select, insert, update, delete on public.your_table to authenticated;
+  grant select, insert, update, delete on public.your_table to service_role;
+  ```
+  — add this to this list of required habits for any new migration file
+  from here on, the same way RLS policies already are.
 - **Local file system integration**: the File System Access API (Chromium
   browsers only — Chrome, Edge) powers "Choose Export Folder" and "Folders →
   Local Hard Drive". No equivalent exists in Firefox/Safari; both features
