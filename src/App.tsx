@@ -30,7 +30,7 @@ import { FORMAT_MODES, applyFormatDescriptions, collectUnknownAbbreviationWords 
 import type { FormatMode } from './formatDescriptions';
 import { loadHelpText } from './helpText';
 import type { HelpTextMap } from './helpText';
-import { getActiveHelpField } from './activeHelpField';
+import { getActiveHelpField, setActiveHelpField } from './activeHelpField';
 import TooltipQuickEdit from './TooltipQuickEdit';
 import Tooltip from './Tooltip';
 import HelpPage from './HelpPage';
@@ -2848,7 +2848,16 @@ export default function App() {
         />
       )}
       {project && !project.settings.guidance && (
-        <section className={`worksheet-guidance ${guidanceExpanded ? 'expanded' : 'collapsed'}`}>
+        <section
+          className={`worksheet-guidance ${guidanceExpanded ? 'expanded' : 'collapsed'}`}
+          // James's report (2026-10-22): F1 (supervisor-only quick-edit) had nothing to act on
+          // here — unlike every toolbar button/menu item, this panel shows its helpText.csv text
+          // directly rather than through a Tooltip/menuTooltip/HelpIcon, so nothing ever reported
+          // it as the "active" field. Reporting it the same way Tooltip.tsx does (hover/focus)
+          // is all F1 needs, since TooltipQuickEdit already knows how to edit any field by key.
+          onMouseEnter={() => setActiveHelpField('worksheetGuidance')}
+          onMouseLeave={() => setActiveHelpField(null)}
+        >
           <div className="worksheet-guidance-text">
             {helpText.worksheetGuidance?.helpText?.trim() || 'No worksheet guidance has been added yet.'}
           </div>
