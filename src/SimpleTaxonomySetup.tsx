@@ -69,7 +69,7 @@ export default function SimpleTaxonomySetup({ onCreate, helpText }: SimpleTaxono
 
   return (
     <form className="new-taxonomy-form" onSubmit={handleSubmit}>
-      <h2>Create a Simple Taxonomy</h2>
+      <h2>Create Taxonomy Wizard</h2>
       <p className="simple-setup-intro">
         You'll be guided through building this one step at a time — headings first, then any
         sub-items, then coding. Everything else can be set up once you get there.

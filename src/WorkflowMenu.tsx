@@ -40,6 +40,16 @@ function workflowLevelField(level: WorkflowLevel): string {
   return `workflowLevel${level.replace(/[^a-zA-Z0-9]/g, '')}`;
 }
 
+// James's ask (2026-10-22): the "Simple Taxonomy" button should read "Create Taxonomy
+// Wizard" — display-only. `level` itself stays the literal 'Simple Taxonomy' value
+// everywhere else (WorkflowLevel, the tooltip field key, the stored taxonomy's own guided-
+// wizard branching in App.tsx/Grid.tsx/guidance.ts) — renaming that would mean touching
+// every place that compares against it, for a change that's only ever about the label shown
+// here.
+function workflowLevelDisplayLabel(level: WorkflowLevel): string {
+  return level === 'Simple Taxonomy' ? 'Create Taxonomy Wizard' : level;
+}
+
 export default function WorkflowMenu({
   onChooseNew,
   onChooseExisting,
@@ -100,7 +110,7 @@ export default function WorkflowMenu({
                   {isFirstCubicLevel && <span className="workflow-level-group-heading">Cubic Business Model</span>}
                   <Tooltip field={workflowLevelField(level)} helpText={helpText}>
                     <button type="button" onClick={() => onChooseNew(level)}>
-                      {level}
+                      {workflowLevelDisplayLabel(level)}
                     </button>
                   </Tooltip>
                 </div>
