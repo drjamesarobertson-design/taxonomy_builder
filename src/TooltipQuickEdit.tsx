@@ -56,11 +56,11 @@ export default function TooltipQuickEdit({ field, entry, onSave, onClose }: Tool
           />
         </label>
         <div className="confirm-dialog-actions">
-          <button type="button" onClick={handleSave}>
-            Save
-          </button>
           <button type="button" onClick={onClose}>
             Cancel
+          </button>
+          <button type="button" onClick={handleSave}>
+            Save
           </button>
         </div>
       </div>
