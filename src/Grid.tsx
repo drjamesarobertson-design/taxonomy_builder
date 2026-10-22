@@ -1476,7 +1476,15 @@ export default function Grid({
       idx = rows.findIndex((r) => r.id === contextMenu.rowId);
     }
     if (idx === -1) return;
-    const refLevel = Math.max(0, levelOf(rows[idx]));
+    // James's report (2026-10-22): inserting beside a row that has codes typed in but no
+    // description yet (levelOf -- deliberately description-driven everywhere in this codebase,
+    // see its own comment below) returns -1 for it, which used to fall back to column 1
+    // regardless of which column was actually right-clicked. For Insert Row above/below that
+    // same blank row, that meant comparing the row's own level-1 code to ITSELF (both "above"
+    // and "below" resolved to the one row) and reporting a false "no gap" — contextMenu.level,
+    // the column genuinely right-clicked, is the correct fallback instead of a hardcoded 0.
+    const rowLevel = levelOf(rows[idx]);
+    const refLevel = rowLevel === -1 ? contextMenu.level : rowLevel;
     const insertAt = position === 'above' ? idx : idx + 1;
 
     // If the rows that would end up immediately either side of the new gap already have
@@ -2234,6 +2242,7 @@ export default function Grid({
   // guards through a bulk fill.
   function handleFillMissingCodes() {
     if (!contextMenu || contextMenu.kind !== 'code') return;
+    const clickedRowIdx = rows.findIndex((r) => r.id === contextMenu.rowId);
     setContextMenu(null);
     if (locked) {
       showValidationError('This taxonomy is locked and codes cannot be auto-filled.');
@@ -2243,7 +2252,18 @@ export default function Grid({
     const result = fillMissingCodesAtLevel(rows, level, paddingChar, codeRestriction, autoCodeGapIncrement);
     const changed = result.some((row, i) => row.codes[level] !== rows[i].codes[level]);
     if (!changed) {
-      showValidationError('No missing codes to fill in this column.');
+      // James's report (2026-10-22): right-clicking a visibly blank code cell on a row that has
+      // no description yet still said "No missing codes" -- true of every OTHER row in the
+      // column, but misleading here: levelOf (description-driven everywhere, deliberately) can't
+      // place this one row in any group at all, so it's invisible to the fill regardless of its
+      // blank code cell. Diagnosed specifically so the fix (type a description first) is clear,
+      // rather than reading as "nothing needed filling."
+      const clickedRowBlank = clickedRowIdx !== -1 && levelOf(rows[clickedRowIdx]) === -1 && !rows[clickedRowIdx].codes[level];
+      showValidationError(
+        clickedRowBlank
+          ? "This row doesn't have a description yet, so Taxonomy Builder can't tell which group it belongs to — type a description in first, then Fill Missing Codes can code it."
+          : 'No missing codes to fill in this column.',
+      );
       return;
     }
     onChange(result);
