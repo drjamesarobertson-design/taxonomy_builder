@@ -153,6 +153,7 @@ btnGuidanceExit,Exit Guidance,Leave the guided wizard and continue working on th
 btnAutoCodeGenerate,Generate Codes,Generate codes automatically using the chosen method.,
 btnFormatEntireWorksheet,Format Entire Worksheet,Apply Format Descriptions across every row in the taxonomy.,
 btnFormatSelectedRange,Format Selected Range,Apply Format Descriptions only to the currently selected rows.,
+exportFormatChoiceDialog,Export Format Choice,"Discrete Columns matches the grid exactly as it appears on screen, and is the everyday, expected export. Concatenated combines each posting-level entry into one padded, delimited value, for direct ERP import.",
 btnExportConcatenated,Concatenated,"Export one combined, indent-padded description per posting-level entry.",
 btnExportConcatenatedNoDelimiter,Concatenated (No Delimiter),Export Concatenated format without the code delimiter character.,
 btnExportDiscreteNoDelimiter,Discrete Columns (No Delimiter),Export Discrete Columns format without the code delimiter character.,

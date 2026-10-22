@@ -33,6 +33,7 @@ import type { HelpTextMap } from './helpText';
 import { getActiveHelpField, setActiveHelpField } from './activeHelpField';
 import TooltipQuickEdit from './TooltipQuickEdit';
 import Tooltip from './Tooltip';
+import HelpIcon from './HelpIcon';
 import HelpPage from './HelpPage';
 import PricingPage from './PricingPage';
 import { useMenuTooltip, MenuTooltipPortal } from './menuTooltip';
@@ -3315,6 +3316,7 @@ export default function App() {
             <p>
               Export to {exportChoice.format === 'csv' ? 'CSV' : 'Excel'} — Discrete Columns or
               Concatenated?
+              <HelpIcon field="exportFormatChoiceDialog" helpText={helpText} />
             </p>
             <div className="confirm-dialog-actions">
               {/* James's ask: Discrete Columns — the grid exactly as it appears on screen
