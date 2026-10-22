@@ -20,10 +20,35 @@ export default function TooltipQuickEdit({ field, entry, onSave, onClose }: Tool
   const [label, setLabel] = useState(entry?.label ?? field);
   const [helpText, setHelpText] = useState(entry?.helpText ?? '');
   const [videoUrl, setVideoUrl] = useState(entry?.videoUrl ?? '');
+  // James's ask (2026-10-22): a save here only changes this browser's own live session (see this
+  // file's own comment above) -- easy to forget, since nothing on screen said so. Rather than
+  // closing immediately, Save now swaps this dialog to a one-line reminder first, so it's seen
+  // right at the moment it matters (just saved something) rather than only in a hint elsewhere
+  // that's easy to have never read.
+  const [justSaved, setJustSaved] = useState(false);
 
   function handleSave() {
     onSave(field, { label: label.trim() || field, helpText, videoUrl: videoUrl.trim() || undefined });
-    onClose();
+    setJustSaved(true);
+  }
+
+  if (justSaved) {
+    return (
+      <div className="validation-overlay" onClick={(e) => { e.stopPropagation(); onClose(); }}>
+        <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+          <p>
+            Saved for this session. Remember to download the Help CSV (Help page → "Download
+            Updated Help CSV") and send it to Claude before you finish, so this change becomes
+            permanent for every subscriber.
+          </p>
+          <div className="confirm-dialog-actions">
+            <button type="button" onClick={onClose}>
+              OK
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
