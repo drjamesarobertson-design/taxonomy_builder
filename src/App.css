@@ -953,11 +953,14 @@ body.app-dark-theme .taxonomy-meta .purpose {
   background: #e0e0e0;
 }
 
+/* James's report (2026-10-22): used to be position: absolute, anchored left: 0 relative to the
+   icon itself -- fine in a wide form dialog with the icon near the left edge, but it ran off a
+   narrower dialog's own right edge (Export Format Choice) and got truncated. Now position: fixed,
+   portalled to document.body and placed via a measured, viewport-clamped inline top/left
+   (HelpIcon.tsx), same fix already applied to Tooltip.tsx's own popup for the same reason. */
 .help-popover {
-  position: absolute;
-  z-index: 20;
-  top: 1.4rem;
-  left: 0;
+  position: fixed;
+  z-index: 4000;
   width: 16rem;
   max-width: 60vw;
   background: #fff;
