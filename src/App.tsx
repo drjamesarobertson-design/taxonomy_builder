@@ -24,7 +24,14 @@ import type { AuditIssue } from './codeValidation';
 import { codeInputId, descInputId } from './domIds';
 import AuditPanel from './AuditPanel';
 import type { AuditOrigin } from './AuditPanel';
-import { AUTO_CODE_TYPES, IMPLEMENTED_AUTO_CODE_TYPES, autoCodeAlphaNumeric, fillRestOfGroup } from './autoCode';
+import {
+  AUTO_CODE_TYPES,
+  IMPLEMENTED_AUTO_CODE_TYPES,
+  autoCodeAlphaNumeric,
+  fillRestOfGroup,
+  findNumericOverflowGroups,
+} from './autoCode';
+import type { NumericOverflowGroup } from './autoCode';
 import type { AutoCodeType } from './autoCode';
 import { FORMAT_MODES, applyFormatDescriptions, collectUnknownAbbreviationWords } from './formatDescriptions';
 import type { FormatMode } from './formatDescriptions';
@@ -569,6 +576,18 @@ export default function App() {
   // rebuilding later — only one is actually implemented so far (autoCode.ts).
   const [showAutoCode, setShowAutoCode] = useState(false);
   const [autoCodeType, setAutoCodeType] = useState<AutoCodeType>(AUTO_CODE_TYPES[0]);
+  // James's ask (2026-11-23): "Numeric Only" only has nine digits (1-9) to spread a group across
+  // — a group with more ordinary members than that genuinely cannot be numeric-coded at all, and
+  // the engine used to spill into letters to cope without ever saying so. Auto Code now checks
+  // the whole taxonomy for this BEFORE writing anything, and stops at the first group it finds to
+  // ask how to handle it — `numericOverflowPrompt` holds that one group plus every overflow
+  // already approved so far this run (so a "just this group" choice can move on to check for the
+  // next one, and "for the rest of this run" can skip asking again without re-deriving which were
+  // already seen). Cleared on cancel, on "stop to fix", and once Auto Code actually runs.
+  const [numericOverflowPrompt, setNumericOverflowPrompt] = useState<{
+    group: NumericOverflowGroup;
+    approvedKeys: Set<string>;
+  } | null>(null);
 
   // Format Descriptions (James's ask): bulk ALL CAPS / Proper Case cleanup for scrappy input,
   // scoped by `formatMode`, with an interactive "keep this in caps?" queue for any ALL-CAPS
@@ -2258,11 +2277,22 @@ export default function App() {
     setShowAutoCode(true);
   }
 
-  function handleAutoCodeGenerate() {
+  // James's ask (2026-11-23): check for a Numeric-Only group Auto Code can't actually represent
+  // (findNumericOverflowGroups — more ordinary members than nine digits allow) before writing
+  // anything, rather than letting it silently spill into letters. `approvedKeys` carries forward
+  // across repeat calls from the overflow dialog's own buttons (see its JSX below) so checking for
+  // the NEXT overflow never re-asks about one already resolved this run; `alwaysApprove` skips the
+  // prompt entirely once James has said "for the rest of this run". Once nothing outstanding
+  // remains, this runs the real fill exactly as before — the engine already handles an approved
+  // overflow correctly, this function only ever decides whether to ask first.
+  function runAutoCode(approvedKeys: Set<string>, alwaysApprove: boolean) {
     if (!project) return;
-    if (!IMPLEMENTED_AUTO_CODE_TYPES.includes(autoCodeType)) {
-      setLoadError(`Auto Code for "${autoCodeType}" isn't built yet — only "${IMPLEMENTED_AUTO_CODE_TYPES[0]}" is available right now.`);
-      return;
+    if (autoCodeType === 'Numeric Only' && !alwaysApprove) {
+      const overflow = findNumericOverflowGroups(project.rows).find((g) => !approvedKeys.has(g.key));
+      if (overflow) {
+        setNumericOverflowPrompt({ group: overflow, approvedKeys });
+        return;
+      }
     }
     const newRows = autoCodeAlphaNumeric(
       project.rows,
@@ -2272,6 +2302,16 @@ export default function App() {
     );
     handleSettingsAndRowsChange({ ...project.settings, codeRestriction: autoCodeType }, newRows);
     setShowAutoCode(false);
+    setNumericOverflowPrompt(null);
+  }
+
+  function handleAutoCodeGenerate() {
+    if (!project) return;
+    if (!IMPLEMENTED_AUTO_CODE_TYPES.includes(autoCodeType)) {
+      setLoadError(`Auto Code for "${autoCodeType}" isn't built yet — only "${IMPLEMENTED_AUTO_CODE_TYPES[0]}" is available right now.`);
+      return;
+    }
+    runAutoCode(new Set(), false);
   }
 
   function handleFormatDescriptionsClick() {
@@ -3177,13 +3217,9 @@ export default function App() {
               {AUTO_CODE_TYPES.map((type) => (
                 <option key={type} value={type}>
                   {type}
-                  {IMPLEMENTED_AUTO_CODE_TYPES.includes(type) ? '' : ' (coming soon)'}
                 </option>
               ))}
             </select>
-            <p className="csv-import-summary">
-              Only "{IMPLEMENTED_AUTO_CODE_TYPES[0]}" is available right now — the rest are coming soon.
-            </p>
             <div className="confirm-dialog-actions">
               <button type="button" onClick={() => setShowAutoCode(false)}>
                 Cancel
@@ -3193,6 +3229,51 @@ export default function App() {
                   Generate Codes
                 </button>
               </Tooltip>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {numericOverflowPrompt && (
+        <div className="validation-overlay" onClick={() => setNumericOverflowPrompt(null)}>
+          <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
+            <p>
+              The group under "{numericOverflowPrompt.group.parentDescription}" has{' '}
+              {numericOverflowPrompt.group.ordinaryCount} entries, but Numeric Only can only
+              represent {numericOverflowPrompt.group.maxAllowed} at this level.
+            </p>
+            <p className="csv-import-summary">
+              Overflow into letters for this group, or stop here so it can be fixed by hand (split
+              it into two headings, or switch this taxonomy to a code restriction that allows
+              letters) before running Auto Code again?
+            </p>
+            <div className="confirm-dialog-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setNumericOverflowPrompt(null);
+                  setShowAutoCode(false);
+                  setLoadError(
+                    `Auto Code stopped — nothing was changed. Fix the group under "${numericOverflowPrompt.group.parentDescription}" (${numericOverflowPrompt.group.ordinaryCount} entries) manually, then run Auto Code again.`,
+                  );
+                }}
+              >
+                Stop to Fix
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  runAutoCode(
+                    new Set([...numericOverflowPrompt.approvedKeys, numericOverflowPrompt.group.key]),
+                    false,
+                  )
+                }
+              >
+                Overflow — Just This Group
+              </button>
+              <button type="button" onClick={() => runAutoCode(numericOverflowPrompt.approvedKeys, true)}>
+                Overflow — Rest of This Run
+              </button>
             </div>
           </div>
         </div>
