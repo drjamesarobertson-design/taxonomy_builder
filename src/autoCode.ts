@@ -240,11 +240,29 @@ export function practicalGapOptions(rows: TaxonomyRow[], level: number, codeRest
   return Array.from({ length: maxGap }, (_, i) => i + 1);
 }
 
-/** Grid.tsx's gap-choice dialog shows a real example for each option (e.g. "A, C, E, …" under
- * Alpha Upper Case Only, not always digits) — exported so its examples can never drift from the
- * pool a fill will actually draw from. */
-export function codePoolPreview(codeRestriction: CodeRestriction): string[] {
-  return codePoolFor(codeRestriction);
+// James's report (2026-11-23): the gap-choice dialog's examples, built from codePoolFor's one
+// pool, showed "1, 3, 5, …" even under a restriction that allows letters too — accurate for a
+// GREENFIELD fill (which really does start from the pool's own first character), but misleading
+// for a PATCH fill continuing on from an existing letter anchor (his own test: filling after "D"
+// actually produced "F, H, J, …", not digits at all). Rather than trying to predict which of the
+// two a given fill will turn out to be, this returns BOTH a numeric and a letter example whenever
+// the restriction allows both — exactly the dual notation James's own original spec asked for
+// ("1, 3, 5, … or a, c, e, …") — so the dialog is honest regardless of which branch runs.
+export interface GapExampleParts {
+  numeric: string | null;
+  alpha: string;
+}
+
+export function gapExampleParts(codeRestriction: CodeRestriction, gapIncrement: number): GapExampleParts {
+  const digits = CODE_SLOTS.slice(0, 9);
+  const upper = CODE_SLOTS.slice(9);
+  const exampleFrom = (pool: string[]) =>
+    [0, gapIncrement, 2 * gapIncrement].map((i) => pool[i] ?? '…').join(', ');
+  const hasDigits = codeRestriction === 'Alpha Numeric with Upper Case Alpha Only' || codeRestriction === 'Alpha Numeric with All Alpha';
+  return {
+    numeric: hasDigits ? exampleFrom(digits) : null,
+    alpha: exampleFrom(upper),
+  };
 }
 
 // Assigns codes to every row whose own code at `level` is still blank, one sibling group at a
