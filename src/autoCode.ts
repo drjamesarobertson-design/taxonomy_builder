@@ -24,10 +24,12 @@
 import type { CodeRestriction, TaxonomyRow } from './types';
 import { fillCodesDown, isOtherOrMiscellaneousLabel, maxLevelUsed, padCodes } from './guidance';
 
-// The dropdown James asked for names every code type up front so it doesn't need rebuilding
-// later, even though only the first is actually implemented right now (IMPLEMENTED_AUTO_CODE_TYPES
-// below) — selecting anything else surfaces a plain "not built yet" message instead of silently
-// doing the wrong thing.
+// The dropdown James originally asked for named every code type up front so it wouldn't need
+// rebuilding later, even though only the first was actually implemented at the time
+// (IMPLEMENTED_AUTO_CODE_TYPES below) — selecting anything else surfaced a plain "not built yet"
+// message instead of silently doing the wrong thing. The restriction-aware character-pool work
+// since (codePoolFor, this file) now makes every one of these produce correct codes, so all five
+// are enabled — nothing left here to build before unlocking them.
 export const AUTO_CODE_TYPES = [
   'Alpha Numeric with Upper Case Alpha Only',
   'Numeric Only',
@@ -37,7 +39,7 @@ export const AUTO_CODE_TYPES = [
 ] as const;
 export type AutoCodeType = (typeof AUTO_CODE_TYPES)[number];
 
-export const IMPLEMENTED_AUTO_CODE_TYPES: readonly AutoCodeType[] = ['Alpha Numeric with Upper Case Alpha Only'];
+export const IMPLEMENTED_AUTO_CODE_TYPES: readonly AutoCodeType[] = AUTO_CODE_TYPES;
 
 function levelOf(row: TaxonomyRow): number {
   for (let i = row.descriptions.length - 1; i >= 0; i--) {
@@ -316,8 +318,9 @@ function assignGroupCodes(
 
   if (!otherTrails) {
     // Fallback: every sibling, in row order, sharing one spread — no reserved slot, since a
-    // reservation only makes sense when nothing ordinary follows it.
-    const slots = useFixedGap ? spreadSlotsFixed(indices.length, gapIncrement, pool) : spreadSlots(indices.length);
+    // reservation only makes sense when nothing ordinary follows it. Numeric Only's own ceiling
+    // is 9 digits (1-9), not 8 — see the comment below, same fix, same reasoning.
+    const slots = useFixedGap ? spreadSlotsFixed(indices.length, gapIncrement, pool) : spreadSlots(indices.length, 9);
     let slotPos = 0;
     for (const idx of indices) {
       const row = result[idx];
@@ -332,7 +335,15 @@ function assignGroupCodes(
     return result;
   }
 
-  const slots = useFixedGap ? spreadSlotsFixed(ordinaryIndices.length, gapIncrement, pool) : spreadSlots(ordinaryIndices.length);
+  // James's report (2026-11-23): under Numeric Only, a plain group of exactly 9 ordinary
+  // siblings (no Other/Miscellaneous in it at all) spilled into letters — spreadSlots always
+  // defaulted to 8 "available" slots, reserving a 9th for an Other entry that, in a group with
+  // none, was never actually needed. Nine digits (1-9) genuinely fit nine ordinary siblings with
+  // no Other to make room for; only reserve the 9th when there's a real Other row to put there.
+  const availableOrdinarySlots = otherIndices.length > 0 ? 8 : 9;
+  const slots = useFixedGap
+    ? spreadSlotsFixed(ordinaryIndices.length, gapIncrement, pool)
+    : spreadSlots(ordinaryIndices.length, availableOrdinarySlots);
   let slotPos = 0;
   for (const idx of ordinaryIndices) {
     const row = result[idx];
@@ -399,6 +410,52 @@ export function autoCodeAlphaNumeric(
   }
   result = fillCodesDown(result);
   result = padCodes(result, paddingChar);
+  return result;
+}
+
+/** One sibling group Auto Code has found it cannot represent under "Numeric Only" alone — more
+ * ordinary members than the nine digits (minus one, if the group also has an Other/Miscellaneous
+ * entry to reserve a slot for — see assignGroupCodes' own fix for the exact rule) can hold.
+ * `key` is a stable identity for this exact group, for the Auto Code dialog to remember which
+ * overflows it's already been told how to handle without re-deriving them by structural equality. */
+export interface NumericOverflowGroup {
+  key: string;
+  level: number;
+  parentDescription: string;
+  ordinaryCount: number;
+  maxAllowed: number;
+}
+
+// James's ask (2026-11-23), items 2 and 4 together: before Auto Code writes anything under
+// "Numeric Only", check the WHOLE taxonomy for a group that genuinely can't fit — more ordinary
+// members than nine digits can represent — and hand each one to the caller to ask about, rather
+// than letting spreadSlots silently spill into letters the moment it happens (its own existing,
+// and still correct, behaviour for an approved overflow — this function only decides whether that
+// should be allowed to happen without asking first). Returns every overflowing group, in the same
+// top-to-bottom order Auto Code itself would reach them, so the caller can always act on the
+// first one it hasn't already approved.
+export function findNumericOverflowGroups(rows: TaxonomyRow[]): NumericOverflowGroup[] {
+  const maxLevel = maxLevelUsed(rows);
+  const result: NumericOverflowGroup[] = [];
+  for (let level = 0; level <= maxLevel; level++) {
+    const groups = groupSiblingIndices(rows, level);
+    for (const indices of groups.values()) {
+      if (indices.some((i) => rows[i].codes[level])) continue; // patch group: never overflows, it never spreads from scratch
+      const otherCount = indices.filter((i) => isOtherOrMiscellaneousLabel(rows[i].descriptions[level] ?? '')).length;
+      const ordinaryCount = indices.length - otherCount;
+      const maxAllowed = otherCount > 0 ? 8 : 9;
+      if (ordinaryCount <= maxAllowed) continue;
+      const parentIdx = immediateParentIndex(rows, indices[0]);
+      const parentLevel = parentIdx === -1 ? -1 : levelOf(rows[parentIdx]);
+      result.push({
+        key: `${level}:${rows[indices[0]].id}`,
+        level,
+        parentDescription: parentIdx === -1 ? '(top level)' : rows[parentIdx].descriptions[parentLevel] || '(unnamed heading)',
+        ordinaryCount,
+        maxAllowed,
+      });
+    }
+  }
   return result;
 }
 
