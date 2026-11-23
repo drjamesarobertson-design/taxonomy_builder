@@ -1897,6 +1897,17 @@ body.app-dark-theme .taxonomy-meta .purpose {
   font-size: 0.95rem;
 }
 
+/* James's report: Auto Code's dialog, once it grew a second <select> (the gap-choice dropdown)
+   stacked under the first, looked cramped — nothing gave a <select> any space of its own, so two
+   in a row (or one right before the next <p>) sat flush against each other. Matches the same
+   bottom margin every <p> here already gets, so the two field groups read as visually separate. */
+.validation-dialog select {
+  display: block;
+  margin: 0 auto 1rem;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.95rem;
+}
+
 .validation-dialog button {
   padding: 0.4rem 1.5rem;
   cursor: pointer;
