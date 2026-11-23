@@ -1610,6 +1610,21 @@ body.app-dark-theme .taxonomy-meta .purpose {
 
 .grid-wrapper {
   overflow-x: auto;
+  /* James's ask: freeze the grid's own header row (the one showing each column's number) while
+     scrolling a long taxonomy. Setting overflow-x: auto here (needed for the horizontal scrollbar
+     on a wide grid) silently forces overflow-y to 'auto' too, by a standing CSS rule (a 'visible'
+     overflow-y is promoted to 'auto' whenever overflow-x isn't 'visible') — which on its own does
+     nothing useful, since this box never grows taller than its own content (no height is set), so
+     that forced-on vertical "scroll container" never actually moves and any position: sticky
+     inside it just sits at its normal document position and scrolls away with everything else,
+     exactly like James reported. Giving it a real max-height (below) makes that already-forced
+     scroll container a genuine one, with actual content taller than its own box — which is what
+     position: sticky needs to have something to stick within. --grid-wrapper-max-height is kept
+     in sync with this element's own distance from the top of the page (Grid.tsx), so it always
+     fills exactly the remaining space below the app's own sticky header bar and whatever variable-
+     height banner is currently showing above it. */
+  max-height: var(--grid-wrapper-max-height, none);
+  overflow-y: auto;
   padding-right: 20ch; /* room for description text that overflows past the indicative width */
   /* Stays white regardless of the app-wide dark theme around it, and gives the table its own
      opaque backdrop so transparent cells don't show the dark page background through them.
@@ -1642,6 +1657,33 @@ body.app-dark-theme .taxonomy-meta .purpose {
   font-size: 0.8rem;
   white-space: nowrap;
   padding: 4px 2px;
+}
+
+/* James's ask: freeze the header row (the one showing each column's number) so it stays visible
+   while scrolling a long taxonomy, instead of scrolling off with the body — otherwise a message
+   that refers to a column number is unreadable without scrolling back up to check it. Both thead
+   rows stick within .grid-wrapper's own scrolling box (see its own max-height rule, above, for why
+   that's required for position: sticky to do anything here at all) — so these stick to ITS top
+   edge, not the page's; --grid-sticky-offset (the app's own sticky header bar's live height) has
+   already been accounted for in how tall .grid-wrapper itself is allowed to be, not in this offset.
+   The second row's own top offset is the first row's own real rendered height (--grid-header-
+   row1-height, Grid.tsx) — NOT the 1.7rem every cell's `height` is nominally set to, which excludes
+   the padding and border that actually gets added on top of it — so it sits directly beneath the
+   first with no gap or overlap. */
+.taxonomy-grid thead tr:first-child th {
+  position: sticky;
+  top: 0;
+  z-index: 12;
+}
+
+.taxonomy-grid thead tr:last-child th {
+  position: sticky;
+  top: var(--grid-header-row1-height, 1.95rem);
+  z-index: 11;
+}
+
+.taxonomy-grid thead .gap-col {
+  background: #fff;
 }
 
 .section-heading {

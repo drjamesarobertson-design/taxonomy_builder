@@ -469,6 +469,11 @@ export interface NumericOverflowGroup {
   /** The group's own first row — James's ask: drop the cursor there and scroll it into view the
    * moment the overflow prompt appears, rather than leaving him to go hunting for it himself. */
   firstRowId: string;
+  /** The grid's own 1-based row number for firstRowId (rowIndex + 1, exactly what the grid's own
+   * row-number column shows) — James's report: even the full ancestor breadcrumb can't disambiguate
+   * two headings that happen to share the exact same name and nesting (e.g. two unrelated branches
+   * each genuinely titled just "Costs"). The row number is the one thing that's never ambiguous. */
+  rowNumber: number;
 }
 
 // James's ask (2026-11-23), items 2 and 4 together: before Auto Code writes anything under
@@ -509,6 +514,7 @@ export function findNumericOverflowGroups(rows: TaxonomyRow[]): NumericOverflowG
         maxAllowed,
         hasOther: otherCount > 0,
         firstRowId: rows[indices[0]].id,
+        rowNumber: indices[0] + 1,
       });
     }
   }

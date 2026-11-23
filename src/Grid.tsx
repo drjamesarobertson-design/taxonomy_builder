@@ -13,6 +13,7 @@ import {
   findLeafCaseMismatch,
 } from './guidance';
 import { codeInputId, descInputId } from './domIds';
+import { nudgeBelowStickyObstructions } from './scrollHelpers';
 import { fillMissingCodesAtLevel, gapExampleParts, practicalGapOptions } from './autoCode';
 import type { TaxonomyBlock } from './blockTransfer';
 import { parseBlockFile } from './blockTransfer';
@@ -119,6 +120,47 @@ export default function Grid({
     customAbbreviations,
     autoCodeGapIncrement,
   } = settings;
+
+  // James's ask: freeze the grid's own column-number header row while scrolling a long taxonomy.
+  // position: sticky only has something to stick within once .grid-wrapper is a genuine, bounded
+  // scroll container (see its own CSS rule for why) — so this keeps --grid-wrapper-max-height in
+  // sync with .grid-wrapper's own distance from the top of the page, filling exactly the space
+  // left below everything above it (the app's sticky header bar, any guidance banner, etc.),
+  // whatever that currently adds up to. Measured as (viewport top + current scroll) so the result
+  // doesn't depend on the page's own scroll position at the moment it's taken.
+  const gridWrapperRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = gridWrapperRef.current;
+    if (!el) return;
+    const updateMaxHeight = () => {
+      const docTop = el.getBoundingClientRect().top + window.scrollY;
+      document.documentElement.style.setProperty('--grid-wrapper-max-height', `${Math.max(200, window.innerHeight - docTop)}px`);
+      // The frozen header's second row needs to sit exactly one row below the first — but the
+      // first row's own rendered height isn't the plain 1.7rem every cell's `height` is set to:
+      // padding and the (collapsed) border add to that, and guessing the exact extra pixels here
+      // would be fragile. Measured straight off a real, non-row-spanning cell in that row (the
+      // "Code"/"Description" section heading, not .row-number-col, which spans both rows and so
+      // reports their combined height instead of just the first's).
+      const row1Cell = el.querySelector('.taxonomy-grid thead tr:first-child th.section-heading');
+      if (row1Cell) {
+        document.documentElement.style.setProperty('--grid-header-row1-height', `${row1Cell.getBoundingClientRect().height}px`);
+      }
+    };
+    updateMaxHeight();
+    window.addEventListener('resize', updateMaxHeight);
+    // Anything above .grid-wrapper changing height (the sticky bar's own guidance banner showing
+    // or hiding, most notably) shifts its distance from the page top without .grid-wrapper's own
+    // size changing at all, so a ResizeObserver on the element itself wouldn't catch it — watching
+    // the body as a whole does, since that reflow has to show up there regardless of which
+    // ancestor actually caused it.
+    const observer = new ResizeObserver(updateMaxHeight);
+    observer.observe(document.body);
+    return () => {
+      window.removeEventListener('resize', updateMaxHeight);
+      observer.disconnect();
+    };
+  }, []);
+
   // Simple Taxonomy wizard: no code column is shown at all until the coding stage — the
   // 'headings' and 'subItems' stages are description-only by design. `numLevels` itself grows
   // as those stages advance, so this is purely a display concern layered on top, not a change
@@ -1974,6 +2016,10 @@ export default function Grid({
         const input = document.getElementById(descInputId(match.level, match.rowId)) as HTMLInputElement | null;
         if (!input) return;
         input.scrollIntoView({ block: 'center' });
+        // A match near the very top of the taxonomy can get clamped against the top of the page
+        // (there's nothing above it left to scroll past), landing it under the app's sticky header
+        // bar and the grid's own frozen column-number rows instead of truly centered.
+        nudgeBelowStickyObstructions(input);
         input.focus();
         input.select();
       });
@@ -2017,6 +2063,7 @@ export default function Grid({
       const input = document.getElementById(codeInputId(level, rowId)) as HTMLInputElement | null;
       if (!input) return;
       input.scrollIntoView({ block: 'center' });
+      nudgeBelowStickyObstructions(input);
       input.focus();
       input.select();
     });
@@ -3206,7 +3253,7 @@ export default function Grid({
   }
 
   return (
-    <div className="grid-wrapper">
+    <div className="grid-wrapper" ref={gridWrapperRef}>
       <input
         ref={importBlockFileInputRef}
         type="file"
