@@ -2310,12 +2310,29 @@ export default function App() {
   // actually about. Same plain DOM approach GuidanceBanner.tsx already uses for its own "drop the
   // cursor there" warnings (codeInputId is shared for exactly this).
   function focusCodeCell(level: number, rowId: string) {
+    // James's report: scrolling the row to the top of the grid still left it hidden behind the
+    // warning dialog itself — .validation-overlay centers its dialog over the WHOLE viewport, so
+    // a row scrolled merely to "the top of the grid" (itself not far below the fixed toolbar) can
+    // still sit squarely inside a vertically centered dialog's own footprint. Scrolls there first,
+    // same as before, then — once the dialog this call is about to open has actually rendered and
+    // settled (nested rAF: one for React's commit, one for layout) — nudges the row down just
+    // clear of that dialog's bottom edge if the two still overlap, so it's never hidden either way.
     requestAnimationFrame(() => {
       const input = document.getElementById(codeInputId(level, rowId)) as HTMLInputElement | null;
       if (!input) return;
       input.scrollIntoView({ block: 'start' });
-      input.focus();
-      input.select();
+      requestAnimationFrame(() => {
+        const dialogs = document.querySelectorAll('.validation-dialog');
+        const dialog = dialogs[dialogs.length - 1] as HTMLElement | undefined;
+        if (dialog) {
+          const dialogRect = dialog.getBoundingClientRect();
+          const inputRect = input.getBoundingClientRect();
+          const overlaps = inputRect.top < dialogRect.bottom && inputRect.bottom > dialogRect.top;
+          if (overlaps) window.scrollBy({ top: inputRect.top - (dialogRect.bottom + 16) });
+        }
+        input.focus();
+        input.select();
+      });
     });
   }
 
@@ -3263,8 +3280,8 @@ export default function App() {
                 ))}
               </select>
               {autoCodeGapOptions.length > 0 && (
-                <label>
-                  How do you want me to space the codes?
+                <>
+                  <p>How do you want me to space the codes?</p>
                   <select
                     value={autoCodeGapChoice}
                     onChange={(e) => setAutoCodeGapChoice(Number(e.target.value))}
@@ -3275,7 +3292,7 @@ export default function App() {
                       </option>
                     ))}
                   </select>
-                </label>
+                </>
               )}
               <div className="confirm-dialog-actions">
                 <button type="button" onClick={() => setShowAutoCode(false)}>
