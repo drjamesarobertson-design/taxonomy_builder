@@ -13,7 +13,7 @@ import {
   findLeafCaseMismatch,
 } from './guidance';
 import { codeInputId, descInputId } from './domIds';
-import { codePoolPreview, fillMissingCodesAtLevel, practicalGapOptions } from './autoCode';
+import { fillMissingCodesAtLevel, gapExampleParts, practicalGapOptions } from './autoCode';
 import type { TaxonomyBlock } from './blockTransfer';
 import { parseBlockFile } from './blockTransfer';
 import type { HelpTextMap } from './helpText';
@@ -2315,13 +2315,15 @@ export default function Grid({
   }
 
   // Shared with the gap-choice dialog's own <select> (below) so its option text and the actual
-  // gap value it applies can never drift apart. Draws from the taxonomy's own Code Restriction
-  // pool (codePoolPreview) rather than always showing digits, so e.g. Alpha Upper Case Only shows
-  // "A, C, E, …" instead of an example it could never actually produce.
+  // gap value it applies can never drift apart. James's report: a single example (always read
+  // from the pool's own start) was right for a greenfield fill but wrong for a patch fill
+  // continuing on from an existing letter anchor — shows both a numeric and a letter example,
+  // his own original spec's "1, 3, 5, … or a, c, e, …" notation, whenever the restriction allows
+  // both, so the dialog stays honest regardless of which branch actually runs this fill.
   function gapOptionLabel(gapIncrement: number): string {
-    const pool = codePoolPreview(codeRestriction);
-    const example = [0, gapIncrement, 2 * gapIncrement].map((i) => pool[i] ?? '…').join(', ');
-    return gapIncrement === 1 ? `Sequential — ${example}, …` : `Skip ${gapIncrement - 1} — ${example}, …`;
+    const { numeric, alpha } = gapExampleParts(codeRestriction, gapIncrement);
+    const example = numeric ? `${numeric}, … or ${alpha}, …` : `${alpha}, …`;
+    return gapIncrement === 1 ? `Sequential — ${example}` : `Skip ${gapIncrement - 1} — ${example}`;
   }
 
   // James's ask: with no manual selection active, "Export Block" should still work from a
@@ -4030,10 +4032,7 @@ export default function Grid({
                 </option>
               ))}
             </select>
-            <p className="workflow-menu-hint">
-              The same spacing applies to letter codes too (e.g. Skip 1 is a, c, e, …). Only
-              gaps that actually fit this group are offered.
-            </p>
+            <p className="workflow-menu-hint">Only gaps that actually fit this group are offered.</p>
             <div className="confirm-dialog-actions">
               <button type="button" onClick={() => setGapChoiceDialog(null)}>
                 Cancel
