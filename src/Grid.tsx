@@ -13,7 +13,7 @@ import {
   findLeafCaseMismatch,
 } from './guidance';
 import { codeInputId, descInputId } from './domIds';
-import { fillMissingCodesAtLevel } from './autoCode';
+import { fillMissingCodesAtLevel, practicalGapOptions } from './autoCode';
 import type { TaxonomyBlock } from './blockTransfer';
 import { parseBlockFile } from './blockTransfer';
 import type { HelpTextMap } from './helpText';
@@ -310,6 +310,17 @@ export default function Grid({
   // via the Simple Taxonomy wizard's own 1-5 dropdown. This one runs 1-10 and works on any
   // taxonomy, matching how Auto Code (also column-1-agnostic) already isn't wizard-only.
   const [widthOfCol1Dialog, setWidthOfCol1Dialog] = useState<{ value: number } | null>(null);
+  // James's ask (2026-11-23): "Fill Missing Codes" should let the user choose the gap for just
+  // this fill — Sequential, Skip 1, Skip 2, … — rather than always using the taxonomy's one
+  // configured default (autoCodeGapIncrement). Only ever opened when practicalGapOptions
+  // (autoCode.ts) says there's a real choice to make; `options` is already filtered to whatever
+  // actually fits, so every value in it is safe to apply as-is.
+  const [gapChoiceDialog, setGapChoiceDialog] = useState<{
+    level: number;
+    options: number[];
+    value: number;
+    clickedRowIdx: number;
+  } | null>(null);
   const [promoteDemoteChoice, setPromoteDemoteChoice] = useState<{
     direction: 'promote' | 'demote';
   } | null>(null);
@@ -2249,7 +2260,22 @@ export default function Grid({
       return;
     }
     const level = contextMenu.level;
-    const result = fillMissingCodesAtLevel(rows, level, paddingChar, codeRestriction, autoCodeGapIncrement);
+    // James's ask (2026-11-23): ask which gap to use for this fill, but only when there's a real
+    // choice to make — practicalGapOptions comes back empty for a column with nothing genuinely
+    // "greenfield" in it (nothing to fill at all, or every blank is a single-row group, or every
+    // group is already partly coded and just needs its gaps patched — none of those change with
+    // the gap), so in every one of those cases this runs the fill directly exactly as before.
+    const options = practicalGapOptions(rows, level, codeRestriction);
+    if (options.length >= 2) {
+      const value = options.includes(autoCodeGapIncrement) ? autoCodeGapIncrement : options[0];
+      setGapChoiceDialog({ level, options, value, clickedRowIdx });
+      return;
+    }
+    runFillMissingCodes(level, options[0] ?? autoCodeGapIncrement, clickedRowIdx);
+  }
+
+  function runFillMissingCodes(level: number, gapIncrement: number, clickedRowIdx: number) {
+    const result = fillMissingCodesAtLevel(rows, level, paddingChar, codeRestriction, gapIncrement);
     const changed = result.some((row, i) => row.codes[level] !== rows[i].codes[level]);
     if (!changed) {
       // James's report (2026-10-22): right-clicking a visibly blank code cell on a row that has
@@ -2268,6 +2294,13 @@ export default function Grid({
     }
     onChange(result);
     setSelection(null);
+  }
+
+  // Shared with the gap-choice dialog's own <select> (below) so its option text and the actual
+  // gap value it applies can never drift apart.
+  function gapOptionLabel(gapIncrement: number): string {
+    const example = [1, 1 + gapIncrement, 1 + 2 * gapIncrement].join(', ');
+    return gapIncrement === 1 ? `Sequential — ${example}, …` : `Skip ${gapIncrement - 1} — ${example}, …`;
   }
 
   // James's ask: with no manual selection active, "Export Block" should still work from a
@@ -3956,6 +3989,43 @@ export default function Grid({
                 // one that goes last here, not the override itself.
                 return confirmDialog.defaultToCancel ? [confirmButton, cancelButton] : [cancelButton, confirmButton];
               })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {gapChoiceDialog && (
+        <div className="validation-overlay" onClick={() => setGapChoiceDialog(null)}>
+          <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <p>How do you want me to fill the codes?</p>
+            <select
+              className="library-category-select"
+              value={gapChoiceDialog.value}
+              onChange={(e) => setGapChoiceDialog({ ...gapChoiceDialog, value: Number(e.target.value) })}
+            >
+              {gapChoiceDialog.options.map((g) => (
+                <option key={g} value={g}>
+                  {gapOptionLabel(g)}
+                </option>
+              ))}
+            </select>
+            <p className="workflow-menu-hint">
+              The same spacing applies to letter codes too (e.g. Skip 1 is a, c, e, …). Only
+              gaps that actually fit this group are offered.
+            </p>
+            <div className="confirm-dialog-actions">
+              <button type="button" onClick={() => setGapChoiceDialog(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  runFillMissingCodes(gapChoiceDialog.level, gapChoiceDialog.value, gapChoiceDialog.clickedRowIdx);
+                  setGapChoiceDialog(null);
+                }}
+              >
+                Fill Codes
+              </button>
             </div>
           </div>
         </div>
