@@ -113,13 +113,54 @@ function spreadSlots(count: number, availableSlots = 8): string[] {
 // once a group's count would no longer fit a gap within 1-8. Numeric Only keeps spreadSlots'
 // adaptive rule instead (isFixedGapRestriction, below) — with only nine digits available there's
 // no room for a fixed step to still cover a typical group.
+// James's ask (2026-11-23): Auto Code should keep its configured default gap, but limit it
+// automatically whenever the full gap genuinely wouldn't fit the slot pool (CODE_SLOTS, 36
+// characters) for a given group's size — rather than silently running off the end of CODE_SLOTS
+// and handing later siblings no code at all (`undefined`), which is what a plain `i * gapIncrement`
+// index does once (count - 1) * gapIncrement reaches 36. Clamps to the largest step that still
+// lets every sibling land on a real slot; never below 1 (sequential always fits).
+function maxFixedGapFor(count: number): number {
+  if (count <= 1) return Number.MAX_SAFE_INTEGER;
+  return Math.max(1, Math.floor((CODE_SLOTS.length - 1) / (count - 1)));
+}
+
 function spreadSlotsFixed(count: number, gapIncrement: number): string[] {
   if (count <= 0) return [];
-  return Array.from({ length: count }, (_, i) => CODE_SLOTS[i * gapIncrement]);
+  const gap = Math.min(gapIncrement, maxFixedGapFor(count));
+  return Array.from({ length: count }, (_, i) => CODE_SLOTS[i * gap]);
 }
 
 function isFixedGapRestriction(codeRestriction: CodeRestriction): boolean {
   return codeRestriction !== 'Numeric Only';
+}
+
+// James's ask (2026-11-23): "Fill Missing Codes" should offer an interactive choice of gap —
+// Sequential, Skip 1, Skip 2, … — filtered to only the steps that will actually fit, before
+// filling a column. Only meaningful for a "greenfield" sibling group (assignGroupCodes, above —
+// nothing coded yet) with at least two members: a "patch" group (fillOrderedGaps) isn't a gap
+// choice at all, and a lone greenfield member always gets the pool's first slot regardless of
+// gap, so neither is worth asking about. A level can hold several sibling groups at once (one per
+// parent); since fillMissingCodesAtLevel applies one chosen gap to the whole column in one pass,
+// the practical ceiling is the SMALLEST of every affected group's own fit (maxFixedGapFor) — a
+// gap that doesn't fit even one group would break it — also capped at 9 ("Skip 8") purely to keep
+// the list a sane length; real taxonomy groups are far smaller than the slot pool allows.
+// Numeric Only never gets this prompt (isFixedGapRestriction) — see spreadSlotsFixed's own
+// sibling, spreadSlots, which already has its own adaptive rule for that restriction alone.
+// Returns [] when the prompt isn't warranted at all (call site should just fill directly, same as
+// before this existed); any array of length < 2 should be treated as "no real choice", too.
+export function practicalGapOptions(rows: TaxonomyRow[], level: number, codeRestriction: CodeRestriction): number[] {
+  if (!isFixedGapRestriction(codeRestriction)) return [];
+  const groups = groupSiblingIndices(rows, level);
+  let maxGap = 9;
+  let anyMultiRowGreenfield = false;
+  for (const indices of groups.values()) {
+    if (indices.some((i) => rows[i].codes[level])) continue;
+    if (indices.length < 2) continue;
+    anyMultiRowGreenfield = true;
+    maxGap = Math.min(maxGap, maxFixedGapFor(indices.length));
+  }
+  if (!anyMultiRowGreenfield) return [];
+  return Array.from({ length: maxGap }, (_, i) => i + 1);
 }
 
 // Assigns codes to every row whose own code at `level` is still blank, one sibling group at a
