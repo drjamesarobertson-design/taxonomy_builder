@@ -30,6 +30,8 @@ import {
   autoCodeAlphaNumeric,
   fillRestOfGroup,
   findNumericOverflowGroups,
+  gapExampleParts,
+  practicalGapOptionsForAutoCode,
 } from './autoCode';
 import type { NumericOverflowGroup } from './autoCode';
 import type { AutoCodeType } from './autoCode';
@@ -588,6 +590,23 @@ export default function App() {
     group: NumericOverflowGroup;
     approvedKeys: Set<string>;
   } | null>(null);
+  // James's ask (2026-11-23): Auto Code's dialog should show, and let him override, the gap it's
+  // about to use for this run — the same thing Fill Missing Codes already offers — rather than
+  // silently applying whatever Settings' own Auto Code Gap Increment happens to hold with no way
+  // to see or change it from here. Defaults to that Settings value (or the largest gap that
+  // actually fits, if the Settings value doesn't), re-derived whenever the chosen code type
+  // changes (below) — a one-off choice for this run, same as Fill Missing Codes', never written
+  // back to Settings itself.
+  const [autoCodeGapChoice, setAutoCodeGapChoice] = useState<number>(2);
+  useEffect(() => {
+    if (!showAutoCode || !project) return;
+    const options = practicalGapOptionsForAutoCode(project.rows, autoCodeType);
+    if (options.length === 0) return;
+    setAutoCodeGapChoice(
+      options.includes(project.settings.autoCodeGapIncrement) ? project.settings.autoCodeGapIncrement : options[0],
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAutoCode, autoCodeType]);
 
   // Format Descriptions (James's ask): bulk ALL CAPS / Proper Case cleanup for scrappy input,
   // scoped by `formatMode`, with an interactive "keep this in caps?" queue for any ALL-CAPS
@@ -2285,21 +2304,32 @@ export default function App() {
   // prompt entirely once James has said "for the rest of this run". Once nothing outstanding
   // remains, this runs the real fill exactly as before — the engine already handles an approved
   // overflow correctly, this function only ever decides whether to ask first.
+  // James's ask (2026-11-23): drop the cursor onto the group's own first code cell and scroll it
+  // to the top of the work area the moment an issue is found — BEFORE the warning dialog shows —
+  // rather than leaving him to go hunting through the grid for whichever group the message is
+  // actually about. Same plain DOM approach GuidanceBanner.tsx already uses for its own "drop the
+  // cursor there" warnings (codeInputId is shared for exactly this).
+  function focusCodeCell(level: number, rowId: string) {
+    requestAnimationFrame(() => {
+      const input = document.getElementById(codeInputId(level, rowId)) as HTMLInputElement | null;
+      if (!input) return;
+      input.scrollIntoView({ block: 'start' });
+      input.focus();
+      input.select();
+    });
+  }
+
   function runAutoCode(approvedKeys: Set<string>, alwaysApprove: boolean) {
     if (!project) return;
     if (autoCodeType === 'Numeric Only' && !alwaysApprove) {
       const overflow = findNumericOverflowGroups(project.rows).find((g) => !approvedKeys.has(g.key));
       if (overflow) {
+        focusCodeCell(overflow.level, overflow.firstRowId);
         setNumericOverflowPrompt({ group: overflow, approvedKeys });
         return;
       }
     }
-    const newRows = autoCodeAlphaNumeric(
-      project.rows,
-      project.settings.paddingChar,
-      autoCodeType,
-      project.settings.autoCodeGapIncrement,
-    );
+    const newRows = autoCodeAlphaNumeric(project.rows, project.settings.paddingChar, autoCodeType, autoCodeGapChoice);
     handleSettingsAndRowsChange({ ...project.settings, codeRestriction: autoCodeType }, newRows);
     setShowAutoCode(false);
     setNumericOverflowPrompt(null);
@@ -3209,30 +3239,58 @@ export default function App() {
       )}
       <MenuTooltipPortal tooltip={appMenuTooltip} helpText={helpText} />
 
-      {showAutoCode && (
-        <div className="validation-overlay" onClick={() => setShowAutoCode(false)}>
-          <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
-            <p>Choose the type of code to generate:</p>
-            <select value={autoCodeType} onChange={(e) => setAutoCodeType(e.target.value as AutoCodeType)}>
-              {AUTO_CODE_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
-            <div className="confirm-dialog-actions">
-              <button type="button" onClick={() => setShowAutoCode(false)}>
-                Cancel
-              </button>
-              <Tooltip field="btnAutoCodeGenerate" helpText={helpText}>
-                <button type="button" onClick={handleAutoCodeGenerate}>
-                  Generate Codes
+      {showAutoCode && (() => {
+        // James's ask (2026-11-23): show (and let him override) the gap Auto Code is about to
+        // use, the same as Fill Missing Codes already does — only when the chosen restriction
+        // actually has a gap concept and there's something in this taxonomy for it to apply to;
+        // Numeric Only has no fixed gap at all (its own adaptive rule instead), and an empty
+        // option list otherwise just means nothing here would need spreading regardless of gap.
+        const autoCodeGapOptions = project ? practicalGapOptionsForAutoCode(project.rows, autoCodeType) : [];
+        const gapLabel = (gapIncrement: number) => {
+          const { numeric, alpha } = gapExampleParts(autoCodeType, gapIncrement);
+          const example = numeric ? `${numeric}, … or ${alpha}, …` : `${alpha}, …`;
+          return gapIncrement === 1 ? `Sequential — ${example}` : `Skip ${gapIncrement - 1} — ${example}`;
+        };
+        return (
+          <div className="validation-overlay" onClick={() => setShowAutoCode(false)}>
+            <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
+              <p>Choose the type of code to generate:</p>
+              <select value={autoCodeType} onChange={(e) => setAutoCodeType(e.target.value as AutoCodeType)}>
+                {AUTO_CODE_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+              {autoCodeGapOptions.length > 0 && (
+                <label>
+                  How do you want me to space the codes?
+                  <select
+                    value={autoCodeGapChoice}
+                    onChange={(e) => setAutoCodeGapChoice(Number(e.target.value))}
+                  >
+                    {autoCodeGapOptions.map((g) => (
+                      <option key={g} value={g}>
+                        {gapLabel(g)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <div className="confirm-dialog-actions">
+                <button type="button" onClick={() => setShowAutoCode(false)}>
+                  Cancel
                 </button>
-              </Tooltip>
+                <Tooltip field="btnAutoCodeGenerate" helpText={helpText}>
+                  <button type="button" onClick={handleAutoCodeGenerate}>
+                    Generate Codes
+                  </button>
+                </Tooltip>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {numericOverflowPrompt && (
         <div className="validation-overlay" onClick={() => setNumericOverflowPrompt(null)}>
