@@ -1758,6 +1758,25 @@ export default function Grid({
           e.preventDefault();
           const row = rows[rowIndex];
           if (row) updateDescription(row.id, level, '');
+        } else if (kind === 'code') {
+          // James's report (2026-11-23): ctrl-clicking several code cells into one highlighted
+          // selection, then pressing Delete, only ever cleared the one cell that happened to
+          // hold keyboard focus — DOM focus can only ever be in one <input> at a time, so native
+          // per-input deletion could never reach the rest of the selection, forcing them to be
+          // cleared one at a time. Mirrors handleDeleteCodes' own cascade (this column and every
+          // column after it, same as the right-click "Delete Codes" menu item) across every row
+          // in the selection when the focused cell is actually part of one, falling back to just
+          // this one cell otherwise -- so a single, unselected Delete still works exactly as
+          // before.
+          e.preventDefault();
+          const row = rows[rowIndex];
+          if (!row) return;
+          const rowIds =
+            selection && selection.kind === 'code' && selection.rowIds.size > 1 && selection.rowIds.has(row.id)
+              ? selection.rowIds
+              : new Set([row.id]);
+          if (blockIfAnyProtected(rowIds)) return;
+          onChange(rows.map((r) => (rowIds.has(r.id) ? { ...r, codes: r.codes.map((c, i) => (i >= level ? '' : c)) } : r)));
         }
         return;
       default:
