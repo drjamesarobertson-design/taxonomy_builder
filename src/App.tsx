@@ -22,6 +22,7 @@ import { padTrailingCodes } from './guidance';
 import { toggleCase } from './caseUtils';
 import type { AuditIssue } from './codeValidation';
 import { codeInputId, descInputId } from './domIds';
+import { nudgeBelowStickyObstructions } from './scrollHelpers';
 import AuditPanel from './AuditPanel';
 import type { AuditOrigin } from './AuditPanel';
 import {
@@ -101,6 +102,24 @@ export default function App() {
       {import.meta.env.VITE_PR_NUMBER ? `PR #${import.meta.env.VITE_PR_NUMBER}` : 'Local build'}
     </div>
   );
+
+  // James's ask: freeze the grid's own column-number header row so it stays visible while
+  // scrolling a long taxonomy, instead of scrolling away with the body. The sticky top bar above
+  // it (.app-sticky-top) is also variable height — it can carry a worksheet-guidance banner, or
+  // not — so the grid header's own `top` offset has to track that height live rather than being
+  // a fixed constant, via a CSS variable kept in sync here.
+  const stickyTopRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = stickyTopRef.current;
+    if (!el) return;
+    const updateOffset = () => {
+      document.documentElement.style.setProperty('--grid-sticky-offset', `${el.getBoundingClientRect().height}px`);
+    };
+    updateOffset();
+    const observer = new ResizeObserver(updateOffset);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   // James's ask: a tab left open across a deploy is still running the OLD build indefinitely —
   // nothing short of a genuine reload ever picks up a newer one. Polls version.json (a fixed,
@@ -1276,6 +1295,7 @@ export default function App() {
       const input = document.getElementById(id) as HTMLInputElement | null;
       if (!input) return;
       input.scrollIntoView({ block: 'center' });
+      nudgeBelowStickyObstructions(input);
       if (issue.kind !== 'auto') {
         input.focus();
         input.select();
@@ -2313,26 +2333,21 @@ export default function App() {
   // text right where the cursor lands. Same plain DOM approach GuidanceBanner.tsx already uses for
   // its own "drop the cursor there" warnings (descInputId is shared for exactly this).
   function focusDescriptionCell(level: number, rowId: string) {
-    // James's report: scrolling the row to the top of the grid still left it hidden behind the
-    // warning dialog itself — .validation-overlay centers its dialog over the WHOLE viewport, so
-    // a row scrolled merely to "the top of the grid" (itself not far below the fixed toolbar) can
-    // still sit squarely inside a vertically centered dialog's own footprint. Scrolls there first,
-    // same as before, then — once the dialog this call is about to open has actually rendered and
-    // settled (nested rAF: one for React's commit, one for layout) — nudges the row down just
-    // clear of that dialog's bottom edge if the two still overlap, so it's never hidden either way.
+    // James's report: scrolling the row to the top of the grid still left it hidden — first behind
+    // the warning dialog itself (.validation-overlay centers its dialog over the WHOLE viewport, so
+    // a row scrolled merely to "the top of the grid" can still sit inside its footprint), and
+    // separately behind the app's own sticky header bar and the grid's own frozen column-number
+    // header rows, which occupy that same top strip without taking up room in the page's scroll
+    // flow — scrollIntoView has no way to know about either. Scrolls there first, same as before,
+    // then — once the dialog this call is about to open has actually rendered and settled (nested
+    // rAF: one for React's commit, one for layout) — nudges the row down clear of whichever of
+    // those is lowest, via the same check Find's own jump uses (scrollHelpers.ts).
     requestAnimationFrame(() => {
       const input = document.getElementById(descInputId(level, rowId)) as HTMLInputElement | null;
       if (!input) return;
       input.scrollIntoView({ block: 'start' });
       requestAnimationFrame(() => {
-        const dialogs = document.querySelectorAll('.validation-dialog');
-        const dialog = dialogs[dialogs.length - 1] as HTMLElement | undefined;
-        if (dialog) {
-          const dialogRect = dialog.getBoundingClientRect();
-          const inputRect = input.getBoundingClientRect();
-          const overlaps = inputRect.top < dialogRect.bottom && inputRect.bottom > dialogRect.top;
-          if (overlaps) window.scrollBy({ top: inputRect.top - (dialogRect.bottom + 16) });
-        }
+        nudgeBelowStickyObstructions(input);
         input.focus();
         input.select();
       });
@@ -2532,7 +2547,7 @@ export default function App() {
         onBulkReplaceComplete={refreshLibrary}
       />
       <div className="app">
-      <div className="app-sticky-top">
+      <div className="app-sticky-top" ref={stickyTopRef}>
       <header className="app-header">
         <div className="app-heading-block">
           <h1 className="app-heading">The ERP Doctor Taxonomy Builder</h1>
@@ -3316,7 +3331,7 @@ export default function App() {
         <div className="validation-overlay" onClick={() => setNumericOverflowPrompt(null)}>
           <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
             <p>
-              Column {numericOverflowPrompt.group.level + 1}, under "
+              Row {numericOverflowPrompt.group.rowNumber}, Column {numericOverflowPrompt.group.level + 1}, under "
               {numericOverflowPrompt.group.ancestorPath.join(' › ') || '(top level)'}":
             </p>
             <p>
@@ -3339,7 +3354,7 @@ export default function App() {
                   setNumericOverflowPrompt(null);
                   setShowAutoCode(false);
                   setLoadError(
-                    `Auto Code stopped — nothing was changed. Fix the group under "${numericOverflowPrompt.group.ancestorPath.join(' › ') || '(top level)'}" (Column ${numericOverflowPrompt.group.level + 1}, ${numericOverflowPrompt.group.ordinaryCount} entries) manually, then run Auto Code again.`,
+                    `Auto Code stopped — nothing was changed. Fix the group starting at Row ${numericOverflowPrompt.group.rowNumber}, under "${numericOverflowPrompt.group.ancestorPath.join(' › ') || '(top level)'}" (Column ${numericOverflowPrompt.group.level + 1}, ${numericOverflowPrompt.group.ordinaryCount} entries) manually, then run Auto Code again.`,
                   );
                 }}
               >
