@@ -13,7 +13,7 @@ import {
   findLeafCaseMismatch,
 } from './guidance';
 import { codeInputId, descInputId } from './domIds';
-import { fillMissingCodesAtLevel, practicalGapOptions } from './autoCode';
+import { codePoolPreview, fillMissingCodesAtLevel, practicalGapOptions } from './autoCode';
 import type { TaxonomyBlock } from './blockTransfer';
 import { parseBlockFile } from './blockTransfer';
 import type { HelpTextMap } from './helpText';
@@ -2276,8 +2276,23 @@ export default function Grid({
 
   function runFillMissingCodes(level: number, gapIncrement: number, clickedRowIdx: number) {
     const result = fillMissingCodesAtLevel(rows, level, paddingChar, codeRestriction, gapIncrement);
-    const changed = result.some((row, i) => row.codes[level] !== rows[i].codes[level]);
-    if (!changed) {
+    // James's report (2026-11-23): a column with a real but UNFILLABLE gap (e.g. three blank rows
+    // between already-coded "B" and "D", with room for only one more code) said "No missing codes
+    // to fill in this column" -- technically read as "there's nothing to do here", when actually
+    // there WAS something to do, it just couldn't fit. Root cause of that specific wording, plus a
+    // second, separate bug it was masking: comparing EVERY row's own `codes[level]` (not just the
+    // rows genuinely AT this level) meant padCodes -- always run as the last step of this same
+    // pipeline -- padding some unrelated ancestor/heading row's trailing cell at this column for
+    // the first time could register as "something changed" even when nothing the user actually
+    // asked about moved. Scoping both checks to rows whose OWN level is this one fixes both: only
+    // a real sibling's own code counts as "changed", and a real sibling left blank after the fill
+    // is reported honestly as "no room", not folded into "nothing needed filling".
+    const realRowAtLevel = (i: number) => levelOf(rows[i]) === level;
+    const anyChanged = rows.some((row, i) => realRowAtLevel(i) && row.codes[level] !== result[i].codes[level]);
+    const anyStillBlank = rows.some((_, i) => realRowAtLevel(i) && !result[i].codes[level]);
+    const noRoomMessage =
+      "There's a gap here, but not enough room between the existing codes to fit every blank row — you'll need to adjust a neighbouring code, or recode this group manually.";
+    if (!anyChanged) {
       // James's report (2026-10-22): right-clicking a visibly blank code cell on a row that has
       // no description yet still said "No missing codes" -- true of every OTHER row in the
       // column, but misleading here: levelOf (description-driven everywhere, deliberately) can't
@@ -2288,18 +2303,24 @@ export default function Grid({
       showValidationError(
         clickedRowBlank
           ? "This row doesn't have a description yet, so Taxonomy Builder can't tell which group it belongs to — type a description in first, then Fill Missing Codes can code it."
-          : 'No missing codes to fill in this column.',
+          : anyStillBlank
+            ? noRoomMessage
+            : 'No missing codes to fill in this column.',
       );
       return;
     }
     onChange(result);
     setSelection(null);
+    if (anyStillBlank) showValidationError(`Some rows were filled. ${noRoomMessage}`);
   }
 
   // Shared with the gap-choice dialog's own <select> (below) so its option text and the actual
-  // gap value it applies can never drift apart.
+  // gap value it applies can never drift apart. Draws from the taxonomy's own Code Restriction
+  // pool (codePoolPreview) rather than always showing digits, so e.g. Alpha Upper Case Only shows
+  // "A, C, E, …" instead of an example it could never actually produce.
   function gapOptionLabel(gapIncrement: number): string {
-    const example = [1, 1 + gapIncrement, 1 + 2 * gapIncrement].join(', ');
+    const pool = codePoolPreview(codeRestriction);
+    const example = [0, gapIncrement, 2 * gapIncrement].map((i) => pool[i] ?? '…').join(', ');
     return gapIncrement === 1 ? `Sequential — ${example}, …` : `Skip ${gapIncrement - 1} — ${example}, …`;
   }
 

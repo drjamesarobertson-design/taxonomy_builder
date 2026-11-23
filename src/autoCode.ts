@@ -75,6 +75,35 @@ function groupSiblingIndices(rows: TaxonomyRow[], level: number): Map<string, nu
 // this scheme draws from, for both the everyday case (<=9 siblings) and the rare overflow case.
 const CODE_SLOTS = '123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
+// James's report (2026-11-23): Fill Missing Codes under "Alpha Upper Case Only" (and the other
+// alpha-exclusive restrictions) still handed out digits — "1", "3", "5" — even though
+// isAllowedByCodeRestriction (codeValidation.ts) has never allowed a digit under those
+// restrictions. Root cause: every gap-coded fill in this file always drew straight from
+// CODE_SLOTS, the one fixed digits-then-uppercase pool, with no regard for the taxonomy's own
+// Code Restriction setting. This builds the actual pool of characters a fill is allowed to use,
+// so the restriction is respected by construction rather than relying on a later validation pass
+// to catch what should never have been offered in the first place.
+//
+// Lower-case letters ("Alpha Numeric with All Alpha" and "Alpha Both Cases Only" both allow them
+// on top of what's listed here) are deliberately left out of auto-generation for now — typing one
+// by hand still works, this only governs what the Fill Missing Codes / Auto Code engines
+// themselves hand out — pending the separate upper/lower-case design question James raised
+// alongside this fix.
+function codePoolFor(codeRestriction: CodeRestriction): string[] {
+  const digits = CODE_SLOTS.slice(0, 9);
+  const upper = CODE_SLOTS.slice(9);
+  switch (codeRestriction) {
+    case 'Numeric Only':
+      return digits;
+    case 'Alpha Upper Case Only':
+    case 'Alpha Both Cases Only':
+      return upper;
+    case 'Alpha Numeric with Upper Case Alpha Only':
+    case 'Alpha Numeric with All Alpha':
+      return CODE_SLOTS;
+  }
+}
+
 // Evenly spreads `count` ORDINARY (non-Other) siblings across the first 8 slots ("1".."8") using
 // a genuine, constant step ("gap coding" — CLAUDE.md Section 4.4's "1, 3, 5..."), not a stretch
 // that always reaches both ends of the range regardless of how few siblings there are — James's
@@ -119,15 +148,15 @@ function spreadSlots(count: number, availableSlots = 8): string[] {
 // and handing later siblings no code at all (`undefined`), which is what a plain `i * gapIncrement`
 // index does once (count - 1) * gapIncrement reaches 36. Clamps to the largest step that still
 // lets every sibling land on a real slot; never below 1 (sequential always fits).
-function maxFixedGapFor(count: number): number {
+function maxFixedGapFor(count: number, pool: string[]): number {
   if (count <= 1) return Number.MAX_SAFE_INTEGER;
-  return Math.max(1, Math.floor((CODE_SLOTS.length - 1) / (count - 1)));
+  return Math.max(1, Math.floor((pool.length - 1) / (count - 1)));
 }
 
-function spreadSlotsFixed(count: number, gapIncrement: number): string[] {
+function spreadSlotsFixed(count: number, gapIncrement: number, pool: string[]): string[] {
   if (count <= 0) return [];
-  const gap = Math.min(gapIncrement, maxFixedGapFor(count));
-  return Array.from({ length: count }, (_, i) => CODE_SLOTS[i * gap]);
+  const gap = Math.min(gapIncrement, maxFixedGapFor(count, pool));
+  return Array.from({ length: count }, (_, i) => pool[i * gap]);
 }
 
 function isFixedGapRestriction(codeRestriction: CodeRestriction): boolean {
@@ -150,6 +179,7 @@ function isFixedGapRestriction(codeRestriction: CodeRestriction): boolean {
 // before this existed); any array of length < 2 should be treated as "no real choice", too.
 export function practicalGapOptions(rows: TaxonomyRow[], level: number, codeRestriction: CodeRestriction): number[] {
   if (!isFixedGapRestriction(codeRestriction)) return [];
+  const pool = codePoolFor(codeRestriction);
   const groups = groupSiblingIndices(rows, level);
   let maxGap = 9;
   let anyMultiRowGreenfield = false;
@@ -157,10 +187,17 @@ export function practicalGapOptions(rows: TaxonomyRow[], level: number, codeRest
     if (indices.some((i) => rows[i].codes[level])) continue;
     if (indices.length < 2) continue;
     anyMultiRowGreenfield = true;
-    maxGap = Math.min(maxGap, maxFixedGapFor(indices.length));
+    maxGap = Math.min(maxGap, maxFixedGapFor(indices.length, pool));
   }
   if (!anyMultiRowGreenfield) return [];
   return Array.from({ length: maxGap }, (_, i) => i + 1);
+}
+
+/** Grid.tsx's gap-choice dialog shows a real example for each option (e.g. "A, C, E, …" under
+ * Alpha Upper Case Only, not always digits) — exported so its examples can never drift from the
+ * pool a fill will actually draw from. */
+export function codePoolPreview(codeRestriction: CodeRestriction): string[] {
+  return codePoolFor(codeRestriction);
 }
 
 // Assigns codes to every row whose own code at `level` is still blank, one sibling group at a
@@ -195,7 +232,7 @@ function assignGroupCodes(
   codeRestriction: CodeRestriction,
   gapIncrement: number,
 ): TaxonomyRow[] {
-  if (indices.some((i) => rows[i].codes[level])) return fillOrderedGaps(rows, indices, level);
+  if (indices.some((i) => rows[i].codes[level])) return fillOrderedGaps(rows, indices, level, codeRestriction);
 
   // Greenfield spread — see the block comment above. A row that already holds a real code can
   // never reach here (the check above routes any such group to fillOrderedGaps instead), but
@@ -207,6 +244,7 @@ function assignGroupCodes(
   const ordinaryIndices = indices.filter((i) => !otherIndexSet.has(i));
   const used = new Set(indices.map((i) => result[i].codes[level]).filter((c) => c));
   const useFixedGap = isFixedGapRestriction(codeRestriction);
+  const pool = useFixedGap ? codePoolFor(codeRestriction) : CODE_SLOTS;
 
   const otherTrails =
     ordinaryIndices.length === 0 || otherIndices.every((oi) => oi > ordinaryIndices[ordinaryIndices.length - 1]);
@@ -214,7 +252,7 @@ function assignGroupCodes(
   if (!otherTrails) {
     // Fallback: every sibling, in row order, sharing one spread — no reserved slot, since a
     // reservation only makes sense when nothing ordinary follows it.
-    const slots = useFixedGap ? spreadSlotsFixed(indices.length, gapIncrement) : spreadSlots(indices.length);
+    const slots = useFixedGap ? spreadSlotsFixed(indices.length, gapIncrement, pool) : spreadSlots(indices.length);
     let slotPos = 0;
     for (const idx of indices) {
       const row = result[idx];
@@ -229,7 +267,7 @@ function assignGroupCodes(
     return result;
   }
 
-  const slots = useFixedGap ? spreadSlotsFixed(ordinaryIndices.length, gapIncrement) : spreadSlots(ordinaryIndices.length);
+  const slots = useFixedGap ? spreadSlotsFixed(ordinaryIndices.length, gapIncrement, pool) : spreadSlots(ordinaryIndices.length);
   let slotPos = 0;
   for (const idx of ordinaryIndices) {
     const row = result[idx];
@@ -242,17 +280,19 @@ function assignGroupCodes(
     result[idx] = { ...row, codes: row.codes.map((c, i) => (i === level ? code : c)) };
   }
 
-  // "9" (index 8) whenever the ordinary siblings fit within 1-8; otherwise the next slot past
-  // however far they actually reached — found from the spread's own last slot rather than
+  // "9" (index 8) whenever the ordinary siblings fit within 1-8 (or, under a pure-letter
+  // restriction with no digits, the pool's own 9th character — the same "one slot past a 1-8
+  // spread" rule, just generalised to whatever pool is actually in play); otherwise the next slot
+  // past however far they actually reached — found from the spread's own last slot rather than
   // assumed from `ordinaryIndices.length`, since a gap greater than 1 (the overflow case,
   // count > 8) can reach a higher index than the sibling count alone would suggest.
-  const highestOrdinarySlotIndex = slots.length > 0 ? CODE_SLOTS.indexOf(slots[slots.length - 1]) : -1;
+  const highestOrdinarySlotIndex = slots.length > 0 ? pool.indexOf(slots[slots.length - 1]) : -1;
   let otherSlotIndex = Math.max(8, highestOrdinarySlotIndex + 1);
   for (const idx of otherIndices) {
     const row = result[idx];
     if (row.codes[level]) continue;
-    while (otherSlotIndex < CODE_SLOTS.length && used.has(CODE_SLOTS[otherSlotIndex])) otherSlotIndex++;
-    const code = CODE_SLOTS[otherSlotIndex];
+    while (otherSlotIndex < pool.length && used.has(pool[otherSlotIndex])) otherSlotIndex++;
+    const code = pool[otherSlotIndex];
     if (!code) continue;
     used.add(code);
     otherSlotIndex++;
@@ -337,14 +377,26 @@ function replaceCode(rows: TaxonomyRow[], idx: number, level: number, code: stri
  * and forcing something in there would just as surely break ascending order the other way) —
  * left untouched otherwise, falling back to the ordinary one-row-at-a-time Audit walkthrough (or,
  * for "Fill Missing Codes", to being coded by hand) for it. */
-function fillOrderedGaps(rows: TaxonomyRow[], indices: number[], level: number): TaxonomyRow[] {
+function fillOrderedGaps(
+  rows: TaxonomyRow[],
+  indices: number[],
+  level: number,
+  codeRestriction: CodeRestriction,
+): TaxonomyRow[] {
+  // James's report (2026-11-23): patching a gap between two already-coded siblings (e.g. "A" and
+  // "D") could still hand out a digit for a pure-alpha restriction — CODE_SLOTS.indexOf always
+  // finds an existing letter's real position regardless of restriction, so that part was already
+  // safe, but a blank run with NOTHING coded yet before it (floorSlot still -1) filled starting
+  // from CODE_SLOTS' own slot 0 ("1"), not the restriction's own first allowed character. Walking
+  // the restriction's own pool throughout keeps every NEWLY assigned character inside it.
+  const pool = isFixedGapRestriction(codeRestriction) ? codePoolFor(codeRestriction) : CODE_SLOTS;
   let result = rows;
   let floorSlot = -1;
   let i = 0;
   while (i < indices.length) {
     const existing = result[indices[i]].codes[level];
     if (existing) {
-      const slot = CODE_SLOTS.indexOf(existing);
+      const slot = pool.indexOf(existing);
       if (slot > floorSlot) floorSlot = slot;
       i++;
       continue;
@@ -353,12 +405,12 @@ function fillOrderedGaps(rows: TaxonomyRow[], indices: number[], level: number):
     while (j < indices.length && !result[indices[j]].codes[level]) j++;
     const runLength = j - i;
     const hasCeiling = j < indices.length;
-    const ceilingSlot = hasCeiling ? CODE_SLOTS.indexOf(result[indices[j]].codes[level]) : CODE_SLOTS.length;
+    const ceilingSlot = hasCeiling ? pool.indexOf(result[indices[j]].codes[level]) : pool.length;
     const room = ceilingSlot - floorSlot - 1;
     if (room >= runLength) {
       for (let k = 0; k < runLength; k++) {
         const slot = floorSlot + 1 + k;
-        result = replaceCode(result, indices[i + k], level, CODE_SLOTS[slot]);
+        result = replaceCode(result, indices[i + k], level, pool[slot]);
       }
       floorSlot += runLength;
     }
