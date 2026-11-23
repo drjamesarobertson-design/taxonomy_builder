@@ -192,18 +192,23 @@ function maxGapForRun(room: number, runLength: number): number {
 // sibling, spreadSlots, which already has its own adaptive rule for that restriction alone.
 // Returns [] when the prompt isn't warranted at all (call site should just fill directly, same as
 // before this existed); any array of length < 2 should be treated as "no real choice", too.
-export function practicalGapOptions(rows: TaxonomyRow[], level: number, codeRestriction: CodeRestriction): number[] {
-  if (!isFixedGapRestriction(codeRestriction)) return [];
-  const pool = codePoolFor(codeRestriction);
+interface GapFitState {
+  maxGap: number;
+  anyGapChoiceRelevant: boolean;
+}
+
+// The actual per-level scan, factored out so the column-scoped Fill Missing Codes prompt
+// (practicalGapOptions) and the whole-taxonomy Auto Code prompt (practicalGapOptionsForAutoCode,
+// below) can never disagree about what counts as a real choice at one level — the only difference
+// between them is how many levels get folded into one `state`.
+function scanLevelForGapFit(rows: TaxonomyRow[], level: number, pool: string[], state: GapFitState): void {
   const groups = groupSiblingIndices(rows, level);
-  let maxGap = 9;
-  let anyGapChoiceRelevant = false;
   for (const indices of groups.values()) {
     if (!indices.some((i) => rows[i].codes[level])) {
       // Greenfield.
       if (indices.length < 2) continue;
-      anyGapChoiceRelevant = true;
-      maxGap = Math.min(maxGap, maxFixedGapFor(indices.length, pool));
+      state.anyGapChoiceRelevant = true;
+      state.maxGap = Math.min(state.maxGap, maxFixedGapFor(indices.length, pool));
       continue;
     }
     // Patch — a dry run of fillOrderedGaps' own walk (no mutation), just to find each blank run's
@@ -230,16 +235,39 @@ export function practicalGapOptions(rows: TaxonomyRow[], level: number, codeRest
       if (room >= runLength) {
         const fit = maxGapForRun(room, runLength);
         if (runLength >= 2 && fit >= 2) {
-          anyGapChoiceRelevant = true;
-          maxGap = Math.min(maxGap, fit);
+          state.anyGapChoiceRelevant = true;
+          state.maxGap = Math.min(state.maxGap, fit);
         }
         floorSlot += runLength * fit;
       }
       i = j;
     }
   }
-  if (!anyGapChoiceRelevant) return [];
-  return Array.from({ length: maxGap }, (_, i) => i + 1);
+}
+
+export function practicalGapOptions(rows: TaxonomyRow[], level: number, codeRestriction: CodeRestriction): number[] {
+  if (!isFixedGapRestriction(codeRestriction)) return [];
+  const state: GapFitState = { maxGap: 9, anyGapChoiceRelevant: false };
+  scanLevelForGapFit(rows, level, codePoolFor(codeRestriction), state);
+  if (!state.anyGapChoiceRelevant) return [];
+  return Array.from({ length: state.maxGap }, (_, i) => i + 1);
+}
+
+// James's ask (2026-11-23): Auto Code's own dialog should show (and let him override) the gap it's
+// about to use, the same way Fill Missing Codes already does — rather than silently applying
+// whatever Settings' Auto Code Gap Increment happens to hold. Auto Code sweeps every level in one
+// pass, so the practical ceiling here is the smallest fit found anywhere in the WHOLE taxonomy —
+// a gap that breaks even one group somewhere would break Auto Code's single pass over everything.
+export function practicalGapOptionsForAutoCode(rows: TaxonomyRow[], codeRestriction: CodeRestriction): number[] {
+  if (!isFixedGapRestriction(codeRestriction)) return [];
+  const pool = codePoolFor(codeRestriction);
+  const maxLevel = maxLevelUsed(rows);
+  const state: GapFitState = { maxGap: 9, anyGapChoiceRelevant: false };
+  for (let level = 0; level <= maxLevel; level++) {
+    scanLevelForGapFit(rows, level, pool, state);
+  }
+  if (!state.anyGapChoiceRelevant) return [];
+  return Array.from({ length: state.maxGap }, (_, i) => i + 1);
 }
 
 // James's report (2026-11-23): the gap-choice dialog's examples, built from codePoolFor's one
@@ -424,6 +452,9 @@ export interface NumericOverflowGroup {
   parentDescription: string;
   ordinaryCount: number;
   maxAllowed: number;
+  /** The group's own first row — James's ask: drop the cursor there and scroll it into view the
+   * moment the overflow prompt appears, rather than leaving him to go hunting for it himself. */
+  firstRowId: string;
 }
 
 // James's ask (2026-11-23), items 2 and 4 together: before Auto Code writes anything under
@@ -453,6 +484,7 @@ export function findNumericOverflowGroups(rows: TaxonomyRow[]): NumericOverflowG
         parentDescription: parentIdx === -1 ? '(top level)' : rows[parentIdx].descriptions[parentLevel] || '(unnamed heading)',
         ordinaryCount,
         maxAllowed,
+        firstRowId: rows[indices[0]].id,
       });
     }
   }
