@@ -163,16 +163,29 @@ function isFixedGapRestriction(codeRestriction: CodeRestriction): boolean {
   return codeRestriction !== 'Numeric Only';
 }
 
+// The largest step a single blank run can take without reaching its ceiling neighbour — shared
+// between practicalGapOptions' dry run (below) and fillOrderedGaps' real one, so the two can never
+// disagree about what "fits". `room` is however many free slots sit strictly between the floor and
+// ceiling; a run only reaches here once `room >= runLength` is already known true (plain sequential
+// fits), so this is always >= 1.
+function maxGapForRun(room: number, runLength: number): number {
+  return Math.max(1, Math.floor(room / runLength));
+}
+
 // James's ask (2026-11-23): "Fill Missing Codes" should offer an interactive choice of gap —
 // Sequential, Skip 1, Skip 2, … — filtered to only the steps that will actually fit, before
-// filling a column. Only meaningful for a "greenfield" sibling group (assignGroupCodes, above —
-// nothing coded yet) with at least two members: a "patch" group (fillOrderedGaps) isn't a gap
-// choice at all, and a lone greenfield member always gets the pool's first slot regardless of
-// gap, so neither is worth asking about. A level can hold several sibling groups at once (one per
-// parent); since fillMissingCodesAtLevel applies one chosen gap to the whole column in one pass,
-// the practical ceiling is the SMALLEST of every affected group's own fit (maxFixedGapFor) — a
-// gap that doesn't fit even one group would break it — also capped at 9 ("Skip 8") purely to keep
-// the list a sane length; real taxonomy groups are far smaller than the slot pool allows.
+// filling a column. Originally scoped to "greenfield" sibling groups only (assignGroupCodes,
+// above — nothing coded yet); James's own follow-up test showed a "patch" group (fillOrderedGaps
+// — some codes already exist, e.g. filling blanks between an existing "B" and "Z") can have just
+// as much real room for a gap, and reading it as "fills sequential, does not offer to gap code"
+// was a fair reading of what shipped first. Both kinds of group are considered now: a lone
+// greenfield member, or a blank run only one slot wide, never has a real choice regardless (any
+// gap gives the same single result), so those still don't count towards there being something to
+// ask about. A level can hold several sibling groups at once (one per parent); since
+// fillMissingCodesAtLevel applies one chosen gap to the whole column in one pass, the practical
+// ceiling is the SMALLEST of every affected group's/run's own fit — a gap that doesn't fit even
+// one of them would break it — also capped at 9 ("Skip 8") purely to keep the list a sane length;
+// real taxonomy groups are far smaller than the slot pool allows.
 // Numeric Only never gets this prompt (isFixedGapRestriction) — see spreadSlotsFixed's own
 // sibling, spreadSlots, which already has its own adaptive rule for that restriction alone.
 // Returns [] when the prompt isn't warranted at all (call site should just fill directly, same as
@@ -182,14 +195,48 @@ export function practicalGapOptions(rows: TaxonomyRow[], level: number, codeRest
   const pool = codePoolFor(codeRestriction);
   const groups = groupSiblingIndices(rows, level);
   let maxGap = 9;
-  let anyMultiRowGreenfield = false;
+  let anyGapChoiceRelevant = false;
   for (const indices of groups.values()) {
-    if (indices.some((i) => rows[i].codes[level])) continue;
-    if (indices.length < 2) continue;
-    anyMultiRowGreenfield = true;
-    maxGap = Math.min(maxGap, maxFixedGapFor(indices.length, pool));
+    if (!indices.some((i) => rows[i].codes[level])) {
+      // Greenfield.
+      if (indices.length < 2) continue;
+      anyGapChoiceRelevant = true;
+      maxGap = Math.min(maxGap, maxFixedGapFor(indices.length, pool));
+      continue;
+    }
+    // Patch — a dry run of fillOrderedGaps' own walk (no mutation), just to find each blank run's
+    // room against its real neighbours. Advances floorSlot by each run's OWN best fit, which can
+    // differ slightly from the single gap the column ends up using once every run shares it — an
+    // acceptable approximation for an advisory list, since fillOrderedGaps itself re-derives and
+    // self-clamps the real fit per run regardless of what this suggested here.
+    let floorSlot = -1;
+    let i = 0;
+    while (i < indices.length) {
+      const existing = rows[indices[i]].codes[level];
+      if (existing) {
+        const slot = pool.indexOf(existing);
+        if (slot > floorSlot) floorSlot = slot;
+        i++;
+        continue;
+      }
+      let j = i;
+      while (j < indices.length && !rows[indices[j]].codes[level]) j++;
+      const runLength = j - i;
+      const hasCeiling = j < indices.length;
+      const ceilingSlot = hasCeiling ? pool.indexOf(rows[indices[j]].codes[level]) : pool.length;
+      const room = ceilingSlot - floorSlot - 1;
+      if (room >= runLength) {
+        const fit = maxGapForRun(room, runLength);
+        if (runLength >= 2 && fit >= 2) {
+          anyGapChoiceRelevant = true;
+          maxGap = Math.min(maxGap, fit);
+        }
+        floorSlot += runLength * fit;
+      }
+      i = j;
+    }
   }
-  if (!anyMultiRowGreenfield) return [];
+  if (!anyGapChoiceRelevant) return [];
   return Array.from({ length: maxGap }, (_, i) => i + 1);
 }
 
@@ -232,7 +279,7 @@ function assignGroupCodes(
   codeRestriction: CodeRestriction,
   gapIncrement: number,
 ): TaxonomyRow[] {
-  if (indices.some((i) => rows[i].codes[level])) return fillOrderedGaps(rows, indices, level, codeRestriction);
+  if (indices.some((i) => rows[i].codes[level])) return fillOrderedGaps(rows, indices, level, codeRestriction, gapIncrement);
 
   // Greenfield spread — see the block comment above. A row that already holds a real code can
   // never reach here (the check above routes any such group to fillOrderedGaps instead), but
@@ -382,6 +429,7 @@ function fillOrderedGaps(
   indices: number[],
   level: number,
   codeRestriction: CodeRestriction,
+  gapIncrement: number,
 ): TaxonomyRow[] {
   // James's report (2026-11-23): patching a gap between two already-coded siblings (e.g. "A" and
   // "D") could still hand out a digit for a pure-alpha restriction — CODE_SLOTS.indexOf always
@@ -390,6 +438,10 @@ function fillOrderedGaps(
   // from CODE_SLOTS' own slot 0 ("1"), not the restriction's own first allowed character. Walking
   // the restriction's own pool throughout keeps every NEWLY assigned character inside it.
   const pool = isFixedGapRestriction(codeRestriction) ? codePoolFor(codeRestriction) : CODE_SLOTS;
+  // Numeric Only never offers a gap choice (practicalGapOptions, isFixedGapRestriction) — the
+  // settings default still arrives here unchanged, so it's forced back to plain sequential rather
+  // than silently picking up a gap nothing ever asked for or confirmed fits nine digits.
+  const effectiveGap = isFixedGapRestriction(codeRestriction) ? gapIncrement : 1;
   let result = rows;
   let floorSlot = -1;
   let i = 0;
@@ -408,11 +460,18 @@ function fillOrderedGaps(
     const ceilingSlot = hasCeiling ? pool.indexOf(result[indices[j]].codes[level]) : pool.length;
     const room = ceilingSlot - floorSlot - 1;
     if (room >= runLength) {
+      // James's report (2026-11-23): a gap between two real codes with genuine spare room (e.g.
+      // "B" and "Z", eight blanks between them) always filled plain-consecutive, with no way to
+      // leave room for later insertions the way a greenfield spread already could — self-clamped
+      // to whatever this one run can actually fit, same safety-net pattern as spreadSlotsFixed and
+      // Auto Code's own adaptive limiting, so the one gap chosen for the whole column never breaks
+      // a tighter run elsewhere in the same group.
+      const gap = Math.min(effectiveGap, maxGapForRun(room, runLength));
       for (let k = 0; k < runLength; k++) {
-        const slot = floorSlot + 1 + k;
+        const slot = floorSlot + (k + 1) * gap;
         result = replaceCode(result, indices[i + k], level, pool[slot]);
       }
-      floorSlot += runLength;
+      floorSlot += runLength * gap;
     }
     // else: not enough room for even one character per blank between the two real codes on
     // either side — leave this run exactly as it is.
