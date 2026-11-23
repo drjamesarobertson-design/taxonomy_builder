@@ -106,34 +106,43 @@ function codePoolFor(codeRestriction: CodeRestriction): string[] {
   }
 }
 
-// Evenly spreads `count` ORDINARY (non-Other) siblings across the first 8 slots ("1".."8") using
-// a genuine, constant step ("gap coding" — CLAUDE.md Section 4.4's "1, 3, 5..."), not a stretch
-// that always reaches both ends of the range regardless of how few siblings there are — James's
-// report: two entries came out "1" and "8" (the two extremes of the whole range) instead of
-// leaving even, insertable room on both sides, e.g. "1" and "5". The step is
-// `floor(8 / count)`, starting at slot 0 ("1") — for count = 2 that's a step of 4, giving "1"
-// and "5"; for count = 8 (filling every ordinary slot) the step collapses to 1, giving
-// consecutive "1".."8", since a real gap can no longer fit for all of them at once ("juggling
-// the gap down" as the group actually needs it, not a fixed step regardless of count). "9"
-// (index 8) is deliberately left out of this spread — reserved for a possible Other/
-// Miscellaneous sibling in the same group, see assignLevelCodes below — which the maths above
-// guarantees room for as long as count stays at 8 or fewer.
+// James's ask (2026-11-23), confirmed after flagging the conflict with the original rule this
+// replaced (below): Numeric Only's own adaptive spread should always stretch to use the FULL
+// range actually available to it, landing the first ordinary sibling on slot 0 and the last on
+// `ceilingIndex` whenever there are 2 or more — his own example, 7 ordinary siblings with 9
+// digits available, should land on "1" and "9" with two gaps distributed somewhere in between,
+// not collapse to plain consecutive "1".."7" and leave "8"/"9" completely unused just because a
+// constant step rounds down to 1. Evenly distributes `count` items across slot indices
+// [0, ceilingIndex] — the classic "N points spaced across a line" rounding — so leftover capacity
+// becomes gaps between siblings instead of unused slots at the tail. The caller works out
+// `ceilingIndex` (assignGroupCodes, below): the small in-range ceiling (8 or 9 digits, depending
+// on whether a trailing Other/Miscellaneous needs its own reserved slot past it) when the group
+// fits there, or the full alphanumeric pool's own last index otherwise — in that overflow case,
+// stretching all the way to the pool's own end is also what lets a trailing Other/Miscellaneous
+// land on "Z" rather than merely "whatever came after wherever the ordinary spread happened to
+// reach", since the ordinary spread now always reaches exactly one slot short of it by construction.
 //
-// Past 8 ordinary siblings — a rare case, well past the taxonomy's own 5-9 guidance — 8 slots
-// can no longer hold them all, so the spread continues into the full alphanumeric pool instead,
-// still reaching for a genuine gap rather than collapsing straight to bare consecutive digits
-// and letters: it starts from a step of 2 and juggles that down by one at a time, only as far as
-// actually needed, until every sibling lands on a distinct, in-range slot.
-function spreadSlots(count: number, availableSlots = 8): string[] {
+// Retired rule this replaces: a genuine constant step (`floor(availableSlots / count)`), chosen
+// specifically so two siblings landed on "1" and "5" rather than stretching to "1" and "8" — the
+// two extremes of the whole range, with no room left on either side. Revisited and reversed once
+// James saw the new rule's own consequence (a plain run of "1".."7" with two slots never used at
+// all) and preferred the full-range spread instead, even for a small group.
+function spreadSlots(count: number, ceilingIndex: number): string[] {
   if (count <= 0) return [];
   if (count === 1) return [CODE_SLOTS[0]];
-  if (count <= availableSlots) {
-    const gap = Math.max(1, Math.floor(availableSlots / count));
-    return Array.from({ length: count }, (_, i) => CODE_SLOTS[i * gap]);
-  }
-  let gap = 2;
-  while (gap > 1 && (count - 1) * gap + 1 >= CODE_SLOTS.length) gap--;
-  return Array.from({ length: count }, (_, i) => CODE_SLOTS[i * gap]);
+  return Array.from({ length: count }, (_, i) => CODE_SLOTS[Math.round((i * ceilingIndex) / (count - 1))]);
+}
+
+// The ceiling index spreadSlots should stretch ordinary siblings across: the small in-range
+// ceiling (digits 1-8 or 1-9, depending on whether a trailing Other/Miscellaneous needs its own
+// reserved slot just past it) when `count` fits there, or the full pool's own last index
+// otherwise (again leaving the pool's actual last slot free for Other when one exists) — see
+// spreadSlots' own comment for why stretching all the way to that ceiling is what lets a trailing
+// Other/Miscellaneous land on "Z" in the overflow case, not just "wherever ordinary happened to
+// reach".
+function numericCeilingIndex(count: number, hasOther: boolean): number {
+  const smallCapacity = hasOther ? 8 : 9;
+  return count <= smallCapacity ? smallCapacity - 1 : CODE_SLOTS.length - (hasOther ? 2 : 1);
 }
 
 // James's ask: for Alpha and Alpha Numeric Code Restrictions, Auto Code's gap should be a fixed,
@@ -346,9 +355,10 @@ function assignGroupCodes(
 
   if (!otherTrails) {
     // Fallback: every sibling, in row order, sharing one spread — no reserved slot, since a
-    // reservation only makes sense when nothing ordinary follows it. Numeric Only's own ceiling
-    // is 9 digits (1-9), not 8 — see the comment below, same fix, same reasoning.
-    const slots = useFixedGap ? spreadSlotsFixed(indices.length, gapIncrement, pool) : spreadSlots(indices.length, 9);
+    // reservation only makes sense when nothing ordinary follows it (hasOther: false below).
+    const slots = useFixedGap
+      ? spreadSlotsFixed(indices.length, gapIncrement, pool)
+      : spreadSlots(indices.length, numericCeilingIndex(indices.length, false));
     let slotPos = 0;
     for (const idx of indices) {
       const row = result[idx];
@@ -368,10 +378,9 @@ function assignGroupCodes(
   // defaulted to 8 "available" slots, reserving a 9th for an Other entry that, in a group with
   // none, was never actually needed. Nine digits (1-9) genuinely fit nine ordinary siblings with
   // no Other to make room for; only reserve the 9th when there's a real Other row to put there.
-  const availableOrdinarySlots = otherIndices.length > 0 ? 8 : 9;
   const slots = useFixedGap
     ? spreadSlotsFixed(ordinaryIndices.length, gapIncrement, pool)
-    : spreadSlots(ordinaryIndices.length, availableOrdinarySlots);
+    : spreadSlots(ordinaryIndices.length, numericCeilingIndex(ordinaryIndices.length, otherIndices.length > 0));
   let slotPos = 0;
   for (const idx of ordinaryIndices) {
     const row = result[idx];
@@ -449,9 +458,14 @@ export function autoCodeAlphaNumeric(
 export interface NumericOverflowGroup {
   key: string;
   level: number;
-  parentDescription: string;
+  /** Every ancestor's own description, top (shallowest) to bottom (immediate parent) — James's
+   * report: a plain "under 'COSTS'" was ambiguous the moment "Costs" turns up as a heading in more
+   * than one branch of the same taxonomy (a common pattern), and Find's own "first match only"
+   * made it worse. The full path disambiguates without the user needing to go searching at all. */
+  ancestorPath: string[];
   ordinaryCount: number;
   maxAllowed: number;
+  hasOther: boolean;
   /** The group's own first row — James's ask: drop the cursor there and scroll it into view the
    * moment the overflow prompt appears, rather than leaving him to go hunting for it himself. */
   firstRowId: string;
@@ -465,6 +479,17 @@ export interface NumericOverflowGroup {
 // should be allowed to happen without asking first). Returns every overflowing group, in the same
 // top-to-bottom order Auto Code itself would reach them, so the caller can always act on the
 // first one it hasn't already approved.
+// Every ancestor's own description, shallowest first — walks immediateParentIndex repeatedly.
+function ancestorPathFor(rows: TaxonomyRow[], idx: number): string[] {
+  const path: string[] = [];
+  let i = immediateParentIndex(rows, idx);
+  while (i !== -1) {
+    path.unshift(rows[i].descriptions[levelOf(rows[i])] || '(unnamed heading)');
+    i = immediateParentIndex(rows, i);
+  }
+  return path;
+}
+
 export function findNumericOverflowGroups(rows: TaxonomyRow[]): NumericOverflowGroup[] {
   const maxLevel = maxLevelUsed(rows);
   const result: NumericOverflowGroup[] = [];
@@ -476,14 +501,13 @@ export function findNumericOverflowGroups(rows: TaxonomyRow[]): NumericOverflowG
       const ordinaryCount = indices.length - otherCount;
       const maxAllowed = otherCount > 0 ? 8 : 9;
       if (ordinaryCount <= maxAllowed) continue;
-      const parentIdx = immediateParentIndex(rows, indices[0]);
-      const parentLevel = parentIdx === -1 ? -1 : levelOf(rows[parentIdx]);
       result.push({
         key: `${level}:${rows[indices[0]].id}`,
         level,
-        parentDescription: parentIdx === -1 ? '(top level)' : rows[parentIdx].descriptions[parentLevel] || '(unnamed heading)',
+        ancestorPath: ancestorPathFor(rows, indices[0]),
         ordinaryCount,
         maxAllowed,
+        hasOther: otherCount > 0,
         firstRowId: rows[indices[0]].id,
       });
     }

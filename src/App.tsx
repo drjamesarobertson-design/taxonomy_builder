@@ -2304,12 +2304,15 @@ export default function App() {
   // prompt entirely once James has said "for the rest of this run". Once nothing outstanding
   // remains, this runs the real fill exactly as before — the engine already handles an approved
   // overflow correctly, this function only ever decides whether to ask first.
-  // James's ask (2026-11-23): drop the cursor onto the group's own first code cell and scroll it
-  // to the top of the work area the moment an issue is found — BEFORE the warning dialog shows —
-  // rather than leaving him to go hunting through the grid for whichever group the message is
-  // actually about. Same plain DOM approach GuidanceBanner.tsx already uses for its own "drop the
-  // cursor there" warnings (codeInputId is shared for exactly this).
-  function focusCodeCell(level: number, rowId: string) {
+  // James's ask (2026-11-23): drop the cursor onto the group's own first row and scroll it to the
+  // top of the work area the moment an issue is found — BEFORE the warning dialog shows — rather
+  // than leaving him to go hunting through the grid for whichever group the message is actually
+  // about. Lands on the DESCRIPTION cell specifically, not the (blank, still-uncoded) code cell —
+  // James's own report: a focused blank code cell shows no readable text at all, giving no way to
+  // visually confirm this is really the right row; the description cell shows the actual heading
+  // text right where the cursor lands. Same plain DOM approach GuidanceBanner.tsx already uses for
+  // its own "drop the cursor there" warnings (descInputId is shared for exactly this).
+  function focusDescriptionCell(level: number, rowId: string) {
     // James's report: scrolling the row to the top of the grid still left it hidden behind the
     // warning dialog itself — .validation-overlay centers its dialog over the WHOLE viewport, so
     // a row scrolled merely to "the top of the grid" (itself not far below the fixed toolbar) can
@@ -2318,7 +2321,7 @@ export default function App() {
     // settled (nested rAF: one for React's commit, one for layout) — nudges the row down just
     // clear of that dialog's bottom edge if the two still overlap, so it's never hidden either way.
     requestAnimationFrame(() => {
-      const input = document.getElementById(codeInputId(level, rowId)) as HTMLInputElement | null;
+      const input = document.getElementById(descInputId(level, rowId)) as HTMLInputElement | null;
       if (!input) return;
       input.scrollIntoView({ block: 'start' });
       requestAnimationFrame(() => {
@@ -2341,7 +2344,7 @@ export default function App() {
     if (autoCodeType === 'Numeric Only' && !alwaysApprove) {
       const overflow = findNumericOverflowGroups(project.rows).find((g) => !approvedKeys.has(g.key));
       if (overflow) {
-        focusCodeCell(overflow.level, overflow.firstRowId);
+        focusDescriptionCell(overflow.level, overflow.firstRowId);
         setNumericOverflowPrompt({ group: overflow, approvedKeys });
         return;
       }
@@ -3313,14 +3316,21 @@ export default function App() {
         <div className="validation-overlay" onClick={() => setNumericOverflowPrompt(null)}>
           <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
             <p>
-              The group under "{numericOverflowPrompt.group.parentDescription}" has{' '}
-              {numericOverflowPrompt.group.ordinaryCount} entries, but Numeric Only can only
-              represent {numericOverflowPrompt.group.maxAllowed} at this level.
+              Column {numericOverflowPrompt.group.level + 1}, under "
+              {numericOverflowPrompt.group.ancestorPath.join(' › ') || '(top level)'}":
+            </p>
+            <p>
+              {numericOverflowPrompt.group.hasOther
+                ? `This group ends with an Other/Miscellaneous entry, which is coded "9" by default — leaving only ${numericOverflowPrompt.group.maxAllowed} further codes for its other ${numericOverflowPrompt.group.ordinaryCount} entries.`
+                : `This group has ${numericOverflowPrompt.group.ordinaryCount} entries, but Numeric Only can only represent ${numericOverflowPrompt.group.maxAllowed} at this level.`}
             </p>
             <p className="csv-import-summary">
-              Overflow into letters for this group, or stop here so it can be fixed by hand (split
-              it into two headings, or switch this taxonomy to a code restriction that allows
-              letters) before running Auto Code again?
+              Overflow into letters for this group
+              {numericOverflowPrompt.group.hasOther
+                ? ' — its Other/Miscellaneous entry will move to the very end of the alphanumeric range ("Z") —'
+                : ''}{' '}
+              or stop here so it can be fixed by hand (split it into two headings, or switch this
+              taxonomy to a code restriction that allows letters) before running Auto Code again?
             </p>
             <div className="confirm-dialog-actions">
               <button
@@ -3329,7 +3339,7 @@ export default function App() {
                   setNumericOverflowPrompt(null);
                   setShowAutoCode(false);
                   setLoadError(
-                    `Auto Code stopped — nothing was changed. Fix the group under "${numericOverflowPrompt.group.parentDescription}" (${numericOverflowPrompt.group.ordinaryCount} entries) manually, then run Auto Code again.`,
+                    `Auto Code stopped — nothing was changed. Fix the group under "${numericOverflowPrompt.group.ancestorPath.join(' › ') || '(top level)'}" (Column ${numericOverflowPrompt.group.level + 1}, ${numericOverflowPrompt.group.ordinaryCount} entries) manually, then run Auto Code again.`,
                   );
                 }}
               >

@@ -1951,20 +1951,32 @@ export default function Grid({
   }
 
   // Description right-click "Find…" — opens the search box; the actual search runs in
-  // runFind() once a query is submitted.
+  // runFind() once a query is submitted. James's ask: invoking "Find" again while a match is
+  // already highlighted should advance to the next instance rather than reopening the dialog —
+  // so this only opens the dialog when there's no active search to continue. The query text is
+  // deliberately left as-is (not cleared) so the dialog reopens pre-filled with the last search.
   function handleOpenFind() {
     setContextMenu(null);
-    setFindQuery('');
+    if (findResults) {
+      findNext();
+      return;
+    }
     setShowFindDialog(true);
   }
 
   function jumpToFindMatch(match: { rowId: string; level: number }) {
+    // A single rAF here used to land one row off the real match — the "Match X of Y" banner
+    // (which mounts in the same update as the jump) hadn't finished settling into the layout
+    // yet, so scrollIntoView measured against a stale position. Waiting two frames (the same
+    // fix used for the Auto Code overflow dialog's focus jump) lets that settle first.
     requestAnimationFrame(() => {
-      const input = document.getElementById(descInputId(match.level, match.rowId)) as HTMLInputElement | null;
-      if (!input) return;
-      input.scrollIntoView({ block: 'center' });
-      input.focus();
-      input.select();
+      requestAnimationFrame(() => {
+        const input = document.getElementById(descInputId(match.level, match.rowId)) as HTMLInputElement | null;
+        if (!input) return;
+        input.scrollIntoView({ block: 'center' });
+        input.focus();
+        input.select();
+      });
     });
   }
 
@@ -4524,6 +4536,7 @@ export default function Grid({
                 autoFocus
                 value={findQuery}
                 onChange={(e) => setFindQuery(e.target.value)}
+                onFocus={(e) => e.target.select()}
                 placeholder="Text to search for"
               />
               <div className="confirm-dialog-actions">
