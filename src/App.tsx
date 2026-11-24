@@ -2333,15 +2333,16 @@ export default function App() {
   // text right where the cursor lands. Same plain DOM approach GuidanceBanner.tsx already uses for
   // its own "drop the cursor there" warnings (descInputId is shared for exactly this).
   function focusDescriptionCell(level: number, rowId: string) {
-    // James's report: scrolling the row to the top of the grid still left it hidden — first behind
-    // the warning dialog itself (.validation-overlay centers its dialog over the WHOLE viewport, so
-    // a row scrolled merely to "the top of the grid" can still sit inside its footprint), and
-    // separately behind the app's own sticky header bar and the grid's own frozen column-number
-    // header rows, which occupy that same top strip without taking up room in the page's scroll
-    // flow — scrollIntoView has no way to know about either. Scrolls there first, same as before,
-    // then — once the dialog this call is about to open has actually rendered and settled (nested
-    // rAF: one for React's commit, one for layout) — nudges the row down clear of whichever of
-    // those is lowest, via the same check Find's own jump uses (scrollHelpers.ts).
+    // James's report: scrolling the row to the top of the grid still left it hidden behind the
+    // app's own sticky header bar and the grid's own frozen column-number header rows, which
+    // occupy that same top strip without taking up room in the page's scroll flow — scrollIntoView
+    // has no way to know about either. Scrolls there first, same as before, then — once this has
+    // settled (nested rAF: one for React's commit, one for layout) — nudges the row down clear of
+    // whichever of those is lowest, via the same check Find's own jump uses (scrollHelpers.ts).
+    // Deliberately does NOT also clear the dialog this call is about to open: James's follow-up
+    // report was that doing so pushed the row almost to the bottom of the (fairly short) work area
+    // when the dialog was tall — he'd rather it sit at the top, right below the header, even if the
+    // dialog ends up overlapping it, since the dialog's own text already names the row unambiguously.
     requestAnimationFrame(() => {
       const input = document.getElementById(descInputId(level, rowId)) as HTMLInputElement | null;
       if (!input) return;
@@ -3276,10 +3277,12 @@ export default function App() {
 
       {showAutoCode && (() => {
         // James's ask (2026-11-23): show (and let him override) the gap Auto Code is about to
-        // use, the same as Fill Missing Codes already does — only when the chosen restriction
-        // actually has a gap concept and there's something in this taxonomy for it to apply to;
-        // Numeric Only has no fixed gap at all (its own adaptive rule instead), and an empty
-        // option list otherwise just means nothing here would need spreading regardless of gap.
+        // use, the same as Fill Missing Codes already does — only when there's actually something
+        // in this taxonomy for a gap to apply to. Numeric Only's own everyday, in-range case still
+        // has no fixed gap at all (its own adaptive full-stretch rule instead) — but it now shows
+        // this too whenever the taxonomy has a group that will genuinely overflow into letters,
+        // since that overflow respects a configured gap the same as every other restriction's own
+        // overflow does (2026-11-24) — an empty option list means nothing here needs one either way.
         const autoCodeGapOptions = project ? practicalGapOptionsForAutoCode(project.rows, autoCodeType) : [];
         const gapLabel = (gapIncrement: number) => {
           const { numeric, alpha } = gapExampleParts(autoCodeType, gapIncrement);
