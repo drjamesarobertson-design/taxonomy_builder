@@ -1,6 +1,6 @@
 # Taxonomy Builder — Master Briefing
 
-*Version: v 1.15*
+*Version: v 1.16*
 
 *A one-stop orientation document: what this is, what it does today, where the
 business stands, and what's still outstanding. Written for James (or anyone
@@ -72,9 +72,14 @@ point built (`src/checkout.ts` + a toolbar dropdown); not yet clicked/
 tested live. v 1.15 (2026-11-24, same day) — tested live, successfully,
 including a full real test payment with Stripe's standard test card;
 Checkout itself is now proven fully working end to end — only the
-webhook (to actually grant the plan) remains. Increment this by one, and
-add a line here, every time this file is next updated and re-sent to him
-— see `ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md` §5, item 10.*
+webhook (to actually grant the plan) remains. v 1.16 (2026-11-24, same
+day) — James's explicit standing instruction: increment this version
+number every time this file is shared with him, not only when its
+content changes — this share is the first under that rule. **Increment
+this by one every time this file is next updated and/or shared with him
+(whichever comes first), and add a line here whenever its content
+actually changed** — see `ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md` §5, item
+10.*
 
 ---
 
