@@ -1,6 +1,6 @@
 # Taxonomy Builder — Master Briefing
 
-*Version: v 1.14*
+*Version: v 1.15*
 
 *A one-stop orientation document: what this is, what it does today, where the
 business stands, and what's still outstanding. Written for James (or anyone
@@ -8,10 +8,11 @@ he shares this with) rather than as an engineering log — for the detailed,
 round-by-round build history, see `PROGRESS.md`; for the original functional
 specification, see `CLAUDE.md`.*
 
-*Last updated: 2026-11-24 — same day as v 1.04 through v 1.13: a
-supervisor-only "Test Checkout" entry point now exists in the app
-(`src/checkout.ts` + a toolbar dropdown), ready for James to click and
-confirm the whole flow reaches a real Stripe Checkout page. See §0 and §4.*
+*Last updated: 2026-11-24 — same day as v 1.04 through v 1.14: Checkout
+itself is now proven fully working end to end, including a real test
+payment with Stripe's standard test card — the only remaining Stage C3
+work is the webhook that actually grants the paid plan once Stripe
+confirms payment. See §0 and §4.*
 
 *Version history: v 1.01 — first version stamp applied to this file
 (2026-10-14). v 1.02 — same evening, after PRs #230–#235 (see §0): Promote/
@@ -68,10 +69,12 @@ placeholder name/code got deployed unmodified on the first attempt); JWT
 verification turned off per Supabase's own recommendation. v 1.14
 (2026-11-24, same day) — a minimal, supervisor-only "Test Checkout" entry
 point built (`src/checkout.ts` + a toolbar dropdown); not yet clicked/
-tested live. Increment this by one, and add a line here, every time this
-file is next updated and re-sent to him — see
-`ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md` §5, item
-10.*
+tested live. v 1.15 (2026-11-24, same day) — tested live, successfully,
+including a full real test payment with Stripe's standard test card;
+Checkout itself is now proven fully working end to end — only the
+webhook (to actually grant the plan) remains. Increment this by one, and
+add a line here, every time this file is next updated and re-sent to him
+— see `ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md` §5, item 10.*
 
 ---
 
@@ -159,12 +162,24 @@ separate from the real, customer-facing Pricing page (`PricingPage.tsx`,
 still showing the old 3-tier draft with its own "not purchasable yet"
 disclaimer, untouched) — wiring real "Upgrade" buttons into that page is
 its own later piece, once the visual overhaul to the real 4-tier
-structure happens (Stage D/F). **Not yet tested live** — James still
-needs to actually click one and confirm it reaches a real Stripe Checkout
-page. (d) register the deployed webhook URL in Stripe and get its signing
-secret, added as a second Supabase secret; (e) write and deploy the
-webhook-receiving function; (f) one real end-to-end test with a Stripe
-test card. C4 (renewal/expiry + reminder emails) is also not started.
+structure happens (Stage D/F). **Tested live by James, 2026-11-24,
+successfully, including a full real test payment**: all three tier
+buttons opened a real Stripe Checkout page; using Stripe's standard test
+card (`4242 4242 4242 4242`, any future expiry/CVC) the payment was
+accepted and Stripe redirected cleanly back to Taxonomy Builder
+afterward, in the same browser tab — confirmed as expected/correct
+behaviour (not a bug), since that's exactly how Stripe Checkout is meant
+to be used (a full-page redirect out and back, not a popup — opening a
+new tab instead would leave two copies of the app open, which is more
+confusing, not less). **Nothing in the app visibly reacted to the
+successful payment yet** — expected, since that only happens once the
+webhook (piece (e), below) exists; `subscriptions.plan_key` for that test
+account is still `free` right now, deliberately. (d) register the
+deployed webhook URL in Stripe and get its signing secret, added as a
+second Supabase secret; (e) write and deploy the webhook-receiving
+function; (f) one real end-to-end test confirming the webhook actually
+updates `subscriptions.plan_key` this time. C4 (renewal/expiry + reminder
+emails) is also not started.
 
 **Side note from the same stretch of conversation, unrelated to any of the
 above:** going through Stripe's live-account activation flow (confirming
@@ -1064,11 +1079,18 @@ re-deriving any of this.
       legacy secret" turned off per Supabase's own recommendation.
 - [x] ~~Build a minimal "Upgrade" entry point to test the Checkout
       function~~ — done 2026-11-24: a supervisor-only "Test Checkout ▾"
-      toolbar dropdown, three paid tiers. **Not yet tested live by James.**
-- [ ] **Next:** James to actually click one of the Test Checkout buttons
-      and confirm it reaches a real Stripe Checkout page; then register
-      the webhook in Stripe and add its signing secret; write/deploy the
-      webhook Edge Function; one real end-to-end test (Stage C3, §0/§4).
+      toolbar dropdown, three paid tiers.
+- [x] ~~Test Checkout live, including a full real test payment~~ — done
+      2026-11-24: all three tiers opened a real Stripe Checkout page,
+      Stripe's test card (`4242 4242 4242 4242`) was accepted, and Stripe
+      redirected cleanly back to the app in the same tab afterward
+      (confirmed as correct, expected behaviour, not a bug). Nothing in
+      the app visibly reacted yet — expected, since that's the webhook's
+      job, not yet built.
+- [ ] **Next:** register the webhook in Stripe and add its signing
+      secret; write/deploy the webhook Edge Function; one real end-to-end
+      test confirming it actually updates `subscriptions.plan_key`
+      (Stage C3, §0/§4).
 - [ ] Build the renewal/expiry state machine and staged reminder emails
       (Stage C4, §4) — not started.
 - [ ] Resolve the live Stripe account's "missing director" compliance
