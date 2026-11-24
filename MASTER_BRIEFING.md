@@ -1,6 +1,6 @@
 # Taxonomy Builder — Master Briefing
 
-*Version: v 1.10*
+*Version: v 1.11*
 
 *A one-stop orientation document: what this is, what it does today, where the
 business stands, and what's still outstanding. Written for James (or anyone
@@ -8,10 +8,10 @@ he shares this with) rather than as an engineering log — for the detailed,
 round-by-round build history, see `PROGRESS.md`; for the original functional
 specification, see `CLAUDE.md`.*
 
-*Last updated: 2026-11-24 — same day as v 1.04 through v 1.09: Stage C3
-(the Stripe Edge Functions) is underway — the Stripe secret key is now in
-Supabase, and `supabase/0012_add_stripe_price_ids.sql` is written (not yet
-run). See §0 and §4.*
+*Last updated: 2026-11-24 — same day as v 1.04 through v 1.10: the Stripe
+Price IDs for all three paid tiers are now in `subscription_plans` —
+everything Stage C3's Checkout-Session function needs is in place except
+the function itself. See §0 and §4.*
 
 *Version history: v 1.01 — first version stamp applied to this file
 (2026-10-14). v 1.02 — same evening, after PRs #230–#235 (see §0): Promote/
@@ -58,8 +58,11 @@ Stage C3 (the Stripe Edge Functions) broken into six sub-pieces. v 1.10
 (2026-11-24, same day) — Stage C3 piece (a) done: the Stripe secret key is
 in Supabase's Edge Function secrets; `supabase/0012_add_stripe_price_ids.
 sql` written (two new columns on `subscription_plans` for each tier's
-Stripe Price ID), not yet run. Increment this by one, and add a line here,
-every time this file is next updated and re-sent to him — see
+Stripe Price ID), not yet run. v 1.11 (2026-11-24, same day) — `0012` run
+and all three paid tiers' Price IDs populated (Basic/Advanced/Enterprise);
+Stage C3 piece (b) (the Checkout-Session function itself) is next.
+Increment this by one, and add a line here, every time this file is next
+updated and re-sent to him — see
 `ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md` §5, item 10.*
 
 ---
@@ -110,11 +113,12 @@ exists yet, unlike the now well-worn SQL-migration pattern)**:
 **done, 2026-11-24** (as `STRIPE_SECRET_KEY`, Project Settings → Edge
 Functions → Secrets — note this is a *different* area from Project
 Settings → API Keys, which is Supabase's own keys, not Stripe's).
-`supabase/0012_add_stripe_price_ids.sql` also written: two nullable
-columns on `subscription_plans` to hold each tier's Stripe Price ID
-(same "live data, not hardcoded" philosophy as the rest of that table) —
-**not yet run by James**, and once it is, the three paid tiers' monthly
-Price IDs still need copying in by hand from Stripe's Product catalog.
+`supabase/0012_add_stripe_price_ids.sql` also **done, 2026-11-24**: two
+nullable columns added to `subscription_plans` (same "live data, not
+hardcoded" philosophy as the rest of that table), and the three paid
+tiers' monthly Price IDs copied in by hand from Stripe's Product catalog
+(found via Stripe's Workbench → Inspector, searching by Product ID — the
+Price ID is the separate, distinct object Checkout actually needs).
 (b) write and deploy the "create Checkout Session" function; (c) a minimal
 "Upgrade" entry point in the app to actually call it, enough to test
 end to end (the full Pricing-page visual overhaul to the real 4-tier
@@ -1015,9 +1019,9 @@ re-deriving any of this.
       the per-account plan record, defaulting every signup to Free.
 - [x] ~~Add the Stripe secret key to Supabase's Edge Function secrets~~ —
       done 2026-11-24 (as `STRIPE_SECRET_KEY`).
-- [ ] **Next:** run `supabase/0012_add_stripe_price_ids.sql`, then copy in
-      the three paid tiers' monthly Price IDs from Stripe's Product
-      catalog; write/deploy the Checkout-Session Edge Function; a minimal
+- [x] ~~Run `supabase/0012_add_stripe_price_ids.sql` and populate the
+      three paid tiers' monthly Price IDs~~ — done 2026-11-24.
+- [ ] **Next:** write/deploy the Checkout-Session Edge Function; a minimal
       "Upgrade" entry point to test it; register the webhook in Stripe and
       add its signing secret; write/deploy the webhook Edge Function; one
       real end-to-end test (Stage C3, §0/§4).
