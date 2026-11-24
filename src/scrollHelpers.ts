@@ -2,12 +2,20 @@
 // focus jump in App.tsx, Find's match jump in Grid.tsx) — James's report: a row scrolled to the
 // very top of the page can still end up hidden, because several things in this app occupy that
 // same top strip without taking up room in the page's own scroll flow: the app's sticky header
-// bar (.app-sticky-top, height varies with whether a guidance banner is showing), the grid's own
-// frozen column-number header rows (.taxonomy-grid thead), and — only while one is open — a
-// centered validation dialog. scrollIntoView has no way to know about any of these, so this
-// checks the real, current bottom edge of whichever of them are present and nudges the target
-// down past all of them if it would otherwise land underneath.
-export function nudgeBelowStickyObstructions(input: HTMLElement) {
+// bar (.app-sticky-top, height varies with whether a guidance banner is showing), and the grid's
+// own frozen column-number header rows (.taxonomy-grid thead). scrollIntoView has no way to know
+// about either, so this checks the real, current bottom edge of whichever of them are present and
+// nudges the target down past them if it would otherwise land underneath.
+//
+// James's follow-up report: nudging past a centered validation dialog too, on top of these, could
+// push the row almost to the very bottom of .grid-wrapper's own (fairly short, bounded) box when
+// the dialog is tall — he'd rather see it sit right at the top of the work area, immediately below
+// the header, even if a dialog that's about to open ends up overlapping it (the dialog's own text
+// already names the row, column and heading unambiguously, so seeing the row itself is a bonus,
+// not the only way to confirm it). `clearDialog` defaults to false for exactly that reason; Find's
+// and the Audit panel's own jumps never have a dialog open at the moment they call this anyway, so
+// they're unaffected either way.
+export function nudgeBelowStickyObstructions(input: HTMLElement, options: { clearDialog?: boolean } = {}) {
   const obstructionBottoms: number[] = [];
 
   const stickyTop = document.querySelector('.app-sticky-top');
@@ -20,9 +28,11 @@ export function nudgeBelowStickyObstructions(input: HTMLElement) {
   const gridHeaderCell = document.querySelector('.taxonomy-grid thead tr:last-child th');
   if (gridHeaderCell) obstructionBottoms.push(gridHeaderCell.getBoundingClientRect().bottom);
 
-  const dialogs = document.querySelectorAll('.validation-dialog');
-  const dialog = dialogs[dialogs.length - 1];
-  if (dialog) obstructionBottoms.push(dialog.getBoundingClientRect().bottom);
+  if (options.clearDialog) {
+    const dialogs = document.querySelectorAll('.validation-dialog');
+    const dialog = dialogs[dialogs.length - 1];
+    if (dialog) obstructionBottoms.push(dialog.getBoundingClientRect().bottom);
+  }
 
   if (obstructionBottoms.length === 0) return;
   const obstructionBottom = Math.max(...obstructionBottoms);

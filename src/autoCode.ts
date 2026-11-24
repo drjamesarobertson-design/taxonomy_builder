@@ -268,7 +268,18 @@ export function practicalGapOptions(rows: TaxonomyRow[], level: number, codeRest
 // pass, so the practical ceiling here is the smallest fit found anywhere in the WHOLE taxonomy —
 // a gap that breaks even one group somewhere would break Auto Code's single pass over everything.
 export function practicalGapOptionsForAutoCode(rows: TaxonomyRow[], codeRestriction: CodeRestriction): number[] {
-  if (!isFixedGapRestriction(codeRestriction)) return [];
+  if (!isFixedGapRestriction(codeRestriction)) {
+    // Numeric Only itself has no fixed-gap concept for its everyday, in-range case (that keeps
+    // its own adaptive full-stretch rule, assignGroupCodes) — but James's report (2026-11-24): an
+    // approved overflow into letters was always stretching across the full range regardless of
+    // the configured gap, with no way to see or change it beforehand. Offered whenever at least
+    // one group in the taxonomy genuinely overflows, using each such group's own ordinary count
+    // (the same "smallest fit anywhere" ceiling the fixed-gap restrictions already use above).
+    const overflowGroups = findNumericOverflowGroups(rows);
+    if (overflowGroups.length === 0) return [];
+    const maxGap = Math.min(9, ...overflowGroups.map((g) => maxFixedGapFor(g.ordinaryCount, CODE_SLOTS)));
+    return Array.from({ length: maxGap }, (_, i) => i + 1);
+  }
   const pool = codePoolFor(codeRestriction);
   const maxLevel = maxLevelUsed(rows);
   const state: GapFitState = { maxGap: 9, anyGapChoiceRelevant: false };
@@ -297,7 +308,14 @@ export function gapExampleParts(codeRestriction: CodeRestriction, gapIncrement: 
   const upper = CODE_SLOTS.slice(9);
   const exampleFrom = (pool: string[]) =>
     [0, gapIncrement, 2 * gapIncrement].map((i) => pool[i] ?? '…').join(', ');
-  const hasDigits = codeRestriction === 'Alpha Numeric with Upper Case Alpha Only' || codeRestriction === 'Alpha Numeric with All Alpha';
+  // Numeric Only itself has no fixed gap for its everyday (in-range) case — but this is only ever
+  // called when a gap choice IS being offered, which for Numeric Only only happens for an approved
+  // overflow (practicalGapOptionsForAutoCode), and that overflow genuinely starts from "1" through
+  // the digits before spilling into letters, the same shape as the two Alpha Numeric restrictions.
+  const hasDigits =
+    codeRestriction === 'Alpha Numeric with Upper Case Alpha Only' ||
+    codeRestriction === 'Alpha Numeric with All Alpha' ||
+    codeRestriction === 'Numeric Only';
   return {
     numeric: hasDigits ? exampleFrom(digits) : null,
     alpha: exampleFrom(upper),
@@ -356,7 +374,14 @@ function assignGroupCodes(
   if (!otherTrails) {
     // Fallback: every sibling, in row order, sharing one spread — no reserved slot, since a
     // reservation only makes sense when nothing ordinary follows it (hasOther: false below).
-    const slots = useFixedGap
+    // James's report (2026-11-24): an approved Numeric Only overflow (more members than the nine
+    // digits can hold) was always stretching across the FULL alphanumeric range regardless of the
+    // taxonomy's own configured gap — e.g. landing on "1, 5, 9, D, I…" when Settings' own gap
+    // increment would give "1, 3, 5, 7, 9, B, D…". Only the overflowing case switches to the
+    // fixed-gap spread every other restriction's own overflow already uses; a group that still
+    // fits the plain digit range keeps the full stretch James separately confirmed he wants there.
+    const useFixedSpread = useFixedGap || indices.length > 9;
+    const slots = useFixedSpread
       ? spreadSlotsFixed(indices.length, gapIncrement, pool)
       : spreadSlots(indices.length, numericCeilingIndex(indices.length, false));
     let slotPos = 0;
@@ -378,7 +403,14 @@ function assignGroupCodes(
   // defaulted to 8 "available" slots, reserving a 9th for an Other entry that, in a group with
   // none, was never actually needed. Nine digits (1-9) genuinely fit nine ordinary siblings with
   // no Other to make room for; only reserve the 9th when there's a real Other row to put there.
-  const slots = useFixedGap
+  //
+  // James's follow-up report (2026-11-24): once a group genuinely overflows past that (more
+  // ordinary members than the digits can hold), it should respect the configured gap like every
+  // other restriction's overflow already does, not keep stretching across the full range
+  // regardless — see the matching fix and comment in the !otherTrails branch above.
+  const maxOrdinaryBeforeOverflow = otherIndices.length > 0 ? 8 : 9;
+  const useFixedSpread = useFixedGap || ordinaryIndices.length > maxOrdinaryBeforeOverflow;
+  const slots = useFixedSpread
     ? spreadSlotsFixed(ordinaryIndices.length, gapIncrement, pool)
     : spreadSlots(ordinaryIndices.length, numericCeilingIndex(ordinaryIndices.length, otherIndices.length > 0));
   let slotPos = 0;

@@ -1633,16 +1633,35 @@ body.app-dark-theme .taxonomy-meta .purpose {
      near-white text color from .app and become unreadable against this white backdrop. */
   background: #fff;
   color: #1a1a1a;
-  padding-top: 0.5rem;
-  padding-bottom: 0.5rem;
+  /* NOT padding-top/bottom (as this used to be): position: sticky offsets are computed against
+     the nearest scrolling ancestor's own PADDING edge, so a padding-top here permanently reserves
+     that many pixels for the sticky header to stop at — but once genuinely scrolled (now that
+     this box truly scrolls), that reserved gap isn't actually blank; the scrolled table renders
+     right up to it, and James saw that sliver of a half-scrolled row "bleeding through" above the
+     frozen header. The same visual breathing room belongs on .taxonomy-grid itself (a margin,
+     which scrolls away with the rest of the content exactly as a reader would expect) instead.
+     See its own CSS rule for how it reproduces top and side spacing. */
 }
 
 .taxonomy-grid {
-  border-collapse: collapse;
+  /* James's report: the frozen header row was "transparent", with scrolled-past body rows
+     visibly bleeding through it. border-collapse: collapse merges each cell's border with its
+     neighbours' into one shared line owned by the table itself, rather than each cell painting
+     its own — which, combined with position: sticky, is a well-known combination browsers don't
+     reliably composite correctly (the sticky cell's own background can fail to fully occlude
+     whatever is scrolling past behind that shared border). border-collapse: separate makes every
+     cell responsible for its own border and background, which paints correctly under sticky.
+     border-spacing: 0 keeps cells touching exactly as before, with no visible gap between them. */
+  border-collapse: separate;
+  border-spacing: 0;
   /* Keeps the grid's own monospace typography (code cells are sized in "ch" units) even
      though the surrounding chrome now uses the app-wide sans-serif font. */
   font-family: 'Courier New', Courier, monospace;
   color: #1a1a1a;
+  /* Reproduces .grid-wrapper's old padding-top as a margin instead (see its own rule for why it
+     moved here) — this scrolls away with the rest of the table, rather than being miscounted as
+     permanently-reserved space the sticky header should stop short of. */
+  margin-top: 0.5rem;
 }
 
 .taxonomy-grid th,

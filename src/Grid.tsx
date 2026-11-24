@@ -147,6 +147,15 @@ export default function Grid({
       }
     };
     updateMaxHeight();
+    // James's report: the work area ended up noticeably shorter than the actual remaining screen
+    // space, leaving a visible gap of unused page below it — i.e. this undershot the real
+    // available height at least once, and nothing afterward corrected it. A few extra, cheap
+    // re-checks guard against whatever one-off timing gap caused that (a web font or the logo
+    // image finishing layout fractionally after this first measurement, most plausibly): once a
+    // moment after mount, and again after the window's own load event, on top of the ongoing
+    // resize/body-size triggers below.
+    const settleTimer = window.setTimeout(updateMaxHeight, 300);
+    window.addEventListener('load', updateMaxHeight);
     window.addEventListener('resize', updateMaxHeight);
     // Anything above .grid-wrapper changing height (the sticky bar's own guidance banner showing
     // or hiding, most notably) shifts its distance from the page top without .grid-wrapper's own
@@ -156,6 +165,8 @@ export default function Grid({
     const observer = new ResizeObserver(updateMaxHeight);
     observer.observe(document.body);
     return () => {
+      window.clearTimeout(settleTimer);
+      window.removeEventListener('load', updateMaxHeight);
       window.removeEventListener('resize', updateMaxHeight);
       observer.disconnect();
     };
@@ -1993,16 +2004,13 @@ export default function Grid({
   }
 
   // Description right-click "Find…" — opens the search box; the actual search runs in
-  // runFind() once a query is submitted. James's ask: invoking "Find" again while a match is
-  // already highlighted should advance to the next instance rather than reopening the dialog —
-  // so this only opens the dialog when there's no active search to continue. The query text is
-  // deliberately left as-is (not cleared) so the dialog reopens pre-filled with the last search.
+  // runFind() once a query is submitted. James's report: jumping straight to the next match
+  // without ever showing the dialog again (an earlier attempt at "progressive" find) left him no
+  // way to see or change what he was searching for. Always reopens the dialog instead, pre-filled
+  // with the last query (not cleared) — submitting it unchanged continues to the next match
+  // (see runFind), typing something different starts a fresh search.
   function handleOpenFind() {
     setContextMenu(null);
-    if (findResults) {
-      findNext();
-      return;
-    }
     setShowFindDialog(true);
   }
 
@@ -2028,11 +2036,20 @@ export default function Grid({
 
   // Plain case-insensitive in-string search across every description cell, every row and
   // level, in on-screen order — not scoped to the row that was right-clicked, since "find"
-  // means searching the whole taxonomy, not just one entry.
+  // means searching the whole taxonomy, not just one entry. Submitting the SAME query as the
+  // currently-active search (James's ask: a pop-up each time, to either continue on this word or
+  // change it) advances to the next match instead of restarting from the first — exactly what
+  // the persistent "Match X of Y … Next" banner's own button does, just reachable from the
+  // right-click menu too, without retyping the term.
   function runFind() {
     const query = findQuery.trim();
     if (!query) {
       setShowFindDialog(false);
+      return;
+    }
+    if (findResults && query === findResults.query) {
+      setShowFindDialog(false);
+      findNext();
       return;
     }
     const needle = query.toLowerCase();
@@ -3295,7 +3312,13 @@ export default function Grid({
               <>
                 {levels.map((level) => (
                   <Fragment key={`code-h-${level}`}>
-                    <th className="code-col" style={{ backgroundColor: getLevelColor(level) }}>
+                    {/* James's report: the frozen header showed scrolled-past body rows bleeding
+                        through it — getLevelColor returns undefined for every UNCOLOURED level
+                        (Section 4.2's own alternating design, fine for an ordinary body cell
+                        resting on .grid-wrapper's opaque white background), which left this cell
+                        with no background at all. Invisible before the header could ever sit on
+                        top of scrolled content; very visible now that it does. */}
+                    <th className="code-col" style={{ backgroundColor: getLevelColor(level) ?? '#fff' }}>
                       <div className="level-header">
                         <span>{level + 1}</span>
                         <button
@@ -3328,7 +3351,7 @@ export default function Grid({
               <th
                 key={`desc-h-${level}`}
                 className="desc-col"
-                style={{ backgroundColor: getLevelColor(level) }}
+                style={{ backgroundColor: getLevelColor(level) ?? '#fff' }}
               >
                 <div className="level-header">
                   <span>{level + 1}</span>
