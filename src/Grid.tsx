@@ -147,14 +147,6 @@ export default function Grid({
       }
     };
     updateMaxHeight();
-    // James's report: the work area ended up noticeably shorter than the actual remaining screen
-    // space, leaving a visible gap of unused page below it — i.e. this undershot the real
-    // available height at least once, and nothing afterward corrected it. A few extra, cheap
-    // re-checks guard against whatever one-off timing gap caused that (a web font or the logo
-    // image finishing layout fractionally after this first measurement, most plausibly): once a
-    // moment after mount, and again after the window's own load event, on top of the ongoing
-    // resize/body-size triggers below.
-    const settleTimer = window.setTimeout(updateMaxHeight, 300);
     window.addEventListener('load', updateMaxHeight);
     window.addEventListener('resize', updateMaxHeight);
     // Anything above .grid-wrapper changing height (the sticky bar's own guidance banner showing
@@ -164,11 +156,18 @@ export default function Grid({
     // ancestor actually caused it.
     const observer = new ResizeObserver(updateMaxHeight);
     observer.observe(document.body);
+    // James's report (still unresolved after the above): the work area stayed noticeably shorter
+    // than the real remaining screen space — a persistent shortfall, not a one-off timing gap, so
+    // whatever is failing to trigger a recompute here isn't something the event/observer triggers
+    // above actually catch. Rather than keep chasing the exact one, this just re-measures on a
+    // plain interval as a guaranteed, self-correcting fallback: cheap (one bounding-rect read), and
+    // it fixes itself within a quarter second of ANY layout change, however it was caused.
+    const pollTimer = window.setInterval(updateMaxHeight, 250);
     return () => {
-      window.clearTimeout(settleTimer);
       window.removeEventListener('load', updateMaxHeight);
       window.removeEventListener('resize', updateMaxHeight);
       observer.disconnect();
+      window.clearInterval(pollTimer);
     };
   }, []);
 
