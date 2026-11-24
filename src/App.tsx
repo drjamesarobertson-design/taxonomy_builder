@@ -731,6 +731,12 @@ export default function App() {
   // hold a fair amount of text, with a click to expand to the full thing.
   const [guidanceExpanded, setGuidanceExpanded] = useState(false);
 
+  // James's ask: it wasn't obvious a user could scroll past the guidance banner/taxonomy heading/
+  // Code Restrictions row to reach more of the grid, so give that an explicit button instead — the
+  // "Full Screen" toggle hides all three at once (shown by default on entering a taxonomy), with
+  // the button itself relabelling to offer bringing them back.
+  const [showWorksheetChrome, setShowWorksheetChrome] = useState(true);
+
   // The Library (left-hand sidebar): a place to keep multiple built taxonomies for quick
   // reference/further work, per taxonomy heading. Entries persist in this browser's own
   // IndexedDB (see library.ts) — a separate, additional place to park a copy, not a
@@ -2557,7 +2563,9 @@ export default function App() {
       <div className="app-sticky-top" ref={setStickyTopEl}>
       <header className="app-header">
         <div className="app-heading-block">
-          <h1 className="app-heading">The ERP Doctor Taxonomy Builder</h1>
+          <h1 className="app-heading">
+            The ERP Doctor Taxonomy Builder -- Copyright © James A Robertson and Associates Limited
+          </h1>
           {!project && (
             <p className="app-tagline">
               Taxonomy Builder by the ERP Doctor
@@ -2891,6 +2899,13 @@ export default function App() {
                 Log Out
               </button>
             </Tooltip>
+            {project && (
+              <Tooltip field="btnFullScreen" helpText={helpText}>
+                <button type="button" className="toolbar-alt" onClick={() => setShowWorksheetChrome((v) => !v)}>
+                  {showWorksheetChrome ? 'Full Screen' : 'Display Details'}
+                </button>
+              </Tooltip>
+            )}
             <Tooltip field="btnHelp" helpText={helpText}>
               <button type="button" className="toolbar-alt" onClick={() => setShowHelpPage(true)}>
                 Help
@@ -3065,71 +3080,75 @@ export default function App() {
 
       {project && (
         <>
-          {project.settings.guidance && (
-            <GuidanceBanner
-              project={project}
-              onSettingsAndRowsChange={handleSettingsAndRowsChange}
-              onExitGuidance={handleExitGuidance}
-              helpText={helpText}
-            />
-          )}
-          {!project.settings.guidance && (
-            <section
-              className={`worksheet-guidance ${guidanceExpanded ? 'expanded' : 'collapsed'}`}
-              // James's report (2026-10-22): F1 (supervisor-only quick-edit) had nothing to act on
-              // here — unlike every toolbar button/menu item, this panel shows its helpText.csv text
-              // directly rather than through a Tooltip/menuTooltip/HelpIcon, so nothing ever reported
-              // it as the "active" field. Reporting it the same way Tooltip.tsx does (hover/focus)
-              // is all F1 needs, since TooltipQuickEdit already knows how to edit any field by key.
-              onMouseEnter={() => setActiveHelpField('worksheetGuidance')}
-              onMouseLeave={() => setActiveHelpField(null)}
-            >
-              <div className="worksheet-guidance-text">
-                {helpText.worksheetGuidance?.helpText?.trim() || 'No worksheet guidance has been added yet.'}
-              </div>
-              <button type="button" className="worksheet-guidance-toggle" onClick={() => setGuidanceExpanded((e) => !e)}>
-                {guidanceExpanded ? 'Show less ▴' : 'Show more ▾'}
-              </button>
-            </section>
-          )}
-          <section className="taxonomy-meta">
-            <h2>
-              {project.title}
-              {project.settings.locked &&
-                (project.settings.lockedBy || project.settings.lockReason ? (
-                  <Tooltip
-                    text={[
-                      project.settings.lockedBy && `Locked by ${project.settings.lockedBy}`,
-                      project.settings.lockReason && `Reason: ${project.settings.lockReason}`,
-                      project.settings.lockAuthorisedBy && `Authorised by: ${project.settings.lockAuthorisedBy}`,
-                    ]
-                      .filter(Boolean)
-                      .join('\n')}
-                  >
-                    <span className="locked-badge">🔒 Locked</span>
-                  </Tooltip>
-                ) : (
-                  <span className="locked-badge">🔒 Locked</span>
-                ))}
-            </h2>
-            {project.purpose && <p className="purpose">{project.purpose}</p>}
-          </section>
-          {!project.settings.guidance && (
-            <section className="code-restriction-bar">
-              <label>
-                Code Restrictions
-                <select
-                  value={project.settings.codeRestriction}
-                  onChange={(e) => handleCodeRestrictionChange(e.target.value as CodeRestriction)}
+          {showWorksheetChrome && (
+            <>
+              {project.settings.guidance && (
+                <GuidanceBanner
+                  project={project}
+                  onSettingsAndRowsChange={handleSettingsAndRowsChange}
+                  onExitGuidance={handleExitGuidance}
+                  helpText={helpText}
+                />
+              )}
+              {!project.settings.guidance && (
+                <section
+                  className={`worksheet-guidance ${guidanceExpanded ? 'expanded' : 'collapsed'}`}
+                  // James's report (2026-10-22): F1 (supervisor-only quick-edit) had nothing to act on
+                  // here — unlike every toolbar button/menu item, this panel shows its helpText.csv text
+                  // directly rather than through a Tooltip/menuTooltip/HelpIcon, so nothing ever reported
+                  // it as the "active" field. Reporting it the same way Tooltip.tsx does (hover/focus)
+                  // is all F1 needs, since TooltipQuickEdit already knows how to edit any field by key.
+                  onMouseEnter={() => setActiveHelpField('worksheetGuidance')}
+                  onMouseLeave={() => setActiveHelpField(null)}
                 >
-                  {CODE_RESTRICTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </section>
+                  <div className="worksheet-guidance-text">
+                    {helpText.worksheetGuidance?.helpText?.trim() || 'No worksheet guidance has been added yet.'}
+                  </div>
+                  <button type="button" className="worksheet-guidance-toggle" onClick={() => setGuidanceExpanded((e) => !e)}>
+                    {guidanceExpanded ? 'Show less ▴' : 'Show more ▾'}
+                  </button>
+                </section>
+              )}
+              <section className="taxonomy-meta">
+                <h2>
+                  {project.title}
+                  {project.settings.locked &&
+                    (project.settings.lockedBy || project.settings.lockReason ? (
+                      <Tooltip
+                        text={[
+                          project.settings.lockedBy && `Locked by ${project.settings.lockedBy}`,
+                          project.settings.lockReason && `Reason: ${project.settings.lockReason}`,
+                          project.settings.lockAuthorisedBy && `Authorised by: ${project.settings.lockAuthorisedBy}`,
+                        ]
+                          .filter(Boolean)
+                          .join('\n')}
+                      >
+                        <span className="locked-badge">🔒 Locked</span>
+                      </Tooltip>
+                    ) : (
+                      <span className="locked-badge">🔒 Locked</span>
+                    ))}
+                </h2>
+                {project.purpose && <p className="purpose">{project.purpose}</p>}
+              </section>
+              {!project.settings.guidance && (
+                <section className="code-restriction-bar">
+                  <label>
+                    Code Restrictions
+                    <select
+                      value={project.settings.codeRestriction}
+                      onChange={(e) => handleCodeRestrictionChange(e.target.value as CodeRestriction)}
+                    >
+                      {CODE_RESTRICTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </section>
+              )}
+            </>
           )}
           <Grid
             key={projectGeneration}
