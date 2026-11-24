@@ -1,6 +1,6 @@
 # Taxonomy Builder — Master Briefing
 
-*Version: v 1.03*
+*Version: v 1.04*
 
 *A one-stop orientation document: what this is, what it does today, where the
 business stands, and what's still outstanding. Written for James (or anyone
@@ -8,8 +8,10 @@ he shares this with) rather than as an engineering log — for the detailed,
 round-by-round build history, see `PROGRESS.md`; for the original functional
 specification, see `CLAUDE.md`.*
 
-*Last updated: 2026-10-21 — noted Supabase's Data API grant change (§3);
-no app changes this round.*
+*Last updated: 2026-11-24 — the subscription/pricing structure was fully
+reviewed and planned round by round with James (two revisions of his own
+pricing spreadsheet, plus the standalone WordPress pricing page); see §0 and
+§4. Pure planning — no app code changed this round.*
 
 *Version history: v 1.01 — first version stamp applied to this file
 (2026-10-14). v 1.02 — same evening, after PRs #230–#235 (see §0): Promote/
@@ -22,13 +24,97 @@ working all along (see §0). v 1.03 (2026-10-21) — recorded a heads-up from
 Supabase (§3): from 30 October 2026, a newly created table no longer
 automatically gets Data API access without an explicit grant; doesn't
 affect anything already shipped, but is now a required step for any future
-migration that creates a new table. Increment this by one, and add a line
-here, every time this file is next updated and re-sent to him — see
-`ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md` §5, item 10.*
+migration that creates a new table. v 1.04 (2026-11-24) — the subscription
+pricing/tier structure went from a 3-tier draft to a fully worked-through
+4-tier plan (Free/Basic/Advanced/Enterprise), with every open mechanic
+James raised resolved to a concrete decision (see §0/§4) and a bite-sized
+delivery plan agreed; also corrects the record to say plainly that Stripe
+account creation has **not** actually been started yet, superseding the
+earlier ambiguous "step 1 given, not confirmed done." Increment this by
+one, and add a line here, every time this file is next updated and
+re-sent to him — see `ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md` §5, item 10.*
 
 ---
 
 ## 0. Where things stand right now — read this first
+
+**Subscription/pricing planning round, 2026-11-24 — fully worked through,
+nothing built yet.** James brought a refined subscription-structure
+spreadsheet (two rounds, v1.1 then v1.2, resolving his own open questions
+round by round) alongside the already-delivered WordPress pricing page
+(§4), and asked for a full review plus a step-by-step delivery plan before
+any work started. Outcome — full detail in §4, which replaces the old
+3-tier draft entirely:
+
+- **Tier structure is now 4-way**: Free / Basic / Advanced / Enterprise,
+  replacing the earlier Free/Professional/Enterprise draft. Final dollar
+  break-points are still under James's own consideration (he wants to
+  think about them further) — everything else below is decided.
+- **A real conflict was caught and resolved**: the original draft gated
+  Lock Taxonomy to Basic but Audit Taxonomy (a hard prerequisite for Lock)
+  to Advanced+. James's fix: Lock moved up to Advanced+ alongside Audit —
+  no tier can be sold a feature it can't actually use.
+- **Annual billing**: a flat discount off monthly (James's default: 25%,
+  confirmed as "attractive enough" after discussing 30/40/50% as
+  alternatives), entered as an exact, editable two-decimal amount per tier
+  rather than computed at runtime (Stripe Prices are immutable per amount
+  anyway, so each tier/period combination will be its own stored Price
+  object). Shown at launch, not hidden — toggled alongside Monthly but
+  labelled **"Coming soon"** rather than actually purchasable yet, so
+  James can turn it on later without any UI work. Quarterly/Half-Yearly:
+  explicitly dropped, not building either.
+- **Category names and break-points must be user-configurable data, not
+  hardcoded constants** — James's own explicit requirement, since he
+  expects to adjust them as he gains real-world experience. Plan: a small
+  Supabase table, editable the same way `help-text.csv`/the in-app Help
+  editor already works for James's supervisor account.
+- **A genuinely new piece of scope, agreed**: lower tiers will see the
+  *full* starter-sample Library (not a cut-down one), but a sample whose
+  column/row count exceeds that tier's own limits opens **read-only**
+  rather than being hidden or blocked outright. Confirmed feasible at a
+  moderate size by reusing the existing Lock Taxonomy "viewable, can't be
+  destructively edited" mechanism rather than inventing a new one.
+- **"Create Folder Structure on Local Drive" and "...in Outlook" in the
+  pricing sheet need no new engineering** — both already exist and work
+  today (§2); gating them per tier is just adding the same limit-check
+  every other numeric cap needs. This is distinct from **Outlook 365**
+  (one-click Microsoft Graph sign-in), which genuinely isn't built and
+  remains its own separately-scheduled piece of work (§4) — no dependency
+  forces an order between the two.
+- **Beta tester override confirmed**: a hidden tier giving full
+  tier-equivalent access at no charge, explicitly still excluded from the
+  supervisor-only Edit Help capability regardless.
+- **Two new, previously-unrecorded feature asks, both agreed**: a
+  paid-subscriber report (reusing the existing "new sign-ups" panel's
+  list+CSV-download pattern once a plan field exists), and an email
+  notification to subscribers when a starred Library sample they hold a
+  copy of is updated — pointing them at the existing "Check for New
+  Samples" pull mechanism rather than silently overwriting their copy.
+  James expects his starter-sample set to be largely complete at launch
+  and updated only rarely, so this doesn't need to be a heavyweight
+  automated pipeline.
+- **Tax (EU/US VAT, thresholds)**: parked deliberately — Stripe Tax (a
+  built-in Stripe feature) is the practical mechanism when Stripe setup
+  is actually underway; anything with real compliance liability still
+  wants a real accountant's sign-off, not Claude's.
+- **WooCommerce**: reconfirmed, not revisited — the existing recommendation
+  (§4, "Payment processing") stands as-is. It plays no role in any of this.
+- **The record is corrected**: James confirmed directly (2026-11-24) that
+  **Stripe account creation has not been done** — the prior "step 1 given,
+  not yet confirmed" note in earlier revisions of this file should not be
+  read as any progress having actually happened. The walkthrough starts
+  from a genuine zero next session, one step at a time, exactly as he's
+  asked for throughout.
+- **Full delivery plan, agreed as bite-sized stages (A business decisions →
+  B Stripe account/product setup → C Supabase plumbing (plan config table,
+  Checkout/webhook Edge Functions, renewal/expiry + reminder emails) →
+  D app-side enforcement (numeric caps, workflow-type gates, read-only-
+  over-limit mode) → E reporting/notifications (the two new asks above) →
+  F WordPress (update the HTML snippet, then walk James through
+  publishing it) → G go live (Stripe to live mode, one real test payment))
+  — see §4 for the full breakdown. **Next actual step, whenever James is
+  ready to resume this thread: Stage B, step 1 — walk him through creating
+  the Stripe account itself.**
 
 **Evening round, 2026-10-14 (PRs #230–#235) — a sign-up-notification feature
 built in stages, settling on an in-app panel:**
@@ -401,10 +487,14 @@ Toolbar "Folders ▾" menu:
 ### Commercial groundwork (not yet live)
 - A **Pricing** page (reachable from the Login screen and the signed-in
   landing menu) presenting a draft three-tier model — see §4. Explicitly
-  marked as a draft under review; there is no working checkout yet.
+  marked as a draft under review; there is no working checkout yet. **Still
+  showing the old 3-tier numbers as of 2026-11-24** — the newly-agreed
+  4-tier structure (§4) hasn't been built into the app yet (Stage D/F).
 - The same draft pricing has also been prepared as a **standalone WordPress
   snippet** (delivered to James as a file, not part of this repository) for
   the-erp-doctor.com marketing site — see §0 for its exact delivery status.
+  Also still the old 3-tier version; updating it to the new structure is
+  Stage F (§4).
 
 ---
 
@@ -463,38 +553,138 @@ Toolbar "Folders ▾" menu:
 
 ## 4. Commercial status and what's still needed from James
 
-### Pricing — draft proposal, not final
-Building on James's own Free-tier sketch, the current in-app draft is:
+### Pricing — 4-tier structure agreed 2026-11-24, dollar break-points still under James's own review
 
-| | Free | Professional | Enterprise |
-|---|---|---|---|
-| Price | $0 | $19/mo | $79/mo |
-| Code columns | 3 | 8 (standard depth) | 15 (app maximum) |
-| Rows | 50 | 500 | Unlimited |
-| Taxonomies in Library | 5 | 25 | Unlimited |
-| Library | Read-only once saved | Full read/write | Full read/write |
-| Lock Taxonomy | No | Yes | Yes |
-| CSV/Excel export | Yes | Yes | Yes |
-| HDD Folders | No | Yes | Yes |
-| GL Builder / Cubic Business Model | No | No | Yes |
-| Support | — | — | Priority |
+Superseding the earlier 3-tier (Free/Professional/Enterprise) draft entirely.
+Worked through directly with James across two revisions of his own pricing
+spreadsheet; the structure, mechanics and features below are decided — only
+the exact dollar amounts remain his to finalise ("I will give that more
+thought"):
 
-**This needs James's sign-off or adjustment** — the numbers and prices above
-are a recommendation, not a decision. Once confirmed, the actual tier limits
-still need to be wired into the app itself (a `plan` field, enforcement
-logic) — deliberately not done yet, since that's a business-critical change
-better made once the numbers are final and the app has active users who
-shouldn't be surprised by new restrictions overnight.
+| | Free | Basic | Advanced | Enterprise |
+|---|---|---|---|---|
+| Monthly | $0 | $19.99 | $39.99 | $99.99 |
+| Annual (total/yr, 25% off monthly) | $0 | $179.91 | $359.91 | $899.91 |
+| Code/description columns | Up to 3 | Up to 6 | Up to 9 | Up to 15 (app max) |
+| Rows | Up to 30 | Up to 60 | Up to 120 | Unlimited |
+| Library entries | 3 | 6 | 12 | Unlimited |
+| Lock Taxonomy | No | No | Up to 6 taxonomies | Unlimited |
+| Taxonomy Audit | No | No | Yes | Yes |
+| Chart of Accounts Wizard | No | Yes | Yes (incl.) | Yes (incl.) |
+| Function Master | No | No | Yes | Yes |
+| Location Master / Division Master | No | No | No | Yes |
+| All taxonomy types | No | No | No | Yes |
+| Create Folder Structure — Local Drive / Outlook | No | Yes | Yes | Yes |
+| Import from GL Analyser / Export to GL Builder | No | No | "When available" | "When available" |
+| Comprehensive help, full sample library, CSV import/export | Yes | Yes | Yes | Yes |
 
-**Subscription/renewal mechanics James has specified** (not yet built —
-captured here so it isn't lost before the Stripe wiring happens): billing
-renews monthly, quarterly, or annually, with a discounted rate for the
-longer periods. On expiry, login is hard-blocked (no grace-period access)
-with a clear "your subscription has expired — renew here" screen in place
-of the app. Staged reminder emails before that point: one month out, one
-week out, one day out, then an expired notice, then a follow-up nudge if
-still unrenewed — each one sent through the same Resend infrastructure as
-the auth emails (see below).
+Every tier gets a 21-day money-back guarantee. "When available" against the
+GL Analyser/GL Builder rows is deliberate — both are separate, not-yet-built
+products (§5); these are forward-looking marketing commitments, not
+something to try to enforce in code before they exist.
+
+**Mechanics decided alongside the numbers (2026-11-24):**
+- **Annual billing**: a flat discount off monthly (25% to start, i.e. "3
+  months free" framing — considered against 30/40/50% and kept at 25% as
+  the more conventional, less revenue-aggressive choice). Stored as an
+  exact, independently-editable two-decimal amount per tier, **not**
+  computed at runtime — Stripe Price objects are immutable per amount
+  regardless, so changing this later always means creating a new Price
+  object (with a separate decision at that time on whether existing
+  subscribers move to it or stay on their original price). Shown at launch
+  — not hidden — with Monthly/Annual as a toggle, but Annual is labelled
+  **"Coming soon"** rather than actually purchasable, so turning it on
+  later is a label change, not new engineering. The toggle shows the
+  annual *total* (e.g. "$179.91/yr"), not a monthly-equivalent figure.
+  Quarterly and Half-Yearly were considered and explicitly dropped.
+- **Category names and the break-points themselves must be data James can
+  edit, not hardcoded constants** — his explicit requirement, since he
+  expects to tune them with real-world experience. Plan: a small Supabase
+  table (tier name, price, each numeric/feature limit), editable the same
+  way `help-text.csv`/the in-app Help editor already work for his
+  supervisor account — not a new mechanism, the same one reused.
+- **A real conflict caught and fixed**: the original draft offered Lock
+  Taxonomy at Basic while gating Audit Taxonomy (a hard prerequisite for
+  Lock) to Advanced+. Resolved by moving Lock up to Advanced+ alongside
+  Audit, so no tier is ever sold a feature it structurally can't use.
+- **Lower tiers see the full starter-sample Library, not a cut-down one** —
+  but a sample whose column/row count exceeds that tier's own limits opens
+  **read-only** rather than being hidden or blocked. Confirmed feasible at
+  a moderate size: reuses the existing Lock Taxonomy "viewable, can't be
+  destructively edited" plumbing rather than needing a new mechanism built
+  from scratch. Scoped as its own stage below (Stage D), not assumed free.
+- **"Create Folder Structure on Local Drive" and "...in Outlook" need no
+  new engineering** — both already exist and work today (§2: Local Hard
+  Drive, and the Outlook Client VBA-macro flow). Gating them per tier is
+  just the same limit-check every other capability needs. This is
+  distinct from **Outlook 365** (§4 below, "one-click" Microsoft Graph
+  sign-in), which genuinely isn't built and stays its own separately-
+  scheduled piece of work — no dependency forces an order between them.
+- **Beta tester override**: a hidden tier/flag giving full tier-equivalent
+  access at no charge, explicitly still excluded from the supervisor-only
+  Edit Help capability regardless of that override.
+- **When someone registers, the chosen tier is logged** at signup (a field
+  on the existing `profiles` table or a new `subscriptions` table), kept
+  in sync by the Stripe webhook once billing is live as the single system
+  of record for "what plan is this account on."
+- **Two new feature asks, agreed, not yet built**:
+  - A **paid-subscriber report** (supervisor-only) — reuses the existing
+    "new sign-ups" panel's exact list+CSV-download pattern, once the plan
+    field above exists.
+  - **Email notification on starred-Library updates** — when James updates
+    a starter sample, notify only the subscribers who actually hold a copy
+    of that sample (via the existing Resend infrastructure), pointing them
+    at the existing "Check for New Samples" pull mechanism rather than
+    silently overwriting their own copy. James expects his starter set to
+    be largely complete at launch and updated only rarely, so this doesn't
+    need heavyweight automation — a simple, occasionally-triggered action
+    is enough.
+- **Tax (EU/US VAT, minimum thresholds)**: deliberately parked until Stripe
+  setup is actually underway — **Stripe Tax** (a built-in Stripe feature)
+  is the practical mechanism to reach for then. Anything with real
+  compliance liability (e.g. whether James must register somewhere because
+  of a threshold) still wants a real accountant's sign-off, not Claude's.
+
+**Subscription/renewal mechanics James specified earlier, unchanged and
+still to be built**: billing renews monthly or annually (quarterly/
+half-yearly dropped — see above). On expiry, login is hard-blocked (no
+grace-period access) with a clear "your subscription has expired — renew
+here" screen in place of the app. Staged reminder emails before that point:
+one month out, one week out, one day out, then an expired notice, then a
+follow-up nudge if still unrenewed — each sent through the same Resend
+infrastructure as the auth emails (see below).
+
+### Delivery plan — agreed 2026-11-24, bite-sized stages, in order
+1. **Stage A — business decisions**: done, except final dollar break-points
+   (James's own further thought, not blocking the rest).
+2. **Stage B — Stripe account/product setup, step by step**: create the
+   account (`dashboard.stripe.com/register`, verify email, test mode
+   available immediately, no banking details needed yet) → create test-mode
+   Product + Price objects for each paid tier (Monthly now; Annual Price
+   objects can be created in test mode too, ready for when Annual goes
+   live) → enable Stripe Tax → obtain the test-mode publishable key.
+   **Confirmed not started as of 2026-11-24** — this is genuinely step 1,
+   next time this thread resumes.
+3. **Stage C — Supabase plumbing**: the tier-config table (name/price/
+   limits, supervisor-editable); the plan field at signup; two small Edge
+   Functions (create a Checkout Session; receive and verify Stripe's
+   webhook, updating the subscriber's plan); the renewal/expiry state
+   machine and the staged reminder emails above.
+4. **Stage D — app-side enforcement**: wire the numeric caps (columns/
+   rows/Library entries/locked taxonomies) and the workflow-type gates
+   (reusing the existing `WORKFLOW_LEVELS`/Cubic Business Model structure)
+   to the live tier config; the read-only-over-limit mode for Library
+   samples that exceed a tier's own numeric limits; the "subscription
+   expired, renew here" hard-block screen.
+5. **Stage E — reporting & notifications**: the paid-subscriber report; the
+   starred-Library-update notification feature.
+6. **Stage F — WordPress**: update the already-delivered HTML pricing
+   snippet (§4 below) to the new 4-tier structure once dollar amounts are
+   final; walk James through pasting it into a WordPress Custom HTML block
+   (never done yet); fill in the `REPLACE_WITH_CONTACT` placeholder.
+7. **Stage G — go live**: Stripe account to live mode (banking/payout
+   details added at this point, not before); one real, small end-to-end
+   test payment; launch.
 
 ### Email delivery — Resend, configured and working
 Supabase's own built-in mailer is explicitly test-only (a handful of
@@ -550,8 +740,11 @@ credentials never leave that dashboard today.
 **Status:** James asked for this walkthrough "one step at a time." Step 1
 (create the account at `dashboard.stripe.com/register`, verify email, no
 banking details needed yet — test mode is available immediately) was given
-on 2026-09-28. Not yet confirmed done. See §0 for exactly where to pick this
-up.
+on 2026-09-28, but **James confirmed directly on 2026-11-24 that this has
+not actually been done** — correcting the earlier "not yet confirmed done"
+note, which should not be read as any progress having happened. This is
+genuinely step 1 of Stage B (§4) next time this thread resumes. See §0 for
+the fuller picture.
 
 ### Outlook 365 — needs a one-time Microsoft 365 app registration
 For "Sign in with Microsoft" to be genuinely one-click for every future
@@ -577,13 +770,21 @@ this, rather than starting it unprompted.
 Site: `https://the-erp-doctor.com/`; admin: `https://the-erp-doctor.com/admin`
 (WordPress, with WooCommerce already installed but unused). None of the
 billing or Outlook work above touches the WordPress marketing site — the
-paywall logic lives entirely in this app plus Supabase plus Stripe. If
-James wants an actual Pricing page live on the marketing site itself
-(rather than just linking to the one already in this app), the content is
-ready to hand over. If direct edits to the WordPress site are ever needed,
-the safe way to grant access is a WordPress **Application Password**
-(Users → Profile → Application Passwords in `wp-admin`) scoped just for
-that purpose — not the real admin login.
+paywall logic lives entirely in this app plus Supabase plus Stripe.
+
+A standalone WordPress-ready pricing snippet (self-contained `<div>` +
+`<style>`, pastes into a WordPress "Custom HTML" block, no plugin or
+developer needed) was delivered to James earlier as a file, built against
+the old 3-tier draft — still not pasted into the-erp-doctor.com (Stage F,
+§4). It needs updating to the new 4-tier structure once James finalises the
+dollar break-points, and still has the `REPLACE_WITH_CONTACT` placeholder
+on its "Contact Us" link waiting to be filled in. The WordPress-side
+walkthrough itself (block editor vs. classic editor, etc.) hasn't been
+given yet — give it step by step when James is ready for Stage F. If direct
+edits to the WordPress site are ever needed, the safe way to grant access is
+a WordPress **Application Password** (Users → Profile → Application
+Passwords in `wp-admin`) scoped just for that purpose — not the real admin
+login.
 
 ---
 
@@ -641,19 +842,31 @@ re-deriving any of this.
 - [x] ~~New-signup confirmation email not arriving~~ — resolved 2026-10-14
       (PR #218): was a reused test address, not a broken setup; fixed so the
       app now reports this honestly. See §0.
-- [ ] Confirm or adjust the three pricing tiers and their dollar amounts.
-- [ ] **In progress, step 1 given:** create a new Stripe account (see §4 —
-      being walked through one step at a time, at James's request).
+- [x] ~~Audit Taxonomy / Lock Taxonomy tier conflict~~ — resolved 2026-11-24:
+      Lock moved up to Advanced+, alongside Audit. See §0/§4.
+- [x] ~~Where does WooCommerce fit?~~ — reconfirmed 2026-11-24: nowhere: it
+      plays no role, per the existing "Payment processing" recommendation.
+- [ ] James to finalise the exact dollar break-points for the 4 tiers (the
+      only still-open number — everything else in §4's table and mechanics
+      is decided).
+- [ ] **Not started — confirmed 2026-11-24:** create the Stripe account
+      itself (Stage B, §4 — walked through one step at a time, at James's
+      request). This is the actual next step whenever this thread resumes.
+- [ ] Build the Supabase tier-config table, plan field, Checkout/webhook
+      Edge Functions, and renewal/expiry + reminder-email mechanics
+      (Stage C, §4).
+- [ ] Wire app-side tier enforcement: numeric caps, workflow-type gates, the
+      read-only-over-limit Library mode, and the expired-subscription block
+      screen (Stage D, §4).
+- [ ] Build the paid-subscriber report and the starred-Library-update
+      notification feature (Stage E, §4 — both new asks, agreed 2026-11-24).
+- [ ] Update the WordPress pricing snippet to the new 4-tier structure once
+      dollar amounts are final, then give James the WordPress publishing
+      walkthrough for the first time, including the `REPLACE_WITH_CONTACT`
+      placeholder (Stage F, §4).
 - [ ] Decide whether/when to proceed with the Outlook 365 Microsoft Graph
-      app registration (no blocker either way — see §4).
-- [ ] **Delivered, not yet actioned:** the WordPress pricing snippet is with
-      James as a file. He still needs to (a) fill in the
-      `REPLACE_WITH_CONTACT` placeholder and (b) actually paste it into
-      the-erp-doctor.com — the WordPress-side walkthrough for that hasn't
-      been given yet, pending his request.
-- [ ] Once pricing is confirmed: sign off on wiring real tier limits into the
-      app (a bigger, business-facing change, deliberately held until the
-      numbers are final).
+      app registration (no blocker either way, independent of all of the
+      above — see §4).
 
 *See §0 above for the immediate "pick up here" summary of this list.*
 
