@@ -51,8 +51,7 @@ contact, left open for James to revisit before go-live. v 1.08
 record (§3/§4), defaulting every signup to Free; scope narrowed from the
 original plan for a concrete reason (a real "choose a paid tier" flow
 needs Stripe Checkout to exist first, so that moment moves into C3 — see
-§0); a one-time manual step James still needs to run. Increment this by
-one, and add a line here, every time this file is next updated and
+§0); a one-time manual step James still needs to run. Increment this byone, and add a line here, every time this file is next updated and
 re-sent to him — see `ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md` §5, item 10.*
 
 ---
@@ -580,8 +579,7 @@ Toolbar "Folders ▾" menu:
   SMTP provider for auth emails (see §4). Eleven one-time SQL migrations
   exist (`supabase/0001`–`0011`), each a one-off manual step in Supabase's
   SQL Editor — ten have been run; `0011` is new and **not yet run by
-  James** (see §4, Stage C). `0001` creates the
-  `profiles` table (James's own exportable contact list — see "Account &
+  James** (see §4, Stage C). `0001` creates the  `profiles` table (James's own exportable contact list — see "Account &
   sign-up" in §2); `0002` creates `library_entries` (cloud Library
   storage); `0003` adds the starter-sample flag and its cross-account read
   policy; `0004` adds `source_sample_id` (for "Check for New Samples");
