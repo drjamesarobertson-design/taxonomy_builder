@@ -1,6 +1,6 @@
 # Taxonomy Builder — Master Briefing
 
-*Version: v 1.12*
+*Version: v 1.13*
 
 *A one-stop orientation document: what this is, what it does today, where the
 business stands, and what's still outstanding. Written for James (or anyone
@@ -8,10 +8,10 @@ he shares this with) rather than as an engineering log — for the detailed,
 round-by-round build history, see `PROGRESS.md`; for the original functional
 specification, see `CLAUDE.md`.*
 
-*Last updated: 2026-11-24 — same day as v 1.04 through v 1.11: the first
-Stripe Edge Function is written —
-`supabase/functions/create-checkout-session/index.ts` — but not yet
-deployed by James. See §0 and §4.*
+*Last updated: 2026-11-24 — same day as v 1.04 through v 1.12: the first
+Stripe Edge Function, `create-checkout-session`, is deployed and
+correctly configured. A minimal in-app "Upgrade" entry point to actually
+test it is next. See §0 and §4.*
 
 *Version history: v 1.01 — first version stamp applied to this file
 (2026-10-14). v 1.02 — same evening, after PRs #230–#235 (see §0): Promote/
@@ -62,9 +62,13 @@ Stripe Price ID), not yet run. v 1.11 (2026-11-24, same day) — `0012` run
 and all three paid tiers' Price IDs populated (Basic/Advanced/Enterprise);
 Stage C3 piece (b) (the Checkout-Session function itself) is next. v 1.12
 (2026-11-24, same day) — the Checkout-Session Edge Function is written,
-not yet deployed; James's next step. Increment this by one, and add a
-line here, every time this file is next updated and re-sent to him — see
-`ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md` §5, item 10.*
+not yet deployed; James's next step. v 1.13 (2026-11-24, same day) —
+deployed successfully (caught and redone once, after the editor's own
+placeholder name/code got deployed unmodified on the first attempt); JWT
+verification turned off per Supabase's own recommendation. Increment this
+by one, and add a line here, every time this file is next updated and
+re-sent to him — see `ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md` §5, item
+10.*
 
 ---
 
@@ -120,17 +124,28 @@ hardcoded" philosophy as the rest of that table), and the three paid
 tiers' monthly Price IDs copied in by hand from Stripe's Product catalog
 (found via Stripe's Workbench → Inspector, searching by Product ID — the
 Price ID is the separate, distinct object Checkout actually needs).
-(b) **written, 2026-11-24, as `supabase/functions/create-checkout-
-session/index.ts` — not yet deployed by James.** Creates (or reuses) a
-Stripe Customer tied to the signed-in account, creates a Stripe Checkout
-Session for the requested paid tier's Monthly Price (rejects Annual with
-a clear error for now, since no Annual Price objects exist in Stripe
-yet), and returns the Checkout URL. Deliberately never writes `plan_key`
-on `subscriptions` itself — only the webhook (piece (e), once Stripe
-actually confirms payment) can do that, so starting a Checkout Session
-can never itself grant paid access. Needs no new secret beyond
-`STRIPE_SECRET_KEY` (already in place) — `SUPABASE_URL`/`SUPABASE_
-SERVICE_ROLE_KEY` are auto-injected into every Edge Function by Supabase.
+(b) **done, 2026-11-24.** `supabase/functions/create-checkout-session/
+index.ts` deployed successfully, under the correct name, via Supabase's
+in-browser "Via Editor" deploy path (found at Edge Functions → Deploy a
+new function → Via Editor — the editor pre-fills a random function name
+and Supabase's own generic placeholder code, both of which must be
+replaced before deploying, easy to miss — happened once, caught and
+redone). **"Verify JWT with legacy secret" turned off** on the deployed
+function's own Settings tab, per Supabase's own on-screen recommendation
+("Recommended: OFF with JWT and custom auth logic in your function
+code") — this function already does its own proper check in code (calls
+`getUser()`, returns 401 if that fails), so the platform-level legacy
+check was redundant and potentially a mismatch with this project's newer
+key-naming scheme. Creates (or reuses) a Stripe Customer tied to the
+signed-in account, creates a Stripe Checkout Session for the requested
+paid tier's Monthly Price (rejects Annual with a clear error for now,
+since no Annual Price objects exist in Stripe yet), and returns the
+Checkout URL. Deliberately never writes `plan_key` on `subscriptions`
+itself — only the webhook (piece (e), once Stripe actually confirms
+payment) can do that, so starting a Checkout Session can never itself
+grant paid access. Needed no new secret beyond `STRIPE_SECRET_KEY`
+(already in place) — `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` are
+auto-injected into every Edge Function by Supabase.
 (c) a minimal "Upgrade" entry point in the app to actually call it, enough
 to test end to end (the full Pricing-page visual overhaul to the real
 4-tier structure stays a separate, later piece — Stage D/F); (d) register
@@ -1032,12 +1047,13 @@ re-deriving any of this.
       done 2026-11-24 (as `STRIPE_SECRET_KEY`).
 - [x] ~~Run `supabase/0012_add_stripe_price_ids.sql` and populate the
       three paid tiers' monthly Price IDs~~ — done 2026-11-24.
-- [ ] **James to deploy:** `supabase/functions/create-checkout-session/
-      index.ts`, via Supabase Dashboard → Edge Functions. Written, not yet
-      deployed. The actual next step.
-- [ ] A minimal "Upgrade" entry point in the app to test it; register the
-      webhook in Stripe and add its signing secret; write/deploy the
-      webhook Edge Function; one real end-to-end test (Stage C3, §0/§4).
+- [x] ~~Deploy `supabase/functions/create-checkout-session/index.ts`~~ —
+      done 2026-11-24, under the correct name, with "Verify JWT with
+      legacy secret" turned off per Supabase's own recommendation.
+- [ ] **Next:** a minimal "Upgrade" entry point in the app to test it;
+      register the webhook in Stripe and add its signing secret;
+      write/deploy the webhook Edge Function; one real end-to-end test
+      (Stage C3, §0/§4).
 - [ ] Build the renewal/expiry state machine and staged reminder emails
       (Stage C4, §4) — not started.
 - [ ] Resolve the live Stripe account's "missing director" compliance
