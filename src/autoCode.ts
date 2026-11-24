@@ -490,11 +490,6 @@ export function autoCodeAlphaNumeric(
 export interface NumericOverflowGroup {
   key: string;
   level: number;
-  /** Every ancestor's own description, top (shallowest) to bottom (immediate parent) — James's
-   * report: a plain "under 'COSTS'" was ambiguous the moment "Costs" turns up as a heading in more
-   * than one branch of the same taxonomy (a common pattern), and Find's own "first match only"
-   * made it worse. The full path disambiguates without the user needing to go searching at all. */
-  ancestorPath: string[];
   ordinaryCount: number;
   maxAllowed: number;
   hasOther: boolean;
@@ -506,11 +501,11 @@ export interface NumericOverflowGroup {
    * two headings that happen to share the exact same name and nesting (e.g. two unrelated branches
    * each genuinely titled just "Costs"). The row number is the one thing that's never ambiguous. */
   rowNumber: number;
-  /** firstRowId's own description text — James's report: a message built only from the row's
-   * ANCESTORS ("under 'Costs'") read as if the ancestor's name belonged to the flagged row itself,
-   * when the row actually overflowing was a same-named-sounding but different entry one level
-   * down ("Cost of Sales", a child of "Costs") — showing the row's own text removes that ambiguity
-   * outright, on top of (not instead of) the ancestor breadcrumb. */
+  /** firstRowId's own description text — James's report: naming only the row's ANCESTOR ("under
+   * 'Costs'") read as if the ancestor's name belonged to the flagged row itself, when the row
+   * actually overflowing was a same-named-sounding but different entry one level down ("Cost of
+   * Sales", a child of "Costs") — and the ancestor turned out not to be something he needed named
+   * at all once the row's own text is shown directly, which the row number alone doesn't give. */
   firstRowDescription: string;
 }
 
@@ -522,17 +517,6 @@ export interface NumericOverflowGroup {
 // should be allowed to happen without asking first). Returns every overflowing group, in the same
 // top-to-bottom order Auto Code itself would reach them, so the caller can always act on the
 // first one it hasn't already approved.
-// Every ancestor's own description, shallowest first — walks immediateParentIndex repeatedly.
-function ancestorPathFor(rows: TaxonomyRow[], idx: number): string[] {
-  const path: string[] = [];
-  let i = immediateParentIndex(rows, idx);
-  while (i !== -1) {
-    path.unshift(rows[i].descriptions[levelOf(rows[i])] || '(unnamed heading)');
-    i = immediateParentIndex(rows, i);
-  }
-  return path;
-}
-
 export function findNumericOverflowGroups(rows: TaxonomyRow[]): NumericOverflowGroup[] {
   const maxLevel = maxLevelUsed(rows);
   const result: NumericOverflowGroup[] = [];
@@ -547,7 +531,6 @@ export function findNumericOverflowGroups(rows: TaxonomyRow[]): NumericOverflowG
       result.push({
         key: `${level}:${rows[indices[0]].id}`,
         level,
-        ancestorPath: ancestorPathFor(rows, indices[0]),
         ordinaryCount,
         maxAllowed,
         hasOther: otherCount > 0,
