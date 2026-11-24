@@ -3272,6 +3272,625 @@ sign-ins) for the autosave account-scoping (three separate accounts/
 timings), the lock-state class toggle, and the new-sign-ups panel's full
 render/dismiss/persist cycle.
 
+### Doc housekeeping and a display-only wizard rename (PRs #237–#238)
+Two small items right after the previous evening's round (PR #236 itself was
+the documentation catch-up that produced the two entries directly above —
+no separate History entry needed for it here):
+
+- **Supabase's Data API grant change recorded (PR #237).** James forwarded a
+  Supabase email (2026-10-21): from 30 October 2026, a newly created table
+  in the public schema no longer automatically gets Data API access without
+  an explicit grant statement, alongside RLS. Checked against every
+  migration so far (`0001`–`0009`) — all predate the change and all create
+  tables that already exist in the live project, so nothing is affected
+  today; recorded as a required step for any future migration that creates
+  a new table, so it isn't lost before the next one is written.
+- **"Simple Taxonomy" wizard relabelled "Create Taxonomy Wizard" (PR #238).**
+  James's ask, display-only — the underlying `WorkflowLevel`/
+  `settings.guidance.level` value stays the literal `'Simple Taxonomy'`
+  string everywhere it's used for branching (App.tsx, Grid.tsx,
+  guidance.ts), so none of that logic needed touching. Updated in the three
+  places it's actually shown: the landing menu button (via a display-only
+  label function), the wizard's own setup-screen heading
+  (SimpleTaxonomySetup.tsx), and the matching Help entry's label
+  (help-text.csv).
+
+### F1 quick-edit polish: default button, post-save reminder, and the Worksheet Guidance panel wired in (PRs #239–#241)
+Three quick follow-ups to the F1 in-context help editor built the previous
+round (PR #225):
+
+- **Cancel was the blue default instead of Save (PR #239).** James's
+  report: the F1 Edit Help Text popup highlighted Cancel — the app's own
+  convention for "the" default action, and what Enter activates — instead
+  of Save. Root cause: button order was reversed from every other dialog in
+  the app; the shared CSS/Enter-key convention keys off the *last* button
+  in `.confirm-dialog-actions`, and Save was listed first. Swapped the
+  order (Cancel, then Save) to match.
+- **Post-save reminder to download/send the Help CSV (PR #240).** James's
+  ask: a save here only updates this browser's own live session (per the
+  file's own long-standing comment) — easy to forget, since nothing on
+  screen said so at the moment it mattered. Save now swaps the dialog to a
+  one-line reminder ("remember to download the Help CSV and send it to
+  Claude...") with a single OK, rather than closing immediately.
+  `HelpEditor` (the other Help-editing entry point) already carried an
+  equivalent, always-visible reminder next to its own download button, so
+  it was left unchanged.
+- **Worksheet Guidance panel wired into F1 (PR #241).** James's report: no
+  F1 edit on the Worksheet Guidance panel (the yellow banner shown above
+  the grid for every non-wizard taxonomy). Unlike every toolbar
+  button/menu item, this panel displays its `help-text.csv` text directly
+  rather than through a `Tooltip`/`menuTooltip`/`HelpIcon`, so nothing ever
+  reported it as the "active" field F1 reads. It now reports itself
+  (`worksheetGuidance`) on hover, the same mechanism `Tooltip.tsx` already
+  uses — `TooltipQuickEdit` itself needed no changes, since it already
+  edits any field by key.
+
+### Export Format Choice dialog gets a help icon, then a popover-overflow fix (PRs #242–#243)
+- **Help icon added (PR #242).** James's report: no "?" on the Export to
+  CSV/Excel "Discrete Columns or Concatenated?" popup — confirmed via git
+  history that this dialog never actually had one, unlike form-style
+  dialogs (Settings, New Taxonomy, CSV Import) which show a clickable "?"
+  next to each field. Button-choice dialogs like this one only ever had
+  invisible hover tooltips per button, with no visible sign that help
+  exists at all — a real, if separate, inconsistency. Per James's choice
+  (one icon by the title, not one per button): a single `HelpIcon` next to
+  "Export to CSV/Excel — Discrete Columns or Concatenated?", explaining the
+  overall choice; the existing per-button hover tooltips still cover each
+  option's own detail.
+- **Popover overflow fix (PR #243).** James's report: the new help popover
+  ran off the dialog's own right edge and got truncated. Root cause:
+  `.help-popover` was plain CSS (`position: absolute`, `left: 0` relative
+  to the icon), which only ever worked by coincidence in every other
+  dialog it appears in (wide forms, icon near the left edge) — nothing
+  clamped it to the viewport. Portalled to `document.body` and positioned
+  via a measured, viewport-clamped inline style instead, same fix already
+  applied to `Tooltip.tsx`'s own popup for the identical reason.
+
+### Two bugs for a row with codes typed but no description yet (PR #244)
+James's report, both on a just-inserted row that had codes entered at
+shallower levels but no description typed anywhere (`levelOf` — deliberately
+description-driven everywhere in this codebase — returns `-1` for it):
+
+1. "Fill Missing Codes" on its own blank code cell said "No missing codes to
+   fill in this column", even though the cell was visibly blank.
+   `groupSiblingIndices` can't place a `levelOf = -1` row in any group, so
+   it was invisible to the fill regardless. Now diagnosed specifically
+   ("this row doesn't have a description yet...") rather than claiming
+   there was nothing to do.
+2. "Insert Row Above/Below" on that same row said "There is no gap in the
+   codes to insert this row" — a false result. `refLevel` used to fall
+   back to a hardcoded column 1 for any row whose own level was
+   undetectable, so the gap check compared the row's own code to *itself*
+   (both neighbours resolved to the same row) instead of looking at the
+   column actually right-clicked. Falls back to `contextMenu.level`
+   instead, which is always the real column in question regardless of
+   whether the row has a description yet.
+
+Live-tested both against the exact repro (a row with ancestor codes set but
+no description, inserted below a described sibling) and confirmed no
+regression on Fill Missing Codes' ordinary case.
+
+### Fill Missing Codes: a gap-choice prompt, then three rounds of follow-up fixes (PRs #245–#248)
+- **Gap-choice prompt, plus adaptive gap limiting for Auto Code (PR #245).**
+  James's ask: right-clicking "Fill Missing Codes" on a column that still
+  has a genuine spread-from-scratch group to code now asks how to space
+  the codes (Sequential, Skip 1, Skip 2, ...), offering only the gaps that
+  will actually fit that group. A column with nothing to fill, or where
+  every blank is just a gap between two already-coded siblings, fills
+  exactly as before with no prompt. Auto Code keeps its one configured
+  default gap, but now automatically limits it per group when the full gap
+  wouldn't fit — previously it could silently run off the end of the code
+  pool and leave later siblings with no code at all.
+- **Character-set and "no room" message fixes (PR #246).** James's report,
+  item 1 of a 5-item follow-up list: under "Alpha Upper Case Only" (and
+  the other alpha-exclusive restrictions), Fill Missing Codes still handed
+  out digits — "1, 3, 5, 7, 9, B, D, F, G" — even though those
+  restrictions have never allowed a digit. Root cause: every gap-coded
+  fill always drew from one fixed digits-then-uppercase pool regardless of
+  the taxonomy's own Code Restriction setting. Now builds the actual pool
+  of allowed characters from the restriction itself, so an alpha-only
+  taxonomy only ever gets letters; the gap-choice dialog's examples
+  (previously always "1, 3, 5...") now show real characters from that pool
+  too (e.g. "A, C, E..."). Separately, a screenshot showed "No missing
+  codes to fill in this column" on a column that visibly had three blank
+  rows between two already-coded siblings ("B" and "D") — there wasn't
+  room to fit all three, which the fill correctly left alone, but the
+  message read as if there was nothing to do at all. Now distinguishes
+  that case explicitly ("there's a gap here, but not enough room...") from
+  genuinely having nothing left to fill. Found and fixed along the way:
+  the "did anything change" check compared every row's own code at the
+  column, not just rows that are real members of that level — so padding
+  an unrelated heading row's trailing cell for the first time (always run
+  as part of the same pipeline) could register as "something changed"
+  even when no sibling's own code actually moved; scoped to real siblings
+  only. Also answered (no code change): within a column, codes sort in
+  strict ASCII order (A-Z entirely before a-z), not an Excel-style
+  interleaved collation — confirmed directly from the existing
+  ascending-order checks in codeValidation.ts and Grid.tsx.
+- **Gap choice extended to patch gaps (PR #247).** James's follow-up test
+  on item 1: filling blanks between two already-coded siblings with real
+  spare room (e.g. "B" and "Z", eight blanks between them) always filled
+  plain-consecutive with no gap choice offered at all — a fair reading of
+  what shipped first as "fills sequential, does not offer to gap code,"
+  since the prompt was scoped to greenfield groups only.
+  `practicalGapOptions` now also walks each "patch" group's own blank runs
+  (the same scan `fillOrderedGaps` already does) to find any run with
+  enough room for more than a plain step, and folds its fit into the same
+  level-wide minimum a greenfield group's count already did.
+  `fillOrderedGaps` itself now takes the chosen gap and self-clamps it per
+  run, the same safety-net pattern already used for the greenfield spread
+  and Auto Code's adaptive limiting — one run with less room than another
+  in the same group never breaks, it just gets whatever of the chosen gap
+  actually fits. Numeric Only is explicitly pinned back to sequential here
+  (it never gets the prompt, so a stray settings-default gap couldn't
+  silently reach it).
+- **Gap-choice dialog shows both notations (PR #248).** James's report: the
+  dialog's example for each option (e.g. "Skip 1 — 1, 3, 5, …") always
+  came from one fixed pool read from its own start — right for a
+  greenfield fill, which really does start there, but wrong for a patch
+  fill continuing on from an existing letter anchor (his own test: filling
+  after "D" actually produced "F, H, J, …", not digits). Rather than guess
+  which of the two a given fill will turn out to be, each option now shows
+  both notations whenever the restriction allows digits and letters —
+  exactly his own original spec's "1, 3, 5, … or a, c, e, …" wording — so
+  the dialog stays honest regardless of which branch runs. An alpha-only
+  restriction still shows just its own letter example, as before.
+
+### Delete key now clears a full ctrl-click code selection, not just the focused cell (PR #249)
+James's report: ctrl-clicking several code cells into one highlighted
+selection, then pressing Delete, only cleared the single cell that happened
+to hold keyboard focus — forcing him to delete one cell at a time by hand.
+Root cause: the keyboard Delete handler only had a case for description
+cells; a code cell's Delete key press fell through to the browser's own
+native per-input clearing, which can only ever reach the one focused
+`<input>`, never the rest of a multi-row selection.
+
+Delete now clears every row in the active selection (when the focused cell
+is part of one), cascading this column and everything after it per row —
+the same rule the existing right-click "Delete Codes" menu item already
+used. A single, unselected Delete still clears just that one cell, exactly
+as before.
+
+### Auto Code's Numeric Only overflow handling, four rounds, plus Find bug fixes (PRs #250–#253)
+"Numeric Only" only has nine digits to spread a sibling group across — this
+stretch worked through how Auto Code should behave once a group genuinely
+doesn't fit, round by round against James's own live testing:
+
+- **Pre-check and ask before spilling into letters (PR #250).** Previously,
+  a group with more ordinary members than nine silently spilled into
+  letters with no warning — breaking the very restriction the taxonomy was
+  set to. Auto Code now checks the whole taxonomy for this before writing
+  anything, and stops at the first group it finds to ask: overflow into
+  letters for just this group, overflow for the rest of this run, or stop
+  to fix it manually (writing nothing at all, since a manual fix — e.g.
+  splitting the group into two headings — could change what the rest of
+  the taxonomy needs anyway, so there's no safe partial state to leave in
+  place). Also fixed a genuine off-by-one along the way: a plain group of
+  exactly 9 ordinary members with no Other/Miscellaneous entry was already
+  spilling into letters today, because the spread always reserved a 9th
+  slot for an Other entry whether or not the group actually had one — nine
+  digits fit nine ordinary siblings cleanly, so the reservation now only
+  applies when there's a real Other row to make room for, which also makes
+  the new overflow check's own threshold (more than 9) correct in the
+  first place. Unlocked every Code Restriction in the Auto Code dialog
+  (previously only one was selectable, with the rest marked "coming
+  soon") — the character-pool work from the last few rounds already makes
+  the underlying engine produce correct codes for all five, so there was
+  nothing left to build before enabling them.
+- **Jump to the problem before asking, and show the gap setting (PR #251).**
+  James's feedback on PR #250's pre-check: "Stop to Fix" left him hunting
+  through the grid for the problem group himself. The overflow check now
+  drops the cursor onto the group's own first code cell and scrolls it to
+  the top of the work area the moment it's found — before the warning
+  dialog appears at all, so it's visible underneath regardless of which of
+  the three choices gets picked, not only after choosing to stop. Auto
+  Code's dialog now also shows (and lets him override) the gap it's about
+  to use, the same facility Fill Missing Codes already has — previously
+  it silently applied whatever Settings' Auto Code Gap Increment held,
+  with no way to see or change it from the Auto Code dialog itself.
+  Computed across the whole taxonomy (Auto Code sweeps every level in one
+  pass, so the practical ceiling is the smallest fit found anywhere),
+  defaulting to the Settings value when that still fits; hidden for
+  Numeric Only, which has no fixed-gap concept to show. A one-off choice
+  for this run, same as Fill Missing Codes' own prompt — never written
+  back to Settings.
+- **Layout and overlap fixes (PR #252).** James's report on PR #251's two
+  additions: the "How do you want me to space the codes?" prompt was
+  tagged onto the same line as the code-type dropdown, with nothing to
+  force a line break — switched to the same `<p>` + sibling `<select>`
+  shape Fill Missing Codes' own gap dialog already uses, which puts it on
+  its own line. Separately, the overflow warning still masked the very
+  row it had just scrolled to — `.validation-overlay` centers its dialog
+  over the whole viewport, so a row scrolled merely to "the top of the
+  grid" can still sit squarely behind a vertically centered dialog's own
+  footprint; `focusCodeCell` now checks, once the dialog it's about to
+  open has actually rendered, whether the two still overlap, and nudges
+  the row down just clear of the dialog's bottom edge if so.
+- **Dialog tidy-up, clearer overflow message, Find fixes (PR #253).** Auto
+  Code's type/gap dropdowns now have consistent spacing instead of being
+  crammed together. The Numeric Only overflow prompt now focuses the
+  description cell of the first affected row (readable text), not the
+  blank code cell, and its message names the code column and the full
+  ancestor breadcrumb (so a repeated heading name like "Costs" is no
+  longer ambiguous), explains the Other/Miscellaneous "9" reservation in
+  plain language, and calls out that overflowing moves Other to "Z".
+  Numeric Only auto-coding now always stretches a group's codes across the
+  full available range (gaps distributed between entries) instead of
+  clustering near the start, per James's explicit confirmation reversing
+  earlier guidance; this also makes an overflowing group's Other entry
+  land on "Z" as a natural consequence of the same change, with no
+  separate special case needed. Three Find bugs fixed in the same round:
+  the cursor landing one row off the actual match (the match banner's own
+  mount was shifting the layout after a single animation frame; now waits
+  two, matching the fix already used for the overflow dialog's focus
+  jump), re-invoking "Find" while a match was active advanced straight to
+  the next match instead of reopening the search box (changed again next
+  round once James reported the downside — see PR #255 below), and the
+  search box now keeps the last search text instead of clearing it.
+
+### The scroll/sticky-header investigation: freeze the header, a polling-based "robustness improvement," then the real root cause (PRs #254–#258)
+A five-round investigation into the grid's work-area height and
+sticky-header behaviour, each round driven directly by James testing the
+previous one against a real taxonomy — notably including a round (PR #256)
+whose own commit message explicitly frames it as a robustness improvement
+papering over an unidentified cause, not a confirmed fix for a known one,
+with the actual root cause only found two rounds later (PR #258).
+
+- **Freeze the header; disambiguate overflow location with a row number
+  (PR #254).** James's report, testing the previous (pre-#254) round's
+  overflow fixes: the overflow message's breadcrumb ("under 'Costs'") was
+  still ambiguous when the literal heading text repeats elsewhere in the
+  taxonomy at a different depth — two separate headings can share an
+  identical name and an identical-looking ancestor chain. Added the
+  grid's own 1-based row number (`NumericOverflowGroup.rowNumber`, exactly
+  what the row-number column shows) to both the dialog message and the
+  "Stop to Fix" error, which is never ambiguous. Separately, any activity
+  that highlights a cell could still land it hidden above the top of the
+  work area — scrolling a row to the top of the page can leave it tucked
+  behind the app's own sticky header bar, which occupies that space
+  without taking up room in the page's scroll flow. Extracted the existing
+  dialog-overlap nudge into a shared helper (`scrollHelpers.ts`) that also
+  checks the app's sticky bar and the grid's own header, and wired it into
+  every "jump to a cell" action in the app (the overflow prompt, Find, the
+  Audit panel, Go to Code). Froze the grid's own header row (the one
+  showing each column's number) for the first time, which needed
+  `.grid-wrapper` to become a genuine, bounded, independently-scrolling
+  box (`position: sticky` has nothing to stick within otherwise —
+  `overflow-x: auto`, needed for a wide grid's horizontal scrollbar, was
+  already silently forcing `overflow-y: auto` too by a standing CSS rule,
+  but that forced-on scroll container never actually moved since nothing
+  constrained its height). Its max-height and its header's own row-1
+  height are kept in sync with the live page layout via a small
+  `ResizeObserver` in Grid.tsx.
+- **Frozen-header bleed-through, dialog positioning, Find, and a gap bug
+  (PR #255).** James's report testing PR #254's fixes against a real
+  taxonomy: the frozen header showed scrolled-past body rows bleeding
+  through it — `getLevelColor` returns `undefined` for every uncoloured
+  level (the alternating-colour design itself, Section 4.2), which left
+  those header cells with no background at all, invisible before the
+  header could ever sit on top of scrolled content, very visible now that
+  it does; both header rows now fall back to white when the level isn't
+  coloured. A second, smaller bleed-through: `.grid-wrapper`'s own
+  `padding-top` doesn't stay reserved once genuinely scrolled
+  (`position: sticky` offsets are computed against the padding edge, but
+  the padding itself isn't blank once there's real scrolling to do) —
+  moved that breathing room to a margin on `.taxonomy-grid` instead, which
+  scrolls away with the rest of the content exactly as expected. The
+  overflow prompt's focus jump no longer also nudges clear of the dialog
+  itself, only the sticky top bar and the frozen grid header — James's
+  report: doing both pushed the row almost to the bottom of the (fairly
+  short, bounded) work area when the dialog was tall; he'd rather it sit
+  at the top, right below the header, even if the dialog ends up
+  overlapping it, since the dialog's own text already names the row,
+  column and heading unambiguously. Find's "progressive" behaviour from
+  the previous round (reinvoking Find jumped straight to the next match
+  with no dialog) left no way to see or change what was being searched
+  for; reinvoking Find now always reopens the search box, prefilled with
+  the last query — submitting it unchanged advances to the next match,
+  typing something different starts a fresh search. An approved Numeric
+  Only overflow into letters was always stretching across the full
+  alphanumeric range regardless of the taxonomy's configured gap, with no
+  way to see or change it beforehand — only a genuinely overflowing group
+  now switches to the same fixed-gap spread every other restriction's own
+  overflow already uses, and Auto Code's dialog shows the gap selector
+  whenever the taxonomy has an overflow candidate, the same as it already
+  does for the fixed-gap restrictions.
+- **Work-area height made self-correcting via polling — explicitly not a
+  confirmed root-cause fix (PR #256).** James's report: the work area
+  stayed noticeably shorter than the real remaining screen space (about 6
+  rows of unused page below it) even after the previous round's extra
+  re-measurement triggers (a delayed re-check, the window `load` event) —
+  a persistent shortfall, not a one-off timing gap, so whatever layout
+  change was leaving the measurement stale wasn't one those triggers
+  actually caught. Rather than keep chasing the exact trigger,
+  `--grid-wrapper-max-height` now also re-measures on a plain 250ms
+  interval for as long as the grid is mounted, on top of the existing
+  resize/body-size/load triggers — cheap (one bounding-rect read per tick)
+  and self-correcting within a quarter second of any layout change,
+  however it was caused, since it no longer depends on identifying which
+  specific event should have fired. This round's own commit message is
+  explicit that this is a robustness improvement standing in for an
+  unidentified root cause, not a confirmed fix for a known one — borne out
+  two rounds later when PR #258 found the real cause.
+- **Overflow message names the flagged row's own text (PR #257).** James's
+  report, with a snip confirming the coordinates (Row 29, Column 2) were
+  already correct: the message's wording made it read as if "COSTS" (the
+  ancestor named in the breadcrumb) was itself at row 29, when row 29 is
+  actually "Cost of Sales" — a child of "Costs", one level down. The
+  breadcrumb was never wrong, but naming only the ancestor and never the
+  flagged row's own text left it reading like the two were the same thing.
+  `NumericOverflowGroup` now also carries `firstRowDescription` (the
+  flagged row's own text), shown alongside the row number in both the
+  dialog message and the "Stop to Fix" error, ahead of the ancestor
+  breadcrumb.
+- **The real work-area shortfall finally root-caused (PR #258).** James's
+  report, with a screenshot pinning down the real cause at last: scrolling
+  moved the work area's *bottom* edge too, not just its top — the page was
+  genuinely taller than the viewport. Root cause: the app's own copyright
+  footer renders directly after `.grid-wrapper` and needs its own real
+  space below it, plus its own `margin-top`, plus `.app`'s own trailing
+  padding past it — none of which the height calculation ever subtracted,
+  since it only ever measured what's *above* `.grid-wrapper`. Rather than
+  enumerate each contributor by hand, `--grid-wrapper-max-height` now
+  folds back however far the page's current total height already
+  overshoots the viewport into this box's own height each time it runs —
+  self-correcting within a tick or two regardless of what's actually
+  consuming the space below the grid, including anything added later;
+  verified live that the page no longer scrolls at all once settled
+  (document height now matches the viewport exactly). Also acted on
+  James's correction that the ancestor breadcrumb added in PR #257
+  ("each a direct child of 'Costs'") wasn't actually wanted in that form
+  now that the row's own text is shown directly — removed outright
+  (`ancestorPath` and its computation) in favour of his own exact wording:
+  `Row N ("description"), Column C: this is the first of a group of
+  sibling entries that together has too many to fit under Numeric Only.`
+  And a new report: clicking "Stop to Fix" could also trip the unrelated
+  "Other or Miscellaneous Should be the Last Entry in a Segment" notice
+  and lose the highlighted row — the dialog button taking focus blurs the
+  description cell that was only ever focused to show where the problem
+  is, the same incidental side effect `auditActive` already guards this
+  blur handler's own notices against; added the same guard for this case
+  (`autoCodeOverflowActive`), and re-focuses that same cell right after
+  dismissing, since a blur happens regardless of the notice itself —
+  "Stop to Fix" no longer loses the highlight either way.
+
+### Scrolling reworked from scratch: the grid itself becomes the sticky, screen-filling work area (PR #259)
+James's report, after the five rounds above: the page still had several
+scroll regions moving independently (the work area on its own, the whole
+header block together, the copyright message along with it), the taxonomy
+heading was duplicated with a "Table:" line, and three things that should
+have scrolled away with the page instead stayed pinned above the grid
+indefinitely (the taxonomy heading, the Code Restrictions row, and the
+guidance banner), squeezing the work area down to a fraction of the screen
+with no way to reclaim that space by scrolling.
+
+Removed the copyright footer and the duplicate "Table: ..." line entirely.
+Restructured the sticky region to hold only the app's own title and
+toolbar; the taxonomy heading, Code Restrictions row, and guidance banner
+are now ordinary page content that scrolls away like anything else. The
+grid itself is now the sticky element: as the page scrolls past that
+content, the grid's own top edge rises to meet the toolbar and locks there,
+filling the entire remaining screen for as long as the user keeps
+scrolling, with rows inside it scrolling via its own existing internal
+mechanism exactly as before.
+
+This replaces the JS polling/self-correcting feedback loop from PRs #256
+and #258 (built to chase the grid's available height around the footer
+eating into it) with a plain, constant CSS formula — nothing varies below
+the grid any more, so nothing needs to be measured there. Also fixed two
+bugs this surfaced: a stale ref-based effect that could measure the
+toolbar's height before it had even mounted and then never run again
+(silently dead code until this round gave it a real job), and a genuine CSS
+mechanic where the page's own trailing bottom padding was clamping the
+grid's sticky offset short by exactly that amount — removed, which also
+happens to be exactly what was asked for (zero wasted space below the
+grid).
+
+### App heading and toolbar squeezed down, plus a new "Full Screen" toggle (PR #260)
+James's ask: maximise the work area further. The app's own heading was
+still 36pt with a full margin/padding allowance around it, taking up far
+more of the sticky bar than it needs to now that it's just a title rather
+than the page's main visual anchor (per PR #259) — shrunk to 12pt with the
+bar's padding and the header's margin squeezed down to match, and the
+heading now carries the copyright line directly ("— Copyright (c) James A
+Robertson and Associates Limited") rather than that living only in the
+landing-page tagline.
+
+Also added a "Full Screen" toggle to the toolbar, right before Help: it
+wasn't obvious a user could scroll past the guidance banner, taxonomy
+heading, and Code Restrictions row to get more of the grid on screen, so
+this collapses all three in one click (shown by default on opening a
+taxonomy, matching how it's always worked), relabelling itself to "Display
+Details" to bring them back.
+
+### Reference Documents library added to the Help page (PR #261)
+James's ask: somewhere to put a growing set of standalone reference papers
+(starting with "Two-Digit Code Levels and Precision Taxonomies" — why the
+tool keeps to one character per code level) that don't fit
+help-text.csv's short, per-field wording. Agreed with James to put these in
+the existing Help page rather than the landing menu, since it's reachable
+both before a taxonomy is open and from the toolbar at any point while
+working on one, and a list there scales better than growing an
+already-long landing page.
+
+New `public/reference-docs/` folder holds each document as its own static
+HTML file; `src/referenceDocuments.ts` lists title + description + filename
+for each one, so adding the next document later is just appending an entry
+and dropping its file alongside this one.
+
+### Subscription/Stripe billing: the 4-tier pricing structure, Stripe account & product setup, tier-config migrations, the Checkout-Session Edge Function, and a live end-to-end test (PRs #262–#274)
+A substantial, multi-session piece of business/engineering work, all dated
+2026-11-24 in `MASTER_BRIEFING.md` — the first real paid-subscription
+mechanics built into the app. Walked through as a bite-sized, agreed
+delivery plan (Stages A–G), each stage a separate PR, each one a step James
+could actually see and (where it involved his own Stripe/Supabase
+dashboards) run himself before the next began. Recorded here on the
+engineering side — files, migrations, function logic — in less depth on
+the pricing/business decisions themselves, which `MASTER_BRIEFING.md`
+already covers in detail.
+
+- **The 4-tier pricing structure agreed (PR #262).** A full review of
+  James's refined subscription-structure spreadsheet, across two revision
+  rounds, plus the standalone WordPress pricing page, resolving every open
+  mechanic to a concrete decision before any engineering started: Free /
+  Basic / Advanced / Enterprise, replacing an earlier 3-tier draft; a real
+  tier conflict caught and fixed (the original draft gated Lock Taxonomy to
+  Basic but Audit Taxonomy — a hard prerequisite for Lock — to Advanced+;
+  Lock moved up to Advanced+ alongside Audit, so no tier can be sold a
+  feature it can't actually use); category names and tier break-points
+  kept as supervisor-editable data rather than hardcoded constants, since
+  James expects to tune them with real-world experience; annual billing as
+  an editable flat discount per tier (his own default: 25%) shown at launch
+  but labelled "Coming soon"; a new, agreed piece of scope — lower tiers
+  see the *full* starter-sample Library, not a cut-down one, but a sample
+  exceeding that tier's own limits opens read-only rather than being hidden
+  or blocked; a Beta tester override (a hidden tier giving full access at
+  no charge, still excluded from the supervisor-only Edit Help capability
+  regardless); and two new feature asks (a paid-subscriber report,
+  starred-Library-update notifications) parked rather than built yet. Also
+  corrects the record that Stripe account creation had not actually been
+  started, superseding an earlier ambiguous note. Pure planning — no app
+  code changed.
+- **Stripe Stage B — account and products created live (PR #263).** Walked
+  through with James step by step: Stripe account created (test mode),
+  Stripe Tax enabled in the sandbox, all three paid-tier Products/Prices
+  created (GBP, Monthly, tax-exclusive — his confirmed choice, so the
+  advertised price is net of tax), and the test-mode publishable key
+  recorded. Also notes a live-UI change for whoever picks up the next
+  walkthrough: Stripe's current dashboard has no literal "Developers"
+  sidebar entry any more. Pure documentation — no app code changed.
+- **Subscription tier-config tables (Stage C, piece 1 — PR #264).** New
+  migration `supabase/0010_create_subscription_plans.sql` creates
+  `subscription_plans` and `subscription_settings`: the 4-tier structure
+  (plus a hidden `beta` override row) as live, editable Postgres data
+  rather than hardcoded app constants. Seeded with the structure agreed in
+  PR #262. Readable by anyone, signed in or not (the Pricing page shows
+  before sign-in too) — this is published pricing data, not sensitive —
+  writable only by the supervisor account, the same `auth.email()` gating
+  used throughout. No app code reads this table yet; like every migration
+  before it, it's a one-time manual step James runs himself in Supabase's
+  SQL Editor.
+- **Tier-config migration confirmed run (PR #265).** James ran `0010`
+  successfully; `subscription_plans` and `subscription_settings` now exist
+  for real. Also records an unrelated live-account issue found along the
+  way: Stripe's automated compliance check flagged an unrecognised
+  "missing director" on James's live account (surfaced early, since
+  confirming his email led straight into live-account activation rather
+  than waiting for Stage G) — confirmed this cannot affect the sandbox or
+  anything in Stages B–F, only Stage G (accepting real payments); left
+  open for James to revisit before go-live.
+- **Per-account subscriptions table (Stage C, piece 2 — PR #266).** New
+  migration `supabase/0011_create_subscriptions.sql` creates
+  `subscriptions`: one row per account, recording which plan it's actually
+  on, defaulting every new signup to `free` via a trigger mirroring
+  `profiles`' own (PR #1-era `0001`). Scope narrowed from the original
+  "capture chosen plan at signup" plan for a concrete reason: a real "pick
+  Basic and sign up" flow needs Stripe Checkout to exist first (otherwise
+  nothing stops a free signup from self-claiming a paid tier), so that UI
+  moment moves into Stage C3 instead, once Checkout is real — this piece
+  is just the database record itself. Deliberately no write access for
+  ordinary users at all, not even to their own row — only the signup
+  trigger (`security definer`) and, later, the Stripe webhook function
+  (`service_role`) can ever change a row, so nothing in the regular app can
+  self-grant a paid tier.
+- **Stage C database plumbing complete (PR #267).** James ran
+  `0011_create_subscriptions.sql` successfully — both subscription
+  tier-config migrations (`0010`, `0011`) are now live in Supabase. Stage
+  C3 (the two Stripe Edge Functions) is broken into six sub-pieces, since
+  it's genuinely new ground for this project: adding the Stripe secret key
+  to Supabase's Edge Function secrets, writing/deploying the
+  Checkout-Session function, a minimal "Upgrade" entry point to test it,
+  registering the webhook in Stripe and adding its signing secret,
+  writing/deploying the webhook function, and one real end-to-end test.
+  Also fixes a couple of leftover merge artifacts from the previous
+  round's PR (missing blank lines/word-joins where origin/main's squash
+  commit and this branch's local history diverged over the same text).
+- **Stripe Price ID columns added (Stage C3, piece a/b — PR #268).** James
+  added the Stripe secret key to Supabase's Edge Function secrets
+  (`STRIPE_SECRET_KEY`) — found under Project Settings → Edge Functions →
+  Secrets, a different area from Project Settings → API Keys (Supabase's
+  own keys, not Stripe's). New migration
+  `supabase/0012_add_stripe_price_ids.sql` adds two nullable columns to
+  `subscription_plans`: `stripe_price_id_monthly` and
+  `stripe_price_id_annual`, holding the actual Stripe Price ID that charges
+  for each tier — kept alongside the rest of the tier config as live,
+  editable data, same philosophy as everything else in that table, rather
+  than hardcoded into the Checkout Edge Function itself. The three paid
+  tiers' monthly IDs still needed copying in by hand from Stripe's Product
+  catalog once this migration ran.
+- **Stripe Price IDs populated (PR #269).** James ran `0012` and populated
+  all three paid tiers' Stripe Price IDs, found via Stripe's Workbench →
+  Inspector, since a Product's own ID is a distinct object from its Price
+  ID — the one Checkout actually needs. Everything Stage C3's
+  Checkout-Session Edge Function needs was now in place except the
+  function itself. Pure documentation — no app code changed.
+- **The Checkout-Session Stripe Edge Function written (Stage C3, piece b —
+  PR #270).** New `supabase/functions/create-checkout-session/index.ts`:
+  called when a signed-in user clicks "Upgrade" to a paid tier. Creates
+  (or reuses) a Stripe Customer tied to the account, looks up the
+  requested tier's Price ID from `subscription_plans`, creates a Stripe
+  Checkout Session for it, and returns the Checkout URL for the frontend
+  to redirect to. Deliberately never writes `plan_key` on `subscriptions`
+  itself — only the webhook function (a later piece, once Stripe actually
+  confirms payment) can do that, so starting a Checkout Session can never
+  itself grant paid access. Identifies the caller from their own Supabase
+  session (passed through as the request's Authorization header); uses a
+  service-role client only for the one thing the signed-in user's own
+  client is deliberately never allowed to do — writing to `subscriptions`
+  at all. Needs no new secret beyond `STRIPE_SECRET_KEY` (already
+  configured) — `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` are
+  auto-injected into every Edge Function by Supabase itself. Lives outside
+  both `tsconfig.app.json`'s and `tsconfig.node.json`'s include globs, so
+  it can't affect the Vite build — confirmed via a clean `tsc -b --force`
+  and `npm run build`. Like every migration before it, this is a one-time
+  manual step James deploys himself, via Supabase Dashboard → Edge
+  Functions.
+- **Checkout-Session function deployed (PR #271).** James deployed
+  `create-checkout-session` successfully via Supabase's in-browser editor,
+  after catching and redoing a first attempt where the editor's own
+  auto-generated placeholder name and generic template code got deployed
+  unmodified. JWT verification turned off on the deployed function, per
+  Supabase's own on-screen recommendation for functions with custom auth
+  logic in their code (which this one has). Pure documentation — no app
+  code changed.
+- **A supervisor-only Test Checkout entry point (Stage C3, piece c — PR
+  #272).** New `src/checkout.ts`: calls the `create-checkout-session` Edge
+  Function via Supabase's own client (which attaches the signed-in session
+  automatically as the request's Authorization header) and redirects the
+  browser to the returned Stripe Checkout URL. App.tsx gained a "Test
+  Checkout" toolbar dropdown, visible only to James's own supervisor
+  account, with one item per paid tier (Basic/Advanced/Enterprise) — lets
+  the real Checkout flow be exercised end to end before any of this is
+  wired into the real, customer-facing Pricing page (still showing the old
+  3-tier draft with its own "not purchasable yet" disclaimer, deliberately
+  untouched — that visual overhaul is its own later piece, Stage D/F). Not
+  yet tested live as of this PR — James still needed to click one and
+  confirm it reached a real Stripe Checkout page.
+- **Checkout proven fully working end to end (PR #273).** James tested the
+  Test Checkout buttons live, including a full real test payment with
+  Stripe's standard test card (`4242 4242 4242 4242`) — Stripe accepted the
+  payment and redirected cleanly back to the app in the same browser tab
+  afterward, confirmed as correct, expected behaviour (a same-tab redirect
+  is how Stripe Checkout is meant to work, not a bug). Nothing in the app
+  visibly reacted to the payment yet, as expected, since that's the
+  webhook's job — the only remaining Stage C3 work. Pure documentation —
+  no app code changed.
+- **A standing documentation rule recorded (PR #274).** James's explicit
+  standing instruction: `MASTER_BRIEFING.md`'s version number increments
+  every time the file is shared with him, not only when its content
+  changes. Recorded as a standing rule for future sessions to follow. Pure
+  documentation — no app code changed.
+
+As of this entry, Stage C3 still has three sub-pieces left before paid
+subscriptions actually take effect in the app: registering the webhook in
+Stripe with its signing secret, writing and deploying the
+webhook-receiving Edge Function itself (the only thing allowed to write
+`plan_key` onto a `subscriptions` row), and one real end-to-end test of
+the whole chain. The customer-facing Pricing page also still shows the
+older 3-tier draft, with real "Upgrade" buttons wired in deliberately left
+for a later stage (D/F) once the visual overhaul to the agreed 4-tier
+structure happens.
+
 ---
 
 *Maintained alongside each PR — update the "Current status" section and add
