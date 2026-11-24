@@ -9,7 +9,14 @@
   min-width: 0;
   max-width: 1400px;
   margin: 0 auto;
-  padding: 1.5rem;
+  /* No bottom padding: .grid-wrapper (the last child) is position: sticky, and a sticky element's
+     "stuck" range gets clamped short by however much trailing padding its containing block (this
+     element) reserves after it — confirmed directly: an .app with its old symmetric padding left
+     .grid-wrapper's sticky top short of its target by exactly that bottom padding, however tall
+     .grid-wrapper's own max-height was set to. Zero here is also exactly what's wanted anyway —
+     James's ask was to lock the bottom of the work area to the physical bottom of the screen, not
+     leave any margin below it. */
+  padding: 1.5rem 1.5rem 0;
   font-family: 'Courier New', Courier, monospace;
   color: #1a1a1a;
 }
@@ -367,13 +374,10 @@
 }
 
 /* Freeze Titles-style: the header (title, Undo/Redo/Save/etc., logo) AND whichever guidance
-   block is currently showing (the Simple Taxonomy wizard's own banner, or the general
-   "worksheet guidance" help block every other taxonomy type shows) stay pinned to the top of
-   the viewport as a long grid scrolls beneath them, rather than scrolling away with everything
-   else — James's report: at ~21 rows the guidance banner had already scrolled out of view,
-   sitting in normal flow below an already-sticky header. Both now live inside this one shared
-   sticky region (App.tsx), so neither one can go missing regardless of how long the work area
-   gets, for every taxonomy type that can show one. */
+   block, the taxonomy's own heading, and the Code Restrictions row all scroll away normally —
+   James's ask: keep the sticky chrome to just the app's own heading and toolbar, so the working
+   grid below gets the rest of the screen once scrolled into place (see .grid-wrapper, which is
+   the element that now does the actual pinning). */
 .app-sticky-top {
   position: sticky;
   top: 0;
@@ -568,14 +572,6 @@
   margin: 0;
   color: #cfe0ff;
   font-size: 0.85rem;
-}
-
-.app-footer {
-  margin-top: 2.5rem;
-  padding-top: 1rem;
-  font-size: 11pt;
-  color: #b9c9ef;
-  max-width: 480px;
 }
 
 /* Sign-on landing menu (WorkflowMenu) — same dark-blue-page / white-card language as the New
@@ -1609,21 +1605,19 @@ body.app-dark-theme .taxonomy-meta .purpose {
 }
 
 .grid-wrapper {
+  /* James's ask: maximise the work area and simplify the scrolling arrangement — the grid itself
+     is now the sticky element. As the page scrolls down past the taxonomy heading, the guidance
+     banner, and the Code Restrictions row, this box's own top edge rises to meet the underside of
+     the app's sticky toolbar bar and locks there, and max-height caps it at exactly the remaining
+     screen below that bar — both pure CSS, against the live --grid-sticky-offset variable
+     (App.tsx) that tracks the toolbar bar's real height. Nothing follows .grid-wrapper in the
+     document any more (the copyright footer that used to sit below it is gone), so this is a
+     plain, constant formula — no JS measurement of the grid's own position or a polling fallback
+     is needed the way it was before. */
+  position: sticky;
+  top: var(--grid-sticky-offset, 0px);
+  max-height: calc(100vh - var(--grid-sticky-offset, 0px));
   overflow-x: auto;
-  /* James's ask: freeze the grid's own header row (the one showing each column's number) while
-     scrolling a long taxonomy. Setting overflow-x: auto here (needed for the horizontal scrollbar
-     on a wide grid) silently forces overflow-y to 'auto' too, by a standing CSS rule (a 'visible'
-     overflow-y is promoted to 'auto' whenever overflow-x isn't 'visible') — which on its own does
-     nothing useful, since this box never grows taller than its own content (no height is set), so
-     that forced-on vertical "scroll container" never actually moves and any position: sticky
-     inside it just sits at its normal document position and scrolls away with everything else,
-     exactly like James reported. Giving it a real max-height (below) makes that already-forced
-     scroll container a genuine one, with actual content taller than its own box — which is what
-     position: sticky needs to have something to stick within. --grid-wrapper-max-height is kept
-     in sync with this element's own distance from the top of the page (Grid.tsx), so it always
-     fills exactly the remaining space below the app's own sticky header bar and whatever variable-
-     height banner is currently showing above it. */
-  max-height: var(--grid-wrapper-max-height, none);
   overflow-y: auto;
   padding-right: 20ch; /* room for description text that overflows past the indicative width */
   /* Stays white regardless of the app-wide dark theme around it, and gives the table its own
@@ -1633,14 +1627,6 @@ body.app-dark-theme .taxonomy-meta .purpose {
      near-white text color from .app and become unreadable against this white backdrop. */
   background: #fff;
   color: #1a1a1a;
-  /* NOT padding-top/bottom (as this used to be): position: sticky offsets are computed against
-     the nearest scrolling ancestor's own PADDING edge, so a padding-top here permanently reserves
-     that many pixels for the sticky header to stop at — but once genuinely scrolled (now that
-     this box truly scrolls), that reserved gap isn't actually blank; the scrolled table renders
-     right up to it, and James saw that sliver of a half-scrolled row "bleeding through" above the
-     frozen header. The same visual breathing room belongs on .taxonomy-grid itself (a margin,
-     which scrolls away with the rest of the content exactly as a reader would expect) instead.
-     See its own CSS rule for how it reproduces top and side spacing. */
 }
 
 .taxonomy-grid {
@@ -1683,12 +1669,12 @@ body.app-dark-theme .taxonomy-meta .purpose {
    that refers to a column number is unreadable without scrolling back up to check it. Both thead
    rows stick within .grid-wrapper's own scrolling box (see its own max-height rule, above, for why
    that's required for position: sticky to do anything here at all) — so these stick to ITS top
-   edge, not the page's; --grid-sticky-offset (the app's own sticky header bar's live height) has
-   already been accounted for in how tall .grid-wrapper itself is allowed to be, not in this offset.
-   The second row's own top offset is the first row's own real rendered height (--grid-header-
-   row1-height, Grid.tsx) — NOT the 1.7rem every cell's `height` is nominally set to, which excludes
-   the padding and border that actually gets added on top of it — so it sits directly beneath the
-   first with no gap or overlap. */
+   edge, not the page's; --grid-sticky-offset (the app's own sticky bar's live height) is .grid-
+   wrapper's own `top`, already accounted for before it gets here, so these stay at 0 and the first
+   row's own height. The second row's own top offset is the first row's own real rendered height
+   (--grid-header-row1-height, Grid.tsx) — NOT the 1.7rem every cell's `height` is nominally set
+   to, which excludes the padding and border that actually gets added on top of it — so it sits
+   directly beneath the first with no gap or overlap. */
 .taxonomy-grid thead tr:first-child th {
   position: sticky;
   top: 0;
