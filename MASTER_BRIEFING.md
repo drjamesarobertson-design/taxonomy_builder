@@ -1,6 +1,6 @@
 # Taxonomy Builder — Master Briefing
 
-*Version: v 1.05*
+*Version: v 1.06*
 
 *A one-stop orientation document: what this is, what it does today, where the
 business stands, and what's still outstanding. Written for James (or anyone
@@ -8,10 +8,9 @@ he shares this with) rather than as an engineering log — for the detailed,
 round-by-round build history, see `PROGRESS.md`; for the original functional
 specification, see `CLAUDE.md`.*
 
-*Last updated: 2026-11-24 — same day as v 1.04: Stage B of the subscription
-plan (§4) was completed live with James immediately afterward — the Stripe
-account, all three paid-tier Products/Prices, and Stripe Tax are now set up
-in test mode. See §0 and §4.*
+*Last updated: 2026-11-24 — same day as v 1.04/v 1.05: the first piece of
+Stage C (§4) is written — `supabase/0010_create_subscription_plans.sql`,
+the tier-config tables — but not yet run by James. See §0 and §4.*
 
 *Version history: v 1.01 — first version stamp applied to this file
 (2026-10-14). v 1.02 — same evening, after PRs #230–#235 (see §0): Promote/
@@ -34,9 +33,12 @@ earlier ambiguous "step 1 given, not confirmed done." v 1.05 (2026-11-24,
 same day) — Stage B completed live: Stripe account created, Stripe Tax
 enabled in the sandbox, all three paid-tier Products/Prices created in
 GBP/Monthly/tax-exclusive, and the test-mode publishable key recorded
-(§4). Increment this by one, and add a line here, every time this file is
-next updated and re-sent to him — see
-`ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md` §5, item 10.*
+(§4). v 1.06 (2026-11-24, same day) — Stage C's first piece written:
+`supabase/0010_create_subscription_plans.sql` creates the tier-config
+tables (§3/§4), seeded with the agreed structure; a one-time manual step
+James still needs to run, same as every migration before it. Increment
+this by one, and add a line here, every time this file is next updated and
+re-sent to him — see `ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md` §5, item 10.*
 
 ---
 
@@ -52,9 +54,17 @@ the business absorbs the jurisdiction variance); test-mode publishable key
 obtained and recorded (§4 — safe to record, not secret). The secret key was
 correctly never shared in chat. Full detail, including one live-UI
 navigation note for next time, in §4's "Payment processing" subsection.
-**Next: Stage C** (Supabase plumbing) — a deliberate pause point, since
-it's a different kind of work (engineering, not dashboard clicking) and
-wasn't started this same session.
+
+**Stage C, piece 1 of 4 (C1) — written, not yet run by James:**
+`supabase/0010_create_subscription_plans.sql` creates `subscription_plans`
+and `subscription_settings` (see §3), seeded with the agreed 4-tier
+structure plus the hidden `beta` row. This is data only — no app code
+reads it yet (that's C3/Stage D), but it already means any price or limit
+can be tweaked directly in Supabase's Table Editor from this point on.
+**James still needs to run this migration once**, in Supabase's SQL
+Editor, same as every migration before it. Remaining Stage C pieces (C2:
+capture the chosen plan at signup; C3: the two Stripe Edge Functions; C4:
+renewal/expiry + reminder emails) are not started.
 
 **Subscription/pricing planning round, 2026-11-24 — fully worked through,
 nothing built yet.** James brought a refined subscription-structure
@@ -521,10 +531,12 @@ Toolbar "Folders ▾" menu:
 - **Frontend**: React + TypeScript, built with Vite, hosted as a static
   single-page app on GitHub Pages. No server of its own.
 - **Backend**: Supabase — Postgres (with Row Level Security) for accounts,
-  Library storage, and starter samples; Supabase Auth for sign-in/sign-up;
-  Resend as the custom SMTP provider for auth emails (see §4). Nine
-  one-time SQL migrations have been run (`supabase/0001`–`0009`), each a
-  one-off manual step in Supabase's SQL Editor: `0001` creates the
+  Library storage, starter samples, and (new, see below) the subscription
+  tier structure; Supabase Auth for sign-in/sign-up; Resend as the custom
+  SMTP provider for auth emails (see §4). Ten one-time SQL migrations exist
+  (`supabase/0001`–`0010`), each a one-off manual step in Supabase's SQL
+  Editor — nine have been run; `0010` is new and **not yet run by James**
+  (see §4, Stage C). `0001` creates the
   `profiles` table (James's own exportable contact list — see "Account &
   sign-up" in §2); `0002` creates `library_entries` (cloud Library
   storage); `0003` adds the starter-sample flag and its cross-account read
@@ -538,7 +550,14 @@ Toolbar "Folders ▾" menu:
   Resend-via-pg_net trigger that emails James on every new sign-up (the
   Resend API key itself lives in Supabase Vault, not in this file — see §4);
   `0009` adds the one read-only policy that lets the app show James the new
-  sign-ups panel (§2) from his own account.
+  sign-ups panel (§2) from his own account; `0010` creates
+  `subscription_plans` (the tier structure — prices, limits, feature
+  gates — as live editable data rather than hardcoded constants, per
+  James's explicit requirement) and `subscription_settings` (the single
+  global "is Annual billing live yet" toggle), seeded with the 4-tier
+  structure agreed 2026-11-24 plus one hidden `beta` row, readable by
+  anyone (signed in or not — the Pricing page shows before sign-in too)
+  and writable only by the supervisor account (see §4, Stage C).
 - **Supabase Data API grants — new requirement from 30 October 2026
   onward.** Supabase emailed James (2026-10-21) that from that date, a
   newly *created* table in the `public` schema no longer automatically
@@ -681,13 +700,14 @@ infrastructure as the auth emails (see below).
    Product + Price objects for each paid tier (Monthly now; Annual Price
    objects can be created in test mode too, ready for when Annual goes
    live) → enable Stripe Tax → obtain the test-mode publishable key.
-   **Confirmed not started as of 2026-11-24** — this is genuinely step 1,
-   next time this thread resumes.
+   **Done, 2026-11-24** — see §0/§4 "Payment processing" for the full record.
 3. **Stage C — Supabase plumbing**: the tier-config table (name/price/
-   limits, supervisor-editable); the plan field at signup; two small Edge
-   Functions (create a Checkout Session; receive and verify Stripe's
-   webhook, updating the subscriber's plan); the renewal/expiry state
-   machine and the staged reminder emails above.
+   limits, supervisor-editable) — **written, 2026-11-24, as
+   `supabase/0010_create_subscription_plans.sql`; not yet run by James**;
+   the plan field at signup; two small Edge Functions (create a Checkout
+   Session; receive and verify Stripe's webhook, updating the subscriber's
+   plan); the renewal/expiry state machine and the staged reminder emails
+   above. The latter three pieces are not started.
 4. **Stage D — app-side enforcement**: wire the numeric caps (columns/
    rows/Library entries/locked taxonomies) and the workflow-type gates
    (reusing the existing `WORKFLOW_LEVELS`/Cubic Business Model structure)
@@ -894,9 +914,13 @@ re-deriving any of this.
       done 2026-11-24 (Stage B, §4): account created, Stripe Tax enabled in
       the sandbox, Basic/Advanced/Enterprise all created in GBP/Monthly/
       tax-exclusive, test-mode publishable key recorded.
-- [ ] **Next:** build the Supabase tier-config table, plan field, Checkout/
-      webhook Edge Functions, and renewal/expiry + reminder-email mechanics
-      (Stage C, §4) — not started.
+- [ ] **James to run once, in Supabase's SQL Editor:**
+      `supabase/0010_create_subscription_plans.sql` — creates the
+      tier-config tables, not yet executed. The actual next step.
+- [ ] Capture the chosen plan at signup; build the two Stripe Edge
+      Functions (Checkout Session creation, webhook receiver); build the
+      renewal/expiry state machine and staged reminder emails (the rest of
+      Stage C, §4) — not started.
 - [ ] Wire app-side tier enforcement: numeric caps, workflow-type gates, the
       read-only-over-limit Library mode, and the expired-subscription block
       screen (Stage D, §4).
