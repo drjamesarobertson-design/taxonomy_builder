@@ -103,23 +103,29 @@ export default function App() {
     </div>
   );
 
-  // James's ask: freeze the grid's own column-number header row so it stays visible while
-  // scrolling a long taxonomy, instead of scrolling away with the body. The sticky top bar above
-  // it (.app-sticky-top) is also variable height — it can carry a worksheet-guidance banner, or
-  // not — so the grid header's own `top` offset has to track that height live rather than being
-  // a fixed constant, via a CSS variable kept in sync here.
-  const stickyTopRef = useRef<HTMLDivElement | null>(null);
+  // James's ask: maximise the work area — .app-sticky-top now holds only the app's own heading
+  // and toolbar, and .grid-wrapper itself (App.css) becomes the sticky element below it, pinned
+  // to fill the rest of the screen once scrolled into place. Its sticky `top` and `max-height`
+  // both need this bar's real rendered height, which can still vary (window width wrapping the
+  // toolbar onto a second line, for example), so it's kept live in a CSS variable here rather
+  // than hard-coded.
+  // A plain useRef here would risk measuring too early: this component's first real commit can
+  // render without the header yet (an auth/loading gate upstream), and a `useEffect(..., [])`
+  // keyed off a ref's `.current` only ever runs once, against whatever that was at the time —
+  // null, if the header wasn't mounted yet, with no later re-run once it actually appears. A
+  // callback ref re-fires this effect (via the state it sets) exactly when the node really
+  // attaches, so it keeps working regardless of what else is still loading first.
+  const [stickyTopEl, setStickyTopEl] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
-    const el = stickyTopRef.current;
-    if (!el) return;
+    if (!stickyTopEl) return;
     const updateOffset = () => {
-      document.documentElement.style.setProperty('--grid-sticky-offset', `${el.getBoundingClientRect().height}px`);
+      document.documentElement.style.setProperty('--grid-sticky-offset', `${stickyTopEl.getBoundingClientRect().height}px`);
     };
     updateOffset();
     const observer = new ResizeObserver(updateOffset);
-    observer.observe(el);
+    observer.observe(stickyTopEl);
     return () => observer.disconnect();
-  }, []);
+  }, [stickyTopEl]);
 
   // James's ask: a tab left open across a deploy is still running the OLD build indefinitely —
   // nothing short of a genuine reload ever picks up a newer one. Polls version.json (a fixed,
@@ -2548,7 +2554,7 @@ export default function App() {
         onBulkReplaceComplete={refreshLibrary}
       />
       <div className="app">
-      <div className="app-sticky-top" ref={stickyTopRef}>
+      <div className="app-sticky-top" ref={setStickyTopEl}>
       <header className="app-header">
         <div className="app-heading-block">
           <h1 className="app-heading">The ERP Doctor Taxonomy Builder</h1>
@@ -2936,44 +2942,9 @@ export default function App() {
           <Logo className="app-logo" />
         </div>
       </header>
+      </div>
 
       {loadError && <p className="load-error">{loadError}</p>}
-
-      {/* James's report: the guided-wizard banner (and the equivalent "worksheet guidance"
-          help block every other taxonomy type shows) scrolled out of view once the grid grew
-          past ~21 rows — it sat in normal document flow below the header, which is itself
-          sticky, so as the page scrolled the banner slid away underneath it. Moved in here,
-          alongside the header, inside one shared sticky region — keeps whichever one is
-          showing genuinely on screen "no matter how long the work area", for every taxonomy
-          type that can show one, not just the Simple Taxonomy wizard. */}
-      {project && project.settings.guidance && (
-        <GuidanceBanner
-          project={project}
-          onSettingsAndRowsChange={handleSettingsAndRowsChange}
-          onExitGuidance={handleExitGuidance}
-          helpText={helpText}
-        />
-      )}
-      {project && !project.settings.guidance && (
-        <section
-          className={`worksheet-guidance ${guidanceExpanded ? 'expanded' : 'collapsed'}`}
-          // James's report (2026-10-22): F1 (supervisor-only quick-edit) had nothing to act on
-          // here — unlike every toolbar button/menu item, this panel shows its helpText.csv text
-          // directly rather than through a Tooltip/menuTooltip/HelpIcon, so nothing ever reported
-          // it as the "active" field. Reporting it the same way Tooltip.tsx does (hover/focus)
-          // is all F1 needs, since TooltipQuickEdit already knows how to edit any field by key.
-          onMouseEnter={() => setActiveHelpField('worksheetGuidance')}
-          onMouseLeave={() => setActiveHelpField(null)}
-        >
-          <div className="worksheet-guidance-text">
-            {helpText.worksheetGuidance?.helpText?.trim() || 'No worksheet guidance has been added yet.'}
-          </div>
-          <button type="button" className="worksheet-guidance-toggle" onClick={() => setGuidanceExpanded((e) => !e)}>
-            {guidanceExpanded ? 'Show less ▴' : 'Show more ▾'}
-          </button>
-        </section>
-      )}
-      </div>
 
       {!project && signOnStage === 'menu' && (
         <>
@@ -2989,10 +2960,6 @@ export default function App() {
             onViewPricing={() => setShowPricingPage(true)}
             helpText={helpText}
           />
-          <footer className="app-footer">
-            The ERP Doctor Taxonomy Builder is the Intellectual Property of the ERP Doctor and
-            James A Robertson and Associates Limited, it is copyright © 2026
-          </footer>
         </>
       )}
 
@@ -3071,10 +3038,6 @@ export default function App() {
               </button>
             </Tooltip>
           </section>
-          <footer className="app-footer">
-            The ERP Doctor Taxonomy Builder is the Intellectual Property of the ERP Doctor and
-            James A Robertson and Associates Limited, it is copyright © 2026
-          </footer>
         </>
       )}
 
@@ -3097,15 +3060,38 @@ export default function App() {
           ) : (
             <NewTaxonomyForm onCreate={handleCreate} helpText={helpText} />
           )}
-          <footer className="app-footer">
-            The ERP Doctor Taxonomy Builder is the Intellectual Property of the ERP Doctor and
-            James A Robertson and Associates Limited, it is copyright © 2026
-          </footer>
         </>
       )}
 
       {project && (
         <>
+          {project.settings.guidance && (
+            <GuidanceBanner
+              project={project}
+              onSettingsAndRowsChange={handleSettingsAndRowsChange}
+              onExitGuidance={handleExitGuidance}
+              helpText={helpText}
+            />
+          )}
+          {!project.settings.guidance && (
+            <section
+              className={`worksheet-guidance ${guidanceExpanded ? 'expanded' : 'collapsed'}`}
+              // James's report (2026-10-22): F1 (supervisor-only quick-edit) had nothing to act on
+              // here — unlike every toolbar button/menu item, this panel shows its helpText.csv text
+              // directly rather than through a Tooltip/menuTooltip/HelpIcon, so nothing ever reported
+              // it as the "active" field. Reporting it the same way Tooltip.tsx does (hover/focus)
+              // is all F1 needs, since TooltipQuickEdit already knows how to edit any field by key.
+              onMouseEnter={() => setActiveHelpField('worksheetGuidance')}
+              onMouseLeave={() => setActiveHelpField(null)}
+            >
+              <div className="worksheet-guidance-text">
+                {helpText.worksheetGuidance?.helpText?.trim() || 'No worksheet guidance has been added yet.'}
+              </div>
+              <button type="button" className="worksheet-guidance-toggle" onClick={() => setGuidanceExpanded((e) => !e)}>
+                {guidanceExpanded ? 'Show less ▴' : 'Show more ▾'}
+              </button>
+            </section>
+          )}
           <section className="taxonomy-meta">
             <h2>
               {project.title}
@@ -3126,7 +3112,6 @@ export default function App() {
                   <span className="locked-badge">🔒 Locked</span>
                 ))}
             </h2>
-            <p className="table-name">Table: {project.tableName}</p>
             {project.purpose && <p className="purpose">{project.purpose}</p>}
           </section>
           {!project.settings.guidance && (
@@ -3160,10 +3145,6 @@ export default function App() {
             autoCodeOverflowActive={showAutoCode || !!numericOverflowPrompt}
             signedInEmail={authedEmail ?? ''}
           />
-          <footer className="app-footer">
-            The ERP Doctor Taxonomy Builder is the Intellectual Property of the ERP Doctor and
-            James A Robertson and Associates Limited, it is copyright © 2026
-          </footer>
         </>
       )}
 

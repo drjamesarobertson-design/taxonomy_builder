@@ -130,66 +130,31 @@ export default function Grid({
     autoCodeGapIncrement,
   } = settings;
 
-  // James's ask: freeze the grid's own column-number header row while scrolling a long taxonomy.
-  // position: sticky only has something to stick within once .grid-wrapper is a genuine, bounded
-  // scroll container (see its own CSS rule for why) — so this keeps --grid-wrapper-max-height in
-  // sync with .grid-wrapper's own distance from the top of the page, filling exactly the space
-  // left below everything above it (the app's sticky header bar, any guidance banner, etc.),
-  // whatever that currently adds up to. Measured as (viewport top + current scroll) so the result
-  // doesn't depend on the page's own scroll position at the moment it's taken.
+  // The grid's own frozen header's second row needs to sit exactly one row below the first — but
+  // the first row's own rendered height isn't the plain 1.7rem every cell's `height` is set to:
+  // padding and the (collapsed) border add to that, and guessing the exact extra pixels here
+  // would be fragile. Measured straight off a real, non-row-spanning cell in that row (the
+  // "Code"/"Description" section heading, not .row-number-col, which spans both rows and so
+  // reports their combined height instead of just the first's). (.grid-wrapper's own sticky
+  // position and max-height, which this used to also drive, are now a constant CSS formula
+  // against --grid-sticky-offset — see App.css — so no longer need measuring here.)
   const gridWrapperRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const el = gridWrapperRef.current;
     if (!el) return;
-    const updateMaxHeight = () => {
-      const docTop = el.getBoundingClientRect().top + window.scrollY;
-      const baselineVar = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--grid-wrapper-max-height'));
-      const baseline = Number.isFinite(baselineVar) ? baselineVar : window.innerHeight - docTop;
-      // James's report: the work area stayed squashed, and scrolling the page moved its bottom
-      // edge too, not just its top — meaning the page genuinely was taller than the viewport.
-      // Root cause, found by trial: the app's own copyright footer renders directly after
-      // .grid-wrapper and needs its own real space below it (plus its own margin-top, plus the
-      // .app container's own trailing padding past the footer) — several separate pixel amounts
-      // this was never subtracting, only ever measuring what's ABOVE .grid-wrapper. Rather than
-      // keep enumerating each one by hand (there could always be one more), this instead folds
-      // back however far the page's CURRENT total height already overshoots the viewport, into
-      // this box's own height — self-correcting within a tick or two regardless of what's
-      // actually consuming the space below .grid-wrapper, including anything added later.
-      const excess = document.documentElement.scrollHeight - window.innerHeight;
-      document.documentElement.style.setProperty('--grid-wrapper-max-height', `${Math.max(200, baseline - excess)}px`);
-      // The frozen header's second row needs to sit exactly one row below the first — but the
-      // first row's own rendered height isn't the plain 1.7rem every cell's `height` is set to:
-      // padding and the (collapsed) border add to that, and guessing the exact extra pixels here
-      // would be fragile. Measured straight off a real, non-row-spanning cell in that row (the
-      // "Code"/"Description" section heading, not .row-number-col, which spans both rows and so
-      // reports their combined height instead of just the first's).
+    const updateRow1Height = () => {
       const row1Cell = el.querySelector('.taxonomy-grid thead tr:first-child th.section-heading');
       if (row1Cell) {
         document.documentElement.style.setProperty('--grid-header-row1-height', `${row1Cell.getBoundingClientRect().height}px`);
       }
     };
-    updateMaxHeight();
-    window.addEventListener('load', updateMaxHeight);
-    window.addEventListener('resize', updateMaxHeight);
-    // Anything above .grid-wrapper changing height (the sticky bar's own guidance banner showing
-    // or hiding, most notably) shifts its distance from the page top without .grid-wrapper's own
-    // size changing at all, so a ResizeObserver on the element itself wouldn't catch it — watching
-    // the body as a whole does, since that reflow has to show up there regardless of which
-    // ancestor actually caused it.
-    const observer = new ResizeObserver(updateMaxHeight);
-    observer.observe(document.body);
-    // James's report (still unresolved after the above): the work area stayed noticeably shorter
-    // than the real remaining screen space — a persistent shortfall, not a one-off timing gap, so
-    // whatever is failing to trigger a recompute here isn't something the event/observer triggers
-    // above actually catch. Rather than keep chasing the exact one, this just re-measures on a
-    // plain interval as a guaranteed, self-correcting fallback: cheap (one bounding-rect read), and
-    // it fixes itself within a quarter second of ANY layout change, however it was caused.
-    const pollTimer = window.setInterval(updateMaxHeight, 250);
+    updateRow1Height();
+    window.addEventListener('resize', updateRow1Height);
+    const observer = new ResizeObserver(updateRow1Height);
+    observer.observe(el);
     return () => {
-      window.removeEventListener('load', updateMaxHeight);
-      window.removeEventListener('resize', updateMaxHeight);
+      window.removeEventListener('resize', updateRow1Height);
       observer.disconnect();
-      window.clearInterval(pollTimer);
     };
   }, []);
 
