@@ -3157,6 +3157,7 @@ export default function App() {
             onExportBlock={handleExportBlockRange}
             onSelectionChange={setGridSelectionRowIds}
             auditActive={!!audit}
+            autoCodeOverflowActive={showAutoCode || !!numericOverflowPrompt}
             signedInEmail={authedEmail ?? ''}
           />
           <footer className="app-footer">
@@ -3335,8 +3336,7 @@ export default function App() {
           <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
             <p>
               Row {numericOverflowPrompt.group.rowNumber} ("{numericOverflowPrompt.group.firstRowDescription}"),
-              Column {numericOverflowPrompt.group.level + 1}: this is the first of a group of sibling entries — each
-              a direct child of "{numericOverflowPrompt.group.ancestorPath.join(' › ') || '(top level)'}" — that
+              Column {numericOverflowPrompt.group.level + 1}: this is the first of a group of sibling entries that
               together has too many to fit under Numeric Only.
             </p>
             <p>
@@ -3356,11 +3356,17 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
+                  const { group } = numericOverflowPrompt;
                   setNumericOverflowPrompt(null);
                   setShowAutoCode(false);
                   setLoadError(
-                    `Auto Code stopped — nothing was changed. Fix the group of sibling entries starting at Row ${numericOverflowPrompt.group.rowNumber} ("${numericOverflowPrompt.group.firstRowDescription}", Column ${numericOverflowPrompt.group.level + 1}, ${numericOverflowPrompt.group.ordinaryCount} entries, each a direct child of "${numericOverflowPrompt.group.ancestorPath.join(' › ') || '(top level)'}") manually, then run Auto Code again.`,
+                    `Auto Code stopped — nothing was changed. Fix the group of sibling entries starting at Row ${group.rowNumber} ("${group.firstRowDescription}", Column ${group.level + 1}, ${group.ordinaryCount} entries) manually, then run Auto Code again.`,
                   );
+                  // James's ask: the highlighted row is really important to keep — dismissing this
+                  // dialog (a button click, like any other) blurs the description cell that was
+                  // only ever focused to show him where the problem is, same as clicking anywhere
+                  // else would; re-focusing it right after is what actually keeps it highlighted.
+                  focusDescriptionCell(group.level, group.firstRowId);
                 }}
               >
                 Stop to Fix

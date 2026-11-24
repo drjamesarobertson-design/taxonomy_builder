@@ -58,6 +58,14 @@ interface GridProps {
    * purpose-built guidance during that specific workflow, so these are suppressed entirely
    * while it's open, rather than risk two dialog systems fighting for the same click. */
   auditActive?: boolean;
+  /** James's report (2026-11-24): clicking "Stop to Fix" on the Auto Code Numeric Only overflow
+   * prompt blurs the description cell that was focused purely to show him WHERE the problem is
+   * (focusDescriptionCell, App.tsx) — an incidental side effect of a dialog button taking focus,
+   * not a genuine edit — which could then trip one of this blur handler's own validations (e.g.
+   * "Other should be last") on that row's sibling group, stealing back the cursor/highlight he
+   * explicitly asked to keep. Same suppress-while-another-dialog-owns-the-moment treatment as
+   * auditActive, above. */
+  autoCodeOverflowActive?: boolean;
   /** James's ask (2026-10-14): once locked, the only two things still possible — adding a new
    * row, and Mark as Delete — now require a mandatory reason, recorded as that row's own Note
    * (Section 6.9) rather than a new, parallel field: "possibly as a text suffix", in James's own
@@ -103,6 +111,7 @@ export default function Grid({
   onExportBlock,
   onSelectionChange,
   auditActive,
+  autoCodeOverflowActive,
   signedInEmail,
 }: GridProps) {
   const {
@@ -134,7 +143,20 @@ export default function Grid({
     if (!el) return;
     const updateMaxHeight = () => {
       const docTop = el.getBoundingClientRect().top + window.scrollY;
-      document.documentElement.style.setProperty('--grid-wrapper-max-height', `${Math.max(200, window.innerHeight - docTop)}px`);
+      const baselineVar = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--grid-wrapper-max-height'));
+      const baseline = Number.isFinite(baselineVar) ? baselineVar : window.innerHeight - docTop;
+      // James's report: the work area stayed squashed, and scrolling the page moved its bottom
+      // edge too, not just its top — meaning the page genuinely was taller than the viewport.
+      // Root cause, found by trial: the app's own copyright footer renders directly after
+      // .grid-wrapper and needs its own real space below it (plus its own margin-top, plus the
+      // .app container's own trailing padding past the footer) — several separate pixel amounts
+      // this was never subtracting, only ever measuring what's ABOVE .grid-wrapper. Rather than
+      // keep enumerating each one by hand (there could always be one more), this instead folds
+      // back however far the page's CURRENT total height already overshoots the viewport, into
+      // this box's own height — self-correcting within a tick or two regardless of what's
+      // actually consuming the space below .grid-wrapper, including anything added later.
+      const excess = document.documentElement.scrollHeight - window.innerHeight;
+      document.documentElement.style.setProperty('--grid-wrapper-max-height', `${Math.max(200, baseline - excess)}px`);
       // The frozen header's second row needs to sit exactly one row below the first — but the
       // first row's own rendered height isn't the plain 1.7rem every cell's `height` is set to:
       // padding and the (collapsed) border add to that, and guessing the exact extra pixels here
@@ -3531,7 +3553,7 @@ export default function Grid({
                         // for the Audit panel underneath). Every "warned" ref below is left
                         // untouched by skipping this early, so a genuinely still-relevant notice
                         // gets its normal turn again on a later blur once Audit closes.
-                        if (auditActive) return;
+                        if (auditActive || autoCodeOverflowActive) return;
                         // Shown once leaving the cell, not on the first keystroke — a popup
                         // grabbing focus mid-word would swallow the rest of what's being typed.
                         // Deferred a tick past the blur itself: blur fires as part of whatever
