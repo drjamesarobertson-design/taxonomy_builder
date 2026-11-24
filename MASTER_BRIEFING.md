@@ -1,6 +1,6 @@
 # Taxonomy Builder — Master Briefing
 
-*Version: v 1.04*
+*Version: v 1.05*
 
 *A one-stop orientation document: what this is, what it does today, where the
 business stands, and what's still outstanding. Written for James (or anyone
@@ -8,10 +8,10 @@ he shares this with) rather than as an engineering log — for the detailed,
 round-by-round build history, see `PROGRESS.md`; for the original functional
 specification, see `CLAUDE.md`.*
 
-*Last updated: 2026-11-24 — the subscription/pricing structure was fully
-reviewed and planned round by round with James (two revisions of his own
-pricing spreadsheet, plus the standalone WordPress pricing page); see §0 and
-§4. Pure planning — no app code changed this round.*
+*Last updated: 2026-11-24 — same day as v 1.04: Stage B of the subscription
+plan (§4) was completed live with James immediately afterward — the Stripe
+account, all three paid-tier Products/Prices, and Stripe Tax are now set up
+in test mode. See §0 and §4.*
 
 *Version history: v 1.01 — first version stamp applied to this file
 (2026-10-14). v 1.02 — same evening, after PRs #230–#235 (see §0): Promote/
@@ -30,13 +30,31 @@ pricing/tier structure went from a 3-tier draft to a fully worked-through
 James raised resolved to a concrete decision (see §0/§4) and a bite-sized
 delivery plan agreed; also corrects the record to say plainly that Stripe
 account creation has **not** actually been started yet, superseding the
-earlier ambiguous "step 1 given, not confirmed done." Increment this by
-one, and add a line here, every time this file is next updated and
-re-sent to him — see `ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md` §5, item 10.*
+earlier ambiguous "step 1 given, not confirmed done." v 1.05 (2026-11-24,
+same day) — Stage B completed live: Stripe account created, Stripe Tax
+enabled in the sandbox, all three paid-tier Products/Prices created in
+GBP/Monthly/tax-exclusive, and the test-mode publishable key recorded
+(§4). Increment this by one, and add a line here, every time this file is
+next updated and re-sent to him — see
+`ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md` §5, item 10.*
 
 ---
 
 ## 0. Where things stand right now — read this first
+
+**Stripe Stage B walkthrough, 2026-11-24 (same day as the planning round
+below) — done live, step by step:** account created; Stripe Tax enabled in
+the sandbox; all three paid-tier Products/Prices created (GBP, Monthly,
+**tax-exclusive** — James's confirmed choice: the advertised price is net,
+local VAT/sales tax is added on top at checkout, the standard approach for
+B2B software, versus "tax-inclusive" where the all-in price is fixed and
+the business absorbs the jurisdiction variance); test-mode publishable key
+obtained and recorded (§4 — safe to record, not secret). The secret key was
+correctly never shared in chat. Full detail, including one live-UI
+navigation note for next time, in §4's "Payment processing" subsection.
+**Next: Stage C** (Supabase plumbing) — a deliberate pause point, since
+it's a different kind of work (engineering, not dashboard clicking) and
+wasn't started this same session.
 
 **Subscription/pricing planning round, 2026-11-24 — fully worked through,
 nothing built yet.** James brought a refined subscription-structure
@@ -737,14 +755,37 @@ key and webhook secret should go directly into Supabase's own dashboard
 (Project Settings → Edge Functions → Secrets), the same way Supabase's own
 credentials never leave that dashboard today.
 
-**Status:** James asked for this walkthrough "one step at a time." Step 1
-(create the account at `dashboard.stripe.com/register`, verify email, no
-banking details needed yet — test mode is available immediately) was given
-on 2026-09-28, but **James confirmed directly on 2026-11-24 that this has
-not actually been done** — correcting the earlier "not yet confirmed done"
-note, which should not be read as any progress having happened. This is
-genuinely step 1 of Stage B (§4) next time this thread resumes. See §0 for
-the fuller picture.
+**Status — Stage B complete as of 2026-11-24.** Walked through live, one
+step at a time, in a single session: Stripe account created (test
+mode/sandbox); Stripe Tax enabled in the sandbox (live-mode activation is
+a Stage G, go-live step, not needed yet); all three paid-tier Products +
+Prices created in GBP, Monthly billing, **tax-exclusive** (James's call —
+the advertised price is net, local tax is added on top at checkout,
+standard for B2B software — see §0 below for the full reasoning), using
+the draft dollar-figure-as-pounds amounts from §4's pricing table (Basic
+£19.99/mo, Advanced £39.99/mo, Enterprise £99.99/mo) as placeholders —
+trivial to change later since nothing here is live. Test-mode publishable
+key obtained: `pk_test_51UfL2jFJfNMrOj5R1LVzxrlVK7jSA1bLth2c75mD4L27l29ZZazVsVMv2wYLFi5m3MUtnnV06GwawTikhYNkHq3O00qV4AC9E3`
+— safe to record (publishable keys are meant to be public, embedded in
+frontend code). **The secret key was correctly never shared in chat** —
+per the rule above, it goes straight into Supabase's own dashboard once
+Stage C's Edge Functions are actually being built, not before.
+
+One live-UI note for whoever picks up this walkthrough next: Stripe's
+current dashboard no longer has a literal "Developers" sidebar entry —
+API keys are reached directly at `dashboard.stripe.com/test/apikeys`
+(or `/live/apikeys` once live), and the publishable key shows as a
+separate button/panel near the top of that page rather than in the main
+"Secret keys" table.
+
+**Next:** Stage C (Supabase plumbing — the tier-config table, the
+Checkout-Session/webhook Edge Functions, the renewal/expiry + reminder-
+email mechanics) is mostly engineering work on this side, with a couple of
+one-time steps for James along the way (similar in shape to the existing
+Supabase SQL migrations already run for the Library/supervisor features).
+Not started yet — a deliberate pause point was offered after Stage B,
+since this is a different kind of work from the dashboard click-through
+above and warrants being its own bite-sized chunk.
 
 ### Outlook 365 — needs a one-time Microsoft 365 app registration
 For "Sign in with Microsoft" to be genuinely one-click for every future
@@ -849,12 +890,13 @@ re-deriving any of this.
 - [ ] James to finalise the exact dollar break-points for the 4 tiers (the
       only still-open number — everything else in §4's table and mechanics
       is decided).
-- [ ] **Not started — confirmed 2026-11-24:** create the Stripe account
-      itself (Stage B, §4 — walked through one step at a time, at James's
-      request). This is the actual next step whenever this thread resumes.
-- [ ] Build the Supabase tier-config table, plan field, Checkout/webhook
-      Edge Functions, and renewal/expiry + reminder-email mechanics
-      (Stage C, §4).
+- [x] ~~Create the Stripe account and the paid-tier Products/Prices~~ —
+      done 2026-11-24 (Stage B, §4): account created, Stripe Tax enabled in
+      the sandbox, Basic/Advanced/Enterprise all created in GBP/Monthly/
+      tax-exclusive, test-mode publishable key recorded.
+- [ ] **Next:** build the Supabase tier-config table, plan field, Checkout/
+      webhook Edge Functions, and renewal/expiry + reminder-email mechanics
+      (Stage C, §4) — not started.
 - [ ] Wire app-side tier enforcement: numeric caps, workflow-type gates, the
       read-only-over-limit Library mode, and the expired-subscription block
       screen (Stage D, §4).
