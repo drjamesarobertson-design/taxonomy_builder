@@ -3,6 +3,7 @@ import type { HelpTextMap } from './helpText';
 import { stringifyHelpTextCsv } from './helpText';
 import { saveExportFile } from './exportFolder';
 import HelpEditor from './HelpEditor';
+import { REFERENCE_DOCUMENTS } from './referenceDocuments';
 
 interface HelpPageProps {
   helpText: HelpTextMap;
@@ -71,6 +72,25 @@ export default function HelpPage({ helpText, isSupervisor, onClose }: HelpPagePr
           onChange={(e) => setQuery(e.target.value)}
           autoFocus
         />
+        {REFERENCE_DOCUMENTS.length > 0 && (
+          <div className="help-page-reference-docs">
+            <h3>Reference Documents</h3>
+            <ul>
+              {REFERENCE_DOCUMENTS.map((doc) => (
+                <li className="help-page-reference-doc" key={doc.fileName}>
+                  <a
+                    href={`${import.meta.env.BASE_URL}reference-docs/${doc.fileName}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {doc.title}
+                  </a>
+                  <p>{doc.description}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <div className="help-page-list">
           {entries.length === 0 ? (
             <p className="help-page-empty">

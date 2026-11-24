@@ -1184,6 +1184,43 @@ body.app-dark-theme .taxonomy-meta .purpose {
   border-radius: 6px;
 }
 
+.help-page-reference-docs {
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid #e2e2e2;
+}
+
+.help-page-reference-docs h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+  color: #1a1a2e;
+}
+
+.help-page-reference-docs ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.help-page-reference-doc a {
+  font-weight: 600;
+  color: #1a56db;
+  text-decoration: none;
+}
+
+.help-page-reference-doc a:hover {
+  text-decoration: underline;
+}
+
+.help-page-reference-doc p {
+  margin: 0.15rem 0 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: #555;
+}
+
 .help-page-list {
   overflow-y: auto;
   max-height: 60vh;

@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Two-Digit Code Levels and Precision Taxonomies</title>
+  
+<style>
+:root{--navy:#1F3864;--blue:#2F5496;--band:#D9E2F3;--line:#A6A6A6;--text:#1a1a1a}
+html{background:#fff}
+body{font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:var(--text);max-width:860px;margin:0 auto;padding:24px 20px 48px}
+header#title-block-header{margin-bottom:18px}
+h1.title{font-size:30px;color:var(--navy);margin:0 0 6px;line-height:1.2}
+p.subtitle{font-size:17px;color:#595959;margin:0 0 14px}
+h1{font-size:22px;color:var(--navy);margin:34px 0 10px;border-bottom:2px solid var(--band);padding-bottom:4px}
+h2{font-size:17px;color:var(--blue);margin:22px 0 8px}
+p{margin:0 0 10px}
+ul{margin:0 0 12px;padding-left:24px}li{margin-bottom:5px}
+table{border-collapse:collapse;width:100%;margin:10px 0 16px;font-size:13.5px}
+th{background:var(--navy);color:#fff;text-align:left;font-weight:bold}
+th,td{border:1px solid var(--line);padding:5px 8px;vertical-align:top}
+tr:nth-child(even) td{background:#fff}
+a{color:#0563C1}
+sup{font-size:.65em;line-height:0}
+@media (max-width:600px){body{font-size:14px}table{font-size:12px}}
+tr.s td{background:#D9E2F3}
+</style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Two-Digit Code Levels and Precision Taxonomies</h1>
+</header>
+<p>An investigation, a worked example and a conclusion for Taxonomy Builder<sup>TM</sup></p>
+<table>
+
+<thead>
+<tr>
+<th><strong>Item</strong></th>
+<th><strong>Detail</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Author</td>
+<td>Dr James A Robertson, The ERP Doctor assisted by Claude.AI</td>
+</tr>
+<tr>
+<td>Date</td>
+<td>23 November 2026</td>
+</tr>
+<tr>
+<td>Purpose</td>
+<td>Record the investigation into two-digit code levels and the resulting rule for Taxonomy Builder<sup>TM</sup></td>
+</tr>
+</tbody>
+</table>
+<h1 id="about-this-document">About this document</h1>
+<p>In response to questions about Taxonomy Builder<sup>TM</sup> accommodating code schemes with two digits per code level, research was undertaken by Claude in the context of the disciplines and rules advocated by the ERP Doctor. The following presents the findings of that research and analysis.</p>
+<h1 id="conclusion">1. Conclusion</h1>
+<p>Taxonomy Builder<sup>TM</sup> will continue to allow one character per code level. It will not be modified to allow two-digit (or wider) codes per level.</p>
+<p>The tool exists to build precision taxonomies that comply with Miller’s Law and ERP Doctor standards. It does not exist to host or reproduce existing code schemes that do not. Such lists remain alongside a precision taxonomy and are cross-mapped onto it where necessary.</p>
+<p>A single character does not limit capacity as much as it first appears: numeric codes give 9 items per level, and alpha characters give a further 26 upper-case and 26 lower-case where a level genuinely needs more.</p>
+<h1 id="background-the-current-rules">2. Background: the current rules</h1>
+<ul>
+<li><p>One character per level, with delimiters between selected columns if required as a design principle.</p></li>
+</ul>
+<ul>
+<li><p>The character may be numeric, alpha or alphanumeric. Numeric gives 9 codes per level; upper-case alpha gives 26 and lower-case alpha a further 26. The GL and the dimensions are recommended to use numeric only, because their codes are used by people working largely on the numeric keypad, and alpha is inefficient from a keyboard-dexterity perspective.</p></li>
+<li><p>Between 5 and 9 items at any level is the guiding target, ideally about 7 (Miller’s Law). Fewer than about 5 tells the reader little; more than about 9 becomes confusing. Where logical grouping indicates fewer than 5 or more than 9, this can be accommodated with caution.</p></li>
+<li><p>Structural levels are named in ALL CAPS; posting items are named in Proper Case.</p></li>
+<li><p>Gap coding: unused codes are left free so that items can be added later without renumbering.</p></li>
+</ul>
+<h1 id="investigation-schemes-that-use-two-digit-levels">3. Investigation: schemes that use two-digit levels</h1>
+<p>A web search found the following established schemes. Each example below was checked against a source page that was opened – links at the end of this document.</p>
+<table>
+
+<thead>
+<tr>
+<th><strong>Scheme</strong></th>
+<th><strong>Code structure</strong></th>
+<th><strong>Verified example</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>UNSPSC</td>
+<td>Four levels of two digits, no separators in the 8-digit form. Unused levels are padded with 00.</td>
+<td>10-10-15-01 is Cats, under Livestock (10-10-15), under Live animals (10-10), under Live Plant and Animal Material (10).</td>
+</tr>
+<tr>
+<td>MasterFormat</td>
+<td>Pairs of digits separated by spaces. Level 3 adds .nn.</td>
+<td>06 41 93 is Cabinet and Drawer Hardware, under Architectural Wood Casework, under Wood, Plastics, and Composites.</td>
+</tr>
+<tr>
+<td>ICS (International Classification for Standards)</td>
+<td>Mixed widths: nn.nnn.nn, with an unofficial -nn fourth level.</td>
+<td>43.040.20 is Lighting, signaling and warning devices. 35.220.20-10 is Magnetic tapes.</td>
+</tr>
+<tr>
+<td>Harmonized System (HS)</td>
+<td>Cumulative prefixes, with a dot after the 2nd digit in headings and after the 4th and 6th in subheadings.</td>
+<td>06 Live trees and other plants; 06.01 Bulbs, tubers etc.; 0601.10 Bulbs, tubers etc., dormant.</td>
+</tr>
+<tr>
+<td>Schedule B (US Census Bureau)</td>
+<td>The HS extended to ten digits.</td>
+<td>0713.10.4020 is Green peas.</td>
+</tr>
+<tr>
+<td>Uniclass 2 (proposal)</td>
+<td>Table prefix plus two-digit levels joined by hyphens.</td>
+<td>Ee-30-65-88, given as an illustration with no title.</td>
+</tr>
+</tbody>
+</table>
+<p>The UNSPSC example, level by level:</p>
+<table>
+
+<thead>
+<tr>
+<th><strong>Code</strong></th>
+<th><strong>Level</strong></th>
+<th><strong>Title</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>10</td>
+<td>Segment</td>
+<td>Live Plant and Animal Material</td>
+</tr>
+<tr>
+<td>10-10</td>
+<td>Family</td>
+<td>Live animals</td>
+</tr>
+<tr>
+<td>10-10-15</td>
+<td>Class</td>
+<td>Livestock</td>
+</tr>
+<tr>
+<td>10-10-15-01</td>
+<td>Commodity</td>
+<td>Cats</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Limits of this research.</strong> The Uniclass 2015 definition pages could not be opened, so only the Uniclass 2 proposal is cited.</p>
+<p>Observations:</p>
+<ul>
+<li><p>The width, separator and padding all differ from scheme to scheme: no separator, space, dot or hyphen.</p></li>
+<li><p>UNSPSC pads unused levels with 00; HS shows the full prefix at each level rather than only the segment for that level.</p></li>
+<li><p>Two-digit levels allow up to 99 siblings, but nothing in the width requires that many.</p></li>
+</ul>
+<h1 id="worked-example-the-ics-top-level">4. Worked example: the ICS top level</h1>
+<p>The ICS top level was used as an example to get a better feel for the issues, not to recode ICS. The 40 top-level fields were taken as they appear on Wikipedia and reclassified using the same rules applied in GL Analyser<sup>TM</sup>: one character per level, numeric codes, and Miller’s Law as the guiding principle.</p>
+<h2 id="the-original-ics-top-level">4.1 The original ICS top level</h2>
+<p>This is the complete list as published: 40 siblings at a single level.</p>
+<table>
+
+<thead>
+<tr>
+<th><strong>ICS field</strong></th>
+<th><strong>Title</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>01</td>
+<td>Generalities, terminology, standardization, documentation</td>
+</tr>
+<tr>
+<td>03</td>
+<td>Services, company organization, management and quality, administration, transport, sociology</td>
+</tr>
+<tr>
+<td>07</td>
+<td>Mathematics, natural sciences</td>
+</tr>
+<tr>
+<td>11</td>
+<td>Health care technology</td>
+</tr>
+<tr>
+<td>13</td>
+<td>Environment, health protection, safety</td>
+</tr>
+<tr>
+<td>17</td>
+<td>Metrology and measurement, physical phenomena</td>
+</tr>
+<tr>
+<td>19</td>
+<td>Testing</td>
+</tr>
+<tr>
+<td>21</td>
+<td>Mechanical systems and components for general use</td>
+</tr>
+<tr>
+<td>23</td>
+<td>Fluid systems and components for general use</td>
+</tr>
+<tr>
+<td>25</td>
+<td>Manufacturing engineering</td>
+</tr>
+<tr>
+<td>27</td>
+<td>Energy and heat transfer engineering</td>
+</tr>
+<tr>
+<td>29</td>
+<td>Electrical engineering</td>
+</tr>
+<tr>
+<td>31</td>
+<td>Electronics</td>
+</tr>
+<tr>
+<td>33</td>
+<td>Telecommunications, audio and video engineering</td>
+</tr>
+<tr>
+<td>35</td>
+<td>Information technology, office machines</td>
+</tr>
+<tr>
+<td>37</td>
+<td>Image technology</td>
+</tr>
+<tr>
+<td>39</td>
+<td>Precision mechanics, jewelry</td>
+</tr>
+<tr>
+<td>43</td>
+<td>Road vehicles engineering</td>
+</tr>
+<tr>
+<td>45</td>
+<td>Railway engineering</td>
+</tr>
+<tr>
+<td>47</td>
+<td>Shipbuilding and marine structures</td>
+</tr>
+<tr>
+<td>49</td>
+<td>Aircraft and space vehicle engineering</td>
+</tr>
+<tr>
+<td>53</td>
+<td>Materials handling equipment</td>
+</tr>
+<tr>
+<td>55</td>
+<td>Packaging and distribution of goods</td>
+</tr>
+<tr>
+<td>59</td>
+<td>Textile and leather technology</td>
+</tr>
+<tr>
+<td>61</td>
+<td>Clothing industry</td>
+</tr>
+<tr>
+<td>65</td>
+<td>Agriculture</td>
+</tr>
+<tr>
+<td>67</td>
+<td>Food technology</td>
+</tr>
+<tr>
+<td>71</td>
+<td>Chemical technology</td>
+</tr>
+<tr>
+<td>73</td>
+<td>Mining and minerals</td>
+</tr>
+<tr>
+<td>75</td>
+<td>Petroleum, and related technologies</td>
+</tr>
+<tr>
+<td>77</td>
+<td>Metallurgy</td>
+</tr>
+<tr>
+<td>79</td>
+<td>Wood technology</td>
+</tr>
+<tr>
+<td>81</td>
+<td>Glass and ceramics industries</td>
+</tr>
+<tr>
+<td>83</td>
+<td>Rubber and plastics industries</td>
+</tr>
+<tr>
+<td>85</td>
+<td>Paper technology</td>
+</tr>
+<tr>
+<td>87</td>
+<td>Paint and colour industries</td>
+</tr>
+<tr>
+<td>91</td>
+<td>Construction materials and building</td>
+</tr>
+<tr>
+<td>93</td>
+<td>Civil engineering</td>
+</tr>
+<tr>
+<td>95</td>
+<td>Military engineering</td>
+</tr>
+<tr>
+<td>97</td>
+<td>Domestic and commercial equipment, entertainment, sports</td>
+</tr>
+</tbody>
+</table>
+<h2 id="the-problems-with-the-original-list">4.2 The problems with the original list</h2>
+<ul>
+<li><p>Forty siblings sit at one level, against a guiding target of 5 to 9.</p></li>
+<li><p>The codes are not contiguous (01, 03, 07, 11, 13 …), so the code does not say how many fields exist or what is missing.</p></li>
+<li><p>Related fields are scattered. Transport engineering (43 to 49) and Packaging and distribution (55) are separated by Materials handling (53); there is no single code that means “all transport”.</p></li>
+<li><p>To analyse by theme, a user must maintain a list of codes, for example 43, 45, 47, 49 and 55 for transport, and then write a query against that list.</p></li>
+</ul>
+<h2 id="the-reclassified-taxonomy">4.3 The reclassified taxonomy</h2>
+<p>The 40 fields were grouped into 9 structural groups, the numeric maximum for level 1, keeping to Miller’s Law as far as logical grouping allows. Forty items cannot give 9 groups of 5 or more (9 × 5 = 45), so some groups hold fewer than 5. Level 1 is structural (ALL CAPS); level 2 is posting (Proper Case). The original ICS code is retained as a cross-reference. Item names are the ICS titles exactly as published, in Proper Case.</p>
+<table>
+
+<thead>
+<tr>
+<th><strong>Level 1</strong></th>
+<th><strong>Level 2</strong></th>
+<th><strong>Level 1 description</strong></th>
+<th><strong>Level 2 description</strong></th>
+<th><strong>ICS field</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr class="s">
+<td><strong>1</strong></td>
+<td><strong>.</strong></td>
+<td><strong>GENERAL, SCIENCE AND MANAGEMENT</strong></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>1</td>
+<td>1</td>
+<td></td>
+<td>Generalities, Terminology, Standardization, Documentation</td>
+<td>01</td>
+</tr>
+<tr>
+<td>1</td>
+<td>2</td>
+<td></td>
+<td>Services, Company Organization, Management and Quality, Administration, Transport, Sociology</td>
+<td>03</td>
+</tr>
+<tr>
+<td>1</td>
+<td>3</td>
+<td></td>
+<td>Mathematics, Natural Sciences</td>
+<td>07</td>
+</tr>
+<tr>
+<td>1</td>
+<td>4</td>
+<td></td>
+<td>Metrology and Measurement, Physical Phenomena</td>
+<td>17</td>
+</tr>
+<tr>
+<td>1</td>
+<td>5</td>
+<td></td>
+<td>Testing</td>
+<td>19</td>
+</tr>
+<tr class="s">
+<td><strong>2</strong></td>
+<td><strong>.</strong></td>
+<td><strong>HEALTH, ENVIRONMENT, AGRICULTURE AND FOOD</strong></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>1</td>
+<td></td>
+<td>Health Care Technology</td>
+<td>11</td>
+</tr>
+<tr>
+<td>2</td>
+<td>2</td>
+<td></td>
+<td>Environment, Health Protection, Safety</td>
+<td>13</td>
+</tr>
+<tr>
+<td>2</td>
+<td>3</td>
+<td></td>
+<td>Agriculture</td>
+<td>65</td>
+</tr>
+<tr>
+<td>2</td>
+<td>4</td>
+<td></td>
+<td>Food Technology</td>
+<td>67</td>
+</tr>
+<tr class="s">
+<td><strong>3</strong></td>
+<td><strong>.</strong></td>
+<td><strong>MECHANICAL ENGINEERING AND ENERGY</strong></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>1</td>
+<td></td>
+<td>Mechanical Systems and Components for General Use</td>
+<td>21</td>
+</tr>
+<tr>
+<td>3</td>
+<td>2</td>
+<td></td>
+<td>Fluid Systems and Components for General Use</td>
+<td>23</td>
+</tr>
+<tr>
+<td>3</td>
+<td>3</td>
+<td></td>
+<td>Manufacturing Engineering</td>
+<td>25</td>
+</tr>
+<tr>
+<td>3</td>
+<td>4</td>
+<td></td>
+<td>Energy and Heat Transfer Engineering</td>
+<td>27</td>
+</tr>
+<tr>
+<td>3</td>
+<td>5</td>
+<td></td>
+<td>Precision Mechanics, Jewelry</td>
+<td>39</td>
+</tr>
+<tr>
+<td>3</td>
+<td>6</td>
+<td></td>
+<td>Materials Handling Equipment</td>
+<td>53</td>
+</tr>
+<tr class="s">
+<td><strong>4</strong></td>
+<td><strong>.</strong></td>
+<td><strong>ELECTRICAL, ELECTRONICS AND ICT</strong></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>1</td>
+<td></td>
+<td>Electrical Engineering</td>
+<td>29</td>
+</tr>
+<tr>
+<td>4</td>
+<td>2</td>
+<td></td>
+<td>Electronics</td>
+<td>31</td>
+</tr>
+<tr>
+<td>4</td>
+<td>3</td>
+<td></td>
+<td>Telecommunications, Audio and Video Engineering</td>
+<td>33</td>
+</tr>
+<tr>
+<td>4</td>
+<td>4</td>
+<td></td>
+<td>Information Technology, Office Machines</td>
+<td>35</td>
+</tr>
+<tr>
+<td>4</td>
+<td>5</td>
+<td></td>
+<td>Image Technology</td>
+<td>37</td>
+</tr>
+<tr class="s">
+<td><strong>5</strong></td>
+<td><strong>.</strong></td>
+<td><strong>TRANSPORT AND DISTRIBUTION</strong></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>1</td>
+<td></td>
+<td>Road Vehicles Engineering</td>
+<td>43</td>
+</tr>
+<tr>
+<td>5</td>
+<td>2</td>
+<td></td>
+<td>Railway Engineering</td>
+<td>45</td>
+</tr>
+<tr>
+<td>5</td>
+<td>3</td>
+<td></td>
+<td>Shipbuilding and Marine Structures</td>
+<td>47</td>
+</tr>
+<tr>
+<td>5</td>
+<td>4</td>
+<td></td>
+<td>Aircraft and Space Vehicle Engineering</td>
+<td>49</td>
+</tr>
+<tr>
+<td>5</td>
+<td>5</td>
+<td></td>
+<td>Packaging and Distribution of Goods</td>
+<td>55</td>
+</tr>
+<tr class="s">
+<td><strong>6</strong></td>
+<td><strong>.</strong></td>
+<td><strong>TEXTILES, CLOTHING, WOOD AND PAPER</strong></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>6</td>
+<td>1</td>
+<td></td>
+<td>Textile and Leather Technology</td>
+<td>59</td>
+</tr>
+<tr>
+<td>6</td>
+<td>2</td>
+<td></td>
+<td>Clothing Industry</td>
+<td>61</td>
+</tr>
+<tr>
+<td>6</td>
+<td>3</td>
+<td></td>
+<td>Wood Technology</td>
+<td>79</td>
+</tr>
+<tr>
+<td>6</td>
+<td>4</td>
+<td></td>
+<td>Paper Technology</td>
+<td>85</td>
+</tr>
+<tr class="s">
+<td><strong>7</strong></td>
+<td><strong>.</strong></td>
+<td><strong>CHEMICAL, PETROLEUM AND PROCESS INDUSTRIES</strong></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>7</td>
+<td>1</td>
+<td></td>
+<td>Chemical Technology</td>
+<td>71</td>
+</tr>
+<tr>
+<td>7</td>
+<td>2</td>
+<td></td>
+<td>Petroleum, and Related Technologies</td>
+<td>75</td>
+</tr>
+<tr>
+<td>7</td>
+<td>3</td>
+<td></td>
+<td>Rubber and Plastics Industries</td>
+<td>83</td>
+</tr>
+<tr>
+<td>7</td>
+<td>4</td>
+<td></td>
+<td>Paint and Colour Industries</td>
+<td>87</td>
+</tr>
+<tr class="s">
+<td><strong>8</strong></td>
+<td><strong>.</strong></td>
+<td><strong>MINING, METALS AND MINERALS</strong></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>8</td>
+<td>1</td>
+<td></td>
+<td>Mining and Minerals</td>
+<td>73</td>
+</tr>
+<tr>
+<td>8</td>
+<td>2</td>
+<td></td>
+<td>Metallurgy</td>
+<td>77</td>
+</tr>
+<tr>
+<td>8</td>
+<td>3</td>
+<td></td>
+<td>Glass and Ceramics Industries</td>
+<td>81</td>
+</tr>
+<tr class="s">
+<td><strong>9</strong></td>
+<td><strong>.</strong></td>
+<td><strong>CONSTRUCTION, DEFENCE AND CONSUMER</strong></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>9</td>
+<td>1</td>
+<td></td>
+<td>Construction Materials and Building</td>
+<td>91</td>
+</tr>
+<tr>
+<td>9</td>
+<td>2</td>
+<td></td>
+<td>Civil Engineering</td>
+<td>93</td>
+</tr>
+<tr>
+<td>9</td>
+<td>3</td>
+<td></td>
+<td>Military Engineering</td>
+<td>95</td>
+</tr>
+<tr>
+<td>9</td>
+<td>4</td>
+<td></td>
+<td>Domestic and Commercial Equipment, Entertainment, Sports</td>
+<td>97</td>
+</tr>
+</tbody>
+</table>
+<p>Each level 1 heading carries a full stop in the Level 2 column. A posting code is two characters: the Level 1 character followed by the Level 2 character. For example, 51 is Road Vehicles Engineering.</p>
+<h2 id="what-the-example-shows">4.4 What the example shows</h2>
+<ul>
+<li><p><strong>Querying.</strong> “All transport” becomes every code that starts with 5. No list of codes has to be maintained.</p></li>
+<li><p><strong>Code length.</strong> The new code is still two characters, but it now carries two levels of hierarchy instead of one flat level.</p></li>
+<li><p><strong>Growth and gap coding.</strong> Every group has at least three unused digits left as gaps for new items, any grouping could be gap coded if required, and alpha characters would extend any group further.</p></li>
+<li><p><strong>Completeness.</strong> A structured list more readily enables a comprehensive code scheme. The ICS list is evidently incomplete: examining it as groups shows that many other items could realistically be added, and in a structured taxonomy each new item has an obvious home, whereas a flat list gives no indication of what is missing.</p></li>
+<li><p><strong>Judgement calls.</strong> Group 2 pairs health and environment with agriculture and food as a life-and-environment grouping. Domestic and commercial equipment, entertainment, sports (97) fits poorly anywhere and sits in group 9 with construction and defence. Both are reasonable alternatives to debate.</p></li>
+<li><p><strong>Scope.</strong> Only the 40 top-level fields were classified. ICS groups and subgroups below them (for example 43.040) would need a third level, whose item counts would be judged against the same guiding target.</p></li>
+<li><p>This analysis is indicative and is not intended to be definitive or exhaustive. It was undertaken to examine whether having two digits per code level offered any material advantage – it is concluded that it does not.</p></li>
+</ul>
+<h1 id="pros-and-cons-of-two-digit-code-levels">5. Pros and cons of two-digit code levels</h1>
+<h2 id="arguments-for">5.1 Arguments for</h2>
+<ul>
+<li><p>Mirrors external standards (UNSPSC, MasterFormat, ICS, HS) without remapping.</p></li>
+<li><p>Up to 99 siblings per level, so a large flat list needs fewer levels.</p></li>
+<li><p>Gap coding with 10, 20, 30 leaves room to insert between existing items.</p></li>
+<li><p>Matches legacy ERP account structures that already use fixed-width segments.</p></li>
+</ul>
+<h2 id="arguments-against">5.2 Arguments against</h2>
+<ul>
+<li><p><strong>Sloppy coding.</strong> A two-character code at one level encourages what the ERP Doctor terms “sloppy coding”, whereas two single-character code elements encourage structured discipline. A two-character code also hides two levels of hierarchy in one field: the code 43 does not say what 4 or 3 means, while two single-character elements make each level explicit and queryable.</p></li>
+<li><p><strong>It invites the flat list.</strong> Allowing 99 siblings makes a 40-item level feel acceptable, which is exactly the ICS problem. The width stops enforcing the discipline, so the tool’s warnings would be the only control.</p></li>
+<li><p><strong>Parsing and queries.</strong> Mixed widths need delimiters or a fixed layout to parse, and a test for “starts with 5” becomes “positions 1 and 2 equal 51”.</p></li>
+<li><p><strong>More configuration.</strong> Per-level width is one more setting to define, validate and keep consistent across files.</p></li>
+<li><p><strong>The capacity argument is already met.</strong> A single character can be numeric (9), upper-case alpha (26) or lower-case alpha (26), so a level that genuinely needs more than 9 items can have them without a second character. Gap coding is also available by leaving unused characters free.</p></li>
+</ul>
+<h2 id="assessment">5.3 Assessment</h2>
+<p>For building new precision taxonomies, two digits per level adds nothing and weakens the discipline. A two-digit level is not poorly structured in itself: UNSPSC is hierarchical, with each pair of digits adding a level, although its levels are not held to the 5 to 9 target. What was clumsy in the ICS list was the flat, over-wide top level, not the digit count.</p>
+<p>Where numeric codes are used, as in the GL and the dimensions, a level that would exceed 9 items is a signal to consider adding a level, not to widen the code. Where a different character set is acceptable, alpha extends a level without lengthening the code.</p>
+<p>The only remaining arguments for two digits are interoperability with external standards and client legacy structures. These are not reasons to change Taxonomy Builder<sup>TM</sup>, because they are met by cross-mapping.</p>
+<h1 id="existing-code-schemes-and-cross-mapping">6. Existing code schemes and cross-mapping</h1>
+<p>The object of Taxonomy Builder<sup>TM</sup> is not to recode existing hierarchies. The ICS example was used only to get a better feel for the issues.</p>
+<p>Where an existing code scheme is poorly structured, the ERP Doctor approach allows a precision taxonomy to be developed and then cross-mapped to the existing code scheme, so that precision analysis is retrofitted without disturbing the original. The “ICS field” column in the example above shows this.</p>
+<h1 id="rule-for-taxonomy-buildertm">7. Rule for Taxonomy Builder<sup>TM</sup></h1>
+<table>
+
+<thead>
+<tr>
+<th><strong>Rule</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Taxonomy Builder<sup>TM</sup> builds precision taxonomies only: one character per level (numeric, alpha or alphanumeric), 5 to 9 items per level as the guiding target, ALL CAPS structural names and Proper Case posting names. It does not accommodate multi-digit code levels. Existing lists that use them are held separately and, where useful, cross-mapped to a precision taxonomy to retrofit precision analysis.</td>
+</tr>
+</tbody>
+</table>
+<h1 id="sources">Sources</h1>
+<ul>
+<li><p><a href="https://msi.dublincore.org/standards/unspsc"><u>UNSPSC, Dublin Core Metadata Standards Initiative</u></a></p></li>
+<li><p><a href="https://www.wbdg.org/tools/specsintact/Help/SIGeneral/CSIMasterFormat.htm"><u>MasterFormat, WBDG SpecsIntact</u></a></p></li>
+<li><p><a href="https://www.procore.com/library/csi-masterformat"><u>MasterFormat, Procore</u></a></p></li>
+<li><p><a href="https://en.wikipedia.org/wiki/International_Classification_for_Standards"><u>International Classification for Standards, Wikipedia</u></a></p></li>
+<li><p><a href="https://www150.statcan.gc.ca/n1/pub/71-607-x/2021004/class-eng.htm"><u>Harmonized System, Statistics Canada</u></a></p></li>
+<li><p><a href="https://www.census.gov/foreign-trade/schedules/b/2012/introduction.html"><u>Schedule B introduction, US Census Bureau</u></a></p></li>
+<li><p><a href="https://www.designingbuildings.co.uk/wiki/Uniclass2_-_Why_and_How"><u>Uniclass 2: why and how, Designing Buildings</u></a></p></li>
+</ul>
+</body>
+</html>
