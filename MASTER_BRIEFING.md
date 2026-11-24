@@ -1,6 +1,6 @@
 # Taxonomy Builder — Master Briefing
 
-*Version: v 1.11*
+*Version: v 1.12*
 
 *A one-stop orientation document: what this is, what it does today, where the
 business stands, and what's still outstanding. Written for James (or anyone
@@ -8,10 +8,10 @@ he shares this with) rather than as an engineering log — for the detailed,
 round-by-round build history, see `PROGRESS.md`; for the original functional
 specification, see `CLAUDE.md`.*
 
-*Last updated: 2026-11-24 — same day as v 1.04 through v 1.10: the Stripe
-Price IDs for all three paid tiers are now in `subscription_plans` —
-everything Stage C3's Checkout-Session function needs is in place except
-the function itself. See §0 and §4.*
+*Last updated: 2026-11-24 — same day as v 1.04 through v 1.11: the first
+Stripe Edge Function is written —
+`supabase/functions/create-checkout-session/index.ts` — but not yet
+deployed by James. See §0 and §4.*
 
 *Version history: v 1.01 — first version stamp applied to this file
 (2026-10-14). v 1.02 — same evening, after PRs #230–#235 (see §0): Promote/
@@ -60,9 +60,10 @@ in Supabase's Edge Function secrets; `supabase/0012_add_stripe_price_ids.
 sql` written (two new columns on `subscription_plans` for each tier's
 Stripe Price ID), not yet run. v 1.11 (2026-11-24, same day) — `0012` run
 and all three paid tiers' Price IDs populated (Basic/Advanced/Enterprise);
-Stage C3 piece (b) (the Checkout-Session function itself) is next.
-Increment this by one, and add a line here, every time this file is next
-updated and re-sent to him — see
+Stage C3 piece (b) (the Checkout-Session function itself) is next. v 1.12
+(2026-11-24, same day) — the Checkout-Session Edge Function is written,
+not yet deployed; James's next step. Increment this by one, and add a
+line here, every time this file is next updated and re-sent to him — see
 `ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md` §5, item 10.*
 
 ---
@@ -119,11 +120,21 @@ hardcoded" philosophy as the rest of that table), and the three paid
 tiers' monthly Price IDs copied in by hand from Stripe's Product catalog
 (found via Stripe's Workbench → Inspector, searching by Product ID — the
 Price ID is the separate, distinct object Checkout actually needs).
-(b) write and deploy the "create Checkout Session" function; (c) a minimal
-"Upgrade" entry point in the app to actually call it, enough to test
-end to end (the full Pricing-page visual overhaul to the real 4-tier
-structure stays a separate, later piece — Stage D/F); (d) register the
-deployed webhook URL in Stripe and get its signing secret, added as a
+(b) **written, 2026-11-24, as `supabase/functions/create-checkout-
+session/index.ts` — not yet deployed by James.** Creates (or reuses) a
+Stripe Customer tied to the signed-in account, creates a Stripe Checkout
+Session for the requested paid tier's Monthly Price (rejects Annual with
+a clear error for now, since no Annual Price objects exist in Stripe
+yet), and returns the Checkout URL. Deliberately never writes `plan_key`
+on `subscriptions` itself — only the webhook (piece (e), once Stripe
+actually confirms payment) can do that, so starting a Checkout Session
+can never itself grant paid access. Needs no new secret beyond
+`STRIPE_SECRET_KEY` (already in place) — `SUPABASE_URL`/`SUPABASE_
+SERVICE_ROLE_KEY` are auto-injected into every Edge Function by Supabase.
+(c) a minimal "Upgrade" entry point in the app to actually call it, enough
+to test end to end (the full Pricing-page visual overhaul to the real
+4-tier structure stays a separate, later piece — Stage D/F); (d) register
+the deployed webhook URL in Stripe and get its signing secret, added as a
 second Supabase secret; (e) write and deploy the webhook-receiving
 function; (f) one real end-to-end test with a Stripe test card. C4
 (renewal/expiry + reminder emails) is also not started.
@@ -1021,10 +1032,12 @@ re-deriving any of this.
       done 2026-11-24 (as `STRIPE_SECRET_KEY`).
 - [x] ~~Run `supabase/0012_add_stripe_price_ids.sql` and populate the
       three paid tiers' monthly Price IDs~~ — done 2026-11-24.
-- [ ] **Next:** write/deploy the Checkout-Session Edge Function; a minimal
-      "Upgrade" entry point to test it; register the webhook in Stripe and
-      add its signing secret; write/deploy the webhook Edge Function; one
-      real end-to-end test (Stage C3, §0/§4).
+- [ ] **James to deploy:** `supabase/functions/create-checkout-session/
+      index.ts`, via Supabase Dashboard → Edge Functions. Written, not yet
+      deployed. The actual next step.
+- [ ] A minimal "Upgrade" entry point in the app to test it; register the
+      webhook in Stripe and add its signing secret; write/deploy the
+      webhook Edge Function; one real end-to-end test (Stage C3, §0/§4).
 - [ ] Build the renewal/expiry state machine and staged reminder emails
       (Stage C4, §4) — not started.
 - [ ] Resolve the live Stripe account's "missing director" compliance
