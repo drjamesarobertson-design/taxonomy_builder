@@ -506,6 +506,12 @@ export interface NumericOverflowGroup {
    * two headings that happen to share the exact same name and nesting (e.g. two unrelated branches
    * each genuinely titled just "Costs"). The row number is the one thing that's never ambiguous. */
   rowNumber: number;
+  /** firstRowId's own description text — James's report: a message built only from the row's
+   * ANCESTORS ("under 'Costs'") read as if the ancestor's name belonged to the flagged row itself,
+   * when the row actually overflowing was a same-named-sounding but different entry one level
+   * down ("Cost of Sales", a child of "Costs") — showing the row's own text removes that ambiguity
+   * outright, on top of (not instead of) the ancestor breadcrumb. */
+  firstRowDescription: string;
 }
 
 // James's ask (2026-11-23), items 2 and 4 together: before Auto Code writes anything under
@@ -547,6 +553,7 @@ export function findNumericOverflowGroups(rows: TaxonomyRow[]): NumericOverflowG
         hasOther: otherCount > 0,
         firstRowId: rows[indices[0]].id,
         rowNumber: indices[0] + 1,
+        firstRowDescription: rows[indices[0]].descriptions[level] || '(unnamed heading)',
       });
     }
   }

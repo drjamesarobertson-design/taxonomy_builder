@@ -3334,8 +3334,10 @@ export default function App() {
         <div className="validation-overlay" onClick={() => setNumericOverflowPrompt(null)}>
           <div className="validation-dialog" onClick={(e) => e.stopPropagation()}>
             <p>
-              Row {numericOverflowPrompt.group.rowNumber}, Column {numericOverflowPrompt.group.level + 1}, under "
-              {numericOverflowPrompt.group.ancestorPath.join(' › ') || '(top level)'}":
+              Row {numericOverflowPrompt.group.rowNumber} ("{numericOverflowPrompt.group.firstRowDescription}"),
+              Column {numericOverflowPrompt.group.level + 1}: this is the first of a group of sibling entries — each
+              a direct child of "{numericOverflowPrompt.group.ancestorPath.join(' › ') || '(top level)'}" — that
+              together has too many to fit under Numeric Only.
             </p>
             <p>
               {numericOverflowPrompt.group.hasOther
@@ -3357,7 +3359,7 @@ export default function App() {
                   setNumericOverflowPrompt(null);
                   setShowAutoCode(false);
                   setLoadError(
-                    `Auto Code stopped — nothing was changed. Fix the group starting at Row ${numericOverflowPrompt.group.rowNumber}, under "${numericOverflowPrompt.group.ancestorPath.join(' › ') || '(top level)'}" (Column ${numericOverflowPrompt.group.level + 1}, ${numericOverflowPrompt.group.ordinaryCount} entries) manually, then run Auto Code again.`,
+                    `Auto Code stopped — nothing was changed. Fix the group of sibling entries starting at Row ${numericOverflowPrompt.group.rowNumber} ("${numericOverflowPrompt.group.firstRowDescription}", Column ${numericOverflowPrompt.group.level + 1}, ${numericOverflowPrompt.group.ordinaryCount} entries, each a direct child of "${numericOverflowPrompt.group.ancestorPath.join(' › ') || '(top level)'}") manually, then run Auto Code again.`,
                   );
                 }}
               >
