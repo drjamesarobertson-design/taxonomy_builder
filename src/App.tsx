@@ -89,6 +89,7 @@ import type { LibraryCategory, LibraryEntry, LibraryExportBundle } from './libra
 import { bumpFileVersion } from './fileVersion';
 import { fetchDeployedVersion } from './versionCheck';
 import { isSupervisor } from './supervisor';
+import { startCheckout, type PaidPlanKey } from './checkout';
 import './App.css';
 
 export default function App() {
@@ -375,6 +376,27 @@ export default function App() {
     window.addEventListener('click', close);
     return () => window.removeEventListener('click', close);
   }, [showImportCsvMenu]);
+
+  // Stage C3 (MASTER_BRIEFING.md §4) -- a supervisor-only way to actually exercise the real
+  // Checkout flow end to end before any of this is wired into the real, customer-facing Pricing
+  // page (a later, separate piece). Never shown to an ordinary subscriber.
+  const [showTestCheckoutMenu, setShowTestCheckoutMenu] = useState(false);
+  const testCheckoutMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showTestCheckoutMenu) return;
+    const close = (e: MouseEvent) => {
+      if (!testCheckoutMenuRef.current?.contains(e.target as Node)) setShowTestCheckoutMenu(false);
+    };
+    window.addEventListener('click', close);
+    return () => window.removeEventListener('click', close);
+  }, [showTestCheckoutMenu]);
+
+  async function handleTestCheckout(planKey: PaidPlanKey) {
+    setShowTestCheckoutMenu(false);
+    const { error } = await startCheckout(planKey);
+    if (error) setLoadError(`Checkout failed: ${error}`);
+  }
 
   // Bumped every time a genuinely new or freshly-loaded project replaces the current one (never
   // on an ordinary edit) — passed to Grid as its React key, so Grid remounts cleanly instead of
@@ -2905,6 +2927,20 @@ export default function App() {
                   {showWorksheetChrome ? 'Full Screen' : 'Display Details'}
                 </button>
               </Tooltip>
+            )}
+            {supervisor && (
+              <div className="lock-menu-wrapper" ref={testCheckoutMenuRef}>
+                <button type="button" className="toolbar-alt" onClick={() => setShowTestCheckoutMenu((v) => !v)}>
+                  Test Checkout ▾
+                </button>
+                {showTestCheckoutMenu && (
+                  <ul className="context-menu lock-menu">
+                    <li onClick={() => handleTestCheckout('basic')}>Upgrade to Basic (£19.99/mo)</li>
+                    <li onClick={() => handleTestCheckout('advanced')}>Upgrade to Advanced (£39.99/mo)</li>
+                    <li onClick={() => handleTestCheckout('enterprise')}>Upgrade to Enterprise (£99.99/mo)</li>
+                  </ul>
+                )}
+              </div>
             )}
             <Tooltip field="btnHelp" helpText={helpText}>
               <button type="button" className="toolbar-alt" onClick={() => setShowHelpPage(true)}>
