@@ -1,6 +1,6 @@
 # Taxonomy Builder — Master Briefing
 
-*Version: v 1.07*
+*Version: v 1.08*
 
 *A one-stop orientation document: what this is, what it does today, where the
 business stands, and what's still outstanding. Written for James (or anyone
@@ -8,9 +8,9 @@ he shares this with) rather than as an engineering log — for the detailed,
 round-by-round build history, see `PROGRESS.md`; for the original functional
 specification, see `CLAUDE.md`.*
 
-*Last updated: 2026-11-24 — same day as v 1.04/v 1.05/v 1.06:
-`supabase/0010_create_subscription_plans.sql` has now been run by James —
-the subscription tier-config tables exist for real. See §0 and §4.*
+*Last updated: 2026-11-24 — same day as v 1.04 through v 1.07: Stage C's
+second piece is written — `supabase/0011_create_subscriptions.sql`, the
+per-account plan record — but not yet run by James. See §0 and §4.*
 
 *Version history: v 1.01 — first version stamp applied to this file
 (2026-10-14). v 1.02 — same evening, after PRs #230–#235 (see §0): Promote/
@@ -45,7 +45,13 @@ compliance flag unrelated to anything built here (an unrecognised
 "missing director" on the business verification check) — confirmed this
 cannot affect the sandbox or anything in Stages B–F, only Stage G
 (accepting real payments); Stripe Support couldn't resolve it on first
-contact, left open for James to revisit before go-live. Increment this by
+contact, left open for James to revisit before go-live. v 1.08
+(2026-11-24, same day) — Stage C's second piece written:
+`supabase/0011_create_subscriptions.sql` creates the per-account plan
+record (§3/§4), defaulting every signup to Free; scope narrowed from the
+original plan for a concrete reason (a real "choose a paid tier" flow
+needs Stripe Checkout to exist first, so that moment moves into C3 — see
+§0); a one-time manual step James still needs to run. Increment this by
 one, and add a line here, every time this file is next updated and
 re-sent to him — see `ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md` §5, item 10.*
 
@@ -70,9 +76,26 @@ plans.sql` created `subscription_plans` and `subscription_settings` (see
 **run successfully by James in Supabase's SQL Editor, 2026-11-24.** This is
 data only — no app code reads it yet (that's C3/Stage D) — but any
 price/limit can now be tweaked directly in Supabase's Table Editor.
-Remaining Stage C pieces (C2: capture the chosen plan at signup; C3: the
-two Stripe Edge Functions; C4: renewal/expiry + reminder emails) are not
-started.
+
+**Stage C, piece 2 of 4 (C2) — written, not yet run by James. Scope
+narrowed from the original plan, for a concrete reason worth recording**:
+a real "choose a paid tier at signup" flow needs Stripe Checkout to exist
+first (C3) — otherwise nothing stops a new signup from just claiming
+Enterprise for free, and the in-app Pricing page still shows the old
+3-tier draft with paid buttons disabled ("Coming Soon") for exactly that
+reason. So C2 is just the database piece: `supabase/0011_create_
+subscriptions.sql` creates `subscriptions` — one row per account, defaults
+to `plan_key = 'free'` the instant anyone signs up (a trigger mirroring
+`profiles`' own, see §3), with `stripe_customer_id`/`stripe_subscription_
+id`/`current_period_end` columns sitting ready but unused until C3's
+webhook populates them. **Deliberately no write access for ordinary users
+at all, not even to their own row** — only the signup trigger and, later,
+the webhook function (running as `service_role`) can ever change a row,
+so nothing in the regular app can self-grant a paid tier. Wiring an actual
+"pick a tier and sign up" UI is folded into C3 instead, once Checkout
+actually exists to make that choice real. Remaining Stage C pieces (C3:
+the two Stripe Edge Functions, now including the signup-time plan choice;
+C4: renewal/expiry + reminder emails) are not started.
 
 **Side note from the same stretch of conversation, unrelated to any of the
 above:** going through Stripe's live-account activation flow (confirming
@@ -554,9 +577,10 @@ Toolbar "Folders ▾" menu:
 - **Backend**: Supabase — Postgres (with Row Level Security) for accounts,
   Library storage, starter samples, and (new, see below) the subscription
   tier structure; Supabase Auth for sign-in/sign-up; Resend as the custom
-  SMTP provider for auth emails (see §4). Ten one-time SQL migrations exist
-  (`supabase/0001`–`0010`), each a one-off manual step in Supabase's SQL
-  Editor — all ten have now been run. `0001` creates the
+  SMTP provider for auth emails (see §4). Eleven one-time SQL migrations
+  exist (`supabase/0001`–`0011`), each a one-off manual step in Supabase's
+  SQL Editor — ten have been run; `0011` is new and **not yet run by
+  James** (see §4, Stage C). `0001` creates the
   `profiles` table (James's own exportable contact list — see "Account &
   sign-up" in §2); `0002` creates `library_entries` (cloud Library
   storage); `0003` adds the starter-sample flag and its cross-account read
@@ -577,7 +601,12 @@ Toolbar "Folders ▾" menu:
   global "is Annual billing live yet" toggle), seeded with the 4-tier
   structure agreed 2026-11-24 plus one hidden `beta` row, readable by
   anyone (signed in or not — the Pricing page shows before sign-in too)
-  and writable only by the supervisor account (see §4, Stage C).
+  and writable only by the supervisor account; `0011` creates
+  `subscriptions` — one row per account, recording which plan it's
+  actually on, defaulting every new signup to `free` via a trigger — with
+  no write access for ordinary users at all, not even to their own row
+  (only the trigger and, later, the Stripe webhook function can ever
+  change it) (see §4, Stage C).
 - **Supabase Data API grants — new requirement from 30 October 2026
   onward.** Supabase emailed James (2026-10-21) that from that date, a
   newly *created* table in the `public` schema no longer automatically
@@ -721,13 +750,16 @@ infrastructure as the auth emails (see below).
    objects can be created in test mode too, ready for when Annual goes
    live) → enable Stripe Tax → obtain the test-mode publishable key.
    **Done, 2026-11-24** — see §0/§4 "Payment processing" for the full record.
-3. **Stage C — Supabase plumbing**: the tier-config table (name/price/
-   limits, supervisor-editable) — **done, 2026-11-24**
-   (`supabase/0010_create_subscription_plans.sql`, run successfully by
-   James); the plan field at signup; two small Edge Functions (create a
-   Checkout Session; receive and verify Stripe's webhook, updating the
-   subscriber's plan); the renewal/expiry state machine and the staged
-   reminder emails above. The latter three pieces are not started.
+3. **Stage C — Supabase plumbing**: the tier-config table — **done,
+   2026-11-24** (`supabase/0010_create_subscription_plans.sql`, run
+   successfully by James); the per-account plan record, defaulting every
+   signup to Free — **written, 2026-11-24, as
+   `supabase/0011_create_subscriptions.sql`, not yet run by James**; two
+   small Edge Functions (create a Checkout Session, including the actual
+   "pick a paid tier" UI moment, now that this is where it belongs — see
+   §0; receive and verify Stripe's webhook, updating the subscriber's
+   plan); the renewal/expiry state machine and the staged reminder emails
+   above. The latter two pieces are not started.
 4. **Stage D — app-side enforcement**: wire the numeric caps (columns/
    rows/Library entries/locked taxonomies) and the workflow-type gates
    (reusing the existing `WORKFLOW_LEVELS`/Cubic Business Model structure)
@@ -950,10 +982,13 @@ re-deriving any of this.
       tax-exclusive, test-mode publishable key recorded.
 - [x] ~~Run `supabase/0010_create_subscription_plans.sql`~~ — done
       2026-11-24: both tables created successfully in Supabase.
-- [ ] **Next:** capture the chosen plan at signup; build the two Stripe
-      Edge Functions (Checkout Session creation, webhook receiver); build
-      the renewal/expiry state machine and staged reminder emails (the
-      rest of Stage C, §4) — not started.
+- [ ] **James to run once, in Supabase's SQL Editor:**
+      `supabase/0011_create_subscriptions.sql` — the per-account plan
+      record, defaulting every signup to Free. The actual next step.
+- [ ] Build the two Stripe Edge Functions (Checkout Session creation —
+      including the real "pick a paid tier" UI moment; webhook receiver);
+      build the renewal/expiry state machine and staged reminder emails
+      (the rest of Stage C, §4) — not started.
 - [ ] Resolve the live Stripe account's "missing director" compliance
       flag with Stripe Support before Stage G (go-live) — does not block
       anything before then (§4, "Payment processing").
