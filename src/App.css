@@ -383,7 +383,10 @@
   top: 0;
   z-index: 50;
   background: #102a5c;
-  padding: 0.75rem 0;
+  /* James's ask: squeeze this bar up as small as it'll go, so the sticky grid below gets as much
+     of the screen as possible — shrunk down from the old heading-sized padding now that the
+     heading itself (below) is a single small line rather than a 36pt banner. */
+  padding: 0.35rem 0;
 }
 
 .app-header {
@@ -392,7 +395,7 @@
   justify-content: space-between;
   flex-wrap: wrap;
   row-gap: 0.5rem;
-  margin-bottom: 1rem;
+  margin-bottom: 0.35rem;
 }
 
 .app-heading-block {
@@ -402,7 +405,7 @@
 
 .app-heading {
   font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  font-size: 36pt;
+  font-size: 12pt;
   font-weight: 700;
   margin: 0;
   text-align: left;
