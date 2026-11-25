@@ -1564,7 +1564,11 @@ export default function Grid({
     // "just keep adding more" action, so it's the one place this needs an explicit ceiling.
     if (maxRows != null && rows.length + count > maxRows) {
       setContextMenu(null);
-      showValidationError(`Your current plan allows up to ${maxRows} rows. Upgrade for more.`);
+      showValidationError(
+        rows.length > maxRows
+          ? `This taxonomy already has ${rows.length} rows, over your current plan's limit of ${maxRows}. Upgrade to add more.`
+          : `Your current plan allows up to ${maxRows} rows. Upgrade for more.`,
+      );
       return;
     }
     let idx: number;
@@ -2780,7 +2784,11 @@ export default function Grid({
     // dialog's own numLevels field, which already clamps to MAX_LEVELS, a user could keep
     // right-clicking "Add Column" past it indefinitely with no warning.
     if (numLevels >= maxLevels) {
-      showValidationError(`This taxonomy is already at the maximum of ${maxLevels} levels.`);
+      showValidationError(
+        numLevels > maxLevels
+          ? `This taxonomy already has ${numLevels} columns, over your current plan's limit of ${maxLevels}. Upgrade to add more.`
+          : `This taxonomy is already at the maximum of ${maxLevels} levels.`,
+      );
       return;
     }
     // James's gap: column 1 of a flat, single-level taxonomy may hold a multi-character code

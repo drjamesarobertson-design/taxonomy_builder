@@ -128,7 +128,13 @@ export default function SettingsModal({ project, onSave, onClose, helpText, maxL
       }
     }
     const requestedLevels = Math.max(1, Number(numLevelsText) || project.settings.numLevels);
-    if (requestedLevels > maxLevels) {
+    // James's report (2026-11-25): a taxonomy already over the plan's column cap (e.g. a
+    // personal Library copy of an oversized sample, saved before downgrading, or copied in from
+    // a higher tier) could never save ANY Settings change at all, even ones with nothing to do
+    // with column count -- this only blocks actually INCREASING the count past the cap; leaving
+    // it unchanged, or reducing it (even partway, still over cap), always saves fine, matching
+    // the "already-oversized entries are left exactly as they are" rule elsewhere.
+    if (requestedLevels > maxLevels && requestedLevels > project.settings.numLevels) {
       setNumLevelsError(`Your current plan allows up to ${maxLevels} columns. Upgrade for more.`);
       drawAttentionTo(numLevelsInputRef);
       return;
