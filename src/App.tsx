@@ -90,6 +90,7 @@ import { bumpFileVersion } from './fileVersion';
 import { fetchDeployedVersion } from './versionCheck';
 import { isSupervisor } from './supervisor';
 import { startCheckout, type PaidPlanKey } from './checkout';
+import { downloadDatabaseBackup } from './databaseBackup';
 import './App.css';
 
 export default function App() {
@@ -396,6 +397,18 @@ export default function App() {
     setShowTestCheckoutMenu(false);
     const { error } = await startCheckout(planKey);
     if (error) setLoadError(`Checkout failed: ${error}`);
+  }
+
+  // James's ask (2026-11-25): a "periodic manual export" of the whole live database, as a
+  // disaster-recovery stopgap while the Supabase project stays on the Free plan (no automated
+  // backups included there). Supervisor-only, enforced server-side in the Edge Function itself,
+  // not just by hiding this button.
+  const [exportingBackup, setExportingBackup] = useState(false);
+  async function handleExportBackup() {
+    setExportingBackup(true);
+    const { error } = await downloadDatabaseBackup();
+    setExportingBackup(false);
+    if (error) setLoadError(`Backup export failed: ${error}`);
   }
 
   // Bumped every time a genuinely new or freshly-loaded project replaces the current one (never
@@ -2941,6 +2954,13 @@ export default function App() {
                   </ul>
                 )}
               </div>
+            )}
+            {supervisor && (
+              <Tooltip field="btnExportBackup" helpText={helpText}>
+                <button type="button" className="toolbar-alt" onClick={handleExportBackup} disabled={exportingBackup}>
+                  {exportingBackup ? 'Exporting Backup…' : 'Export Full Backup'}
+                </button>
+              </Tooltip>
             )}
             <Tooltip field="btnHelp" helpText={helpText}>
               <button type="button" className="toolbar-alt" onClick={() => setShowHelpPage(true)}>

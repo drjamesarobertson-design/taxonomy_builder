@@ -1,6 +1,6 @@
 # Taxonomy Builder — Master Briefing
 
-*Version: v 1.16*
+*Version: v 1.17*
 
 *A one-stop orientation document: what this is, what it does today, where the
 business stands, and what's still outstanding. Written for James (or anyone
@@ -8,11 +8,10 @@ he shares this with) rather than as an engineering log — for the detailed,
 round-by-round build history, see `PROGRESS.md`; for the original functional
 specification, see `CLAUDE.md`.*
 
-*Last updated: 2026-11-24 — same day as v 1.04 through v 1.14: Checkout
-itself is now proven fully working end to end, including a real test
-payment with Stripe's standard test card — the only remaining Stage C3
-work is the webhook that actually grants the paid plan once Stripe
-confirms payment. See §0 and §4.*
+*Last updated: 2026-11-25 — a disaster-recovery review found the live
+database has no automated backups (Supabase Free plan); a supervisor-only
+"Export Full Backup" button is built as a periodic manual stopgap, not yet
+deployed. See §0 and §2/§4's new "Disaster recovery" section.*
 
 *Version history: v 1.01 — first version stamp applied to this file
 (2026-10-14). v 1.02 — same evening, after PRs #230–#235 (see §0): Promote/
@@ -75,15 +74,35 @@ Checkout itself is now proven fully working end to end — only the
 webhook (to actually grant the plan) remains. v 1.16 (2026-11-24, same
 day) — James's explicit standing instruction: increment this version
 number every time this file is shared with him, not only when its
-content changes — this share is the first under that rule. **Increment
-this by one every time this file is next updated and/or shared with him
-(whichever comes first), and add a line here whenever its content
-actually changed** — see `ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md` §5, item
-10.*
+content changes — this share is the first under that rule. v 1.17
+(2026-11-25) — a disaster-recovery review (James's own initiative, after
+reading an article on the topic) found a real gap: the live database has
+no automated backups (Supabase Free plan). Built a supervisor-only
+"Export Full Backup" button as a periodic manual stopgap (James's
+preference over upgrading the Supabase plan) — written, not yet deployed;
+also gave James a one-off Git-bundle backup of the code itself directly.
+**Increment this by one every time this file is next updated and/or
+shared with him (whichever comes first), and add a line here whenever its
+content actually changed** — see
+`ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md` §5, item 10.*
 
 ---
 
 ## 0. Where things stand right now — read this first
+
+**Disaster recovery, 2026-11-25 — a real gap found and a stopgap built,
+not yet deployed.** James asked what the DR arrangements are. Code/config:
+solid (full Git history, auto-rebuilding static site). The live database:
+no automated backups, since the Supabase project is on the Free plan.
+Built `supabase/functions/export-database-backup/index.ts` (supervisor-
+only, server-side-enforced, reads every table via the service role) plus
+a new "Export Full Backup" toolbar button (`src/databaseBackup.ts`) — a
+periodic, one-click, manual export, James's preferred option over
+upgrading the Supabase plan. Full detail in §2/§4's "Disaster recovery"
+section. **Not yet deployed** — same one-time deploy dance as
+`create-checkout-session`, James's actual next step whenever he's ready.
+A one-off Git-bundle backup of the code itself was also handed to him
+directly (not a recurring mechanism, just a point-in-time copy).
 
 **Stripe Stage B walkthrough, 2026-11-24 (same day as the planning round
 below) — done live, step by step:** account created; Stripe Tax enabled in
@@ -516,14 +535,61 @@ minute.
   sign-ups panel above is a second, independent way to see the same thing,
   not a replacement for this.
 - **Supervisor role** (James's own account, `jamesar@jar-and-a.com`
-  specifically, hardcoded — see `src/supervisor.ts`): two capabilities
+  specifically, hardcoded — see `src/supervisor.ts`): capabilities
   restricted to this one account — marking/unmarking a Library entry as a
   starter sample (open to any subscriber until 2026-10-14; a database
-  trigger now enforces this server-side, not just a hidden button), and an
+  trigger now enforces this server-side, not just a hidden button), an
   in-app Help editor (edit any tooltip/help-page field directly, in place
-  of downloading `help-text.csv` and editing it in Excel). Built as
-  reusable infrastructure — no paywall exists yet to bypass (see §4), but
-  his account will be automatically exempt the moment one is.
+  of downloading `help-text.csv` and editing it in Excel), a "Test
+  Checkout" toolbar dropdown for exercising the real Stripe flow (§4), and
+  (new, 2026-11-25) an **"Export Full Backup" toolbar button** — see
+  below. Built as reusable infrastructure — no paywall exists yet to
+  bypass most of this (see §4), but his account will be automatically
+  exempt the moment one is.
+
+### Disaster recovery (added 2026-11-25)
+James asked directly what the disaster-recovery arrangements are, after
+reading an article on the topic. Honest answer at the time: **code and
+configuration are well covered** (this entire repository, full history,
+in GitHub — the live site rebuilds from source automatically, so there's
+no server to lose) — **the live database was not**. The Supabase project
+is on the **Free plan**, which doesn't include automated backups; before
+this, the only way to get data out was Supabase's own Table Editor,
+table by table (as already used for `profiles` — see "Account &
+sign-up" above).
+
+Given the choice between upgrading the Supabase plan (for automated
+backups) or a periodic manual export, James chose the latter. Built:
+`supabase/functions/export-database-backup/index.ts`, a new Edge
+Function — supervisor-only, **enforced server-side inside the function
+itself** (checks the caller's own email, not just a hidden UI button,
+same principle as every other supervisor-only capability in this
+project) — which reads every row of every table (`profiles`,
+`library_entries`, `subscription_plans`, `subscription_settings`,
+`subscriptions`) using the service-role key, specifically because some
+of these tables (`library_entries`) have no supervisor-read-all RLS
+policy today — a backup needs everything, so this bypasses RLS entirely
+for exactly this one purpose rather than weakening any table's existing
+policies for everyday use. `src/databaseBackup.ts` calls it and saves
+the result as one timestamped JSON file via the browser's save dialog
+(the same `saveExportFile` mechanism every other export in this app
+already uses). A new **"Export Full Backup"** toolbar button triggers
+it, visible only to the supervisor account.
+
+James was also given a full code-and-configuration backup directly (a
+Git bundle — the standard format for a complete, restorable-elsewhere
+repository copy — zipped with a README explaining what it does and
+doesn't cover, and how to restore it). That covers the code side once;
+it isn't a recurring mechanism — the "Export Full Backup" button above
+is what's meant to be used periodically, for the data side, going
+forward.
+
+**Status: written, 2026-11-25, not yet deployed by James.** Same
+deployment dance as `create-checkout-session` (§4): Supabase Dashboard →
+Edge Functions → Deploy a new function → Via Editor → name it exactly
+`export-database-backup` → paste the code → deploy → turn off "Verify
+JWT with legacy secret" on its Settings tab, same reasoning as before
+(this function does its own proper auth check in code).
 
 ### Core taxonomy editing
 - The full coded-hierarchy grid: single-character code columns, configurable
@@ -1067,6 +1133,9 @@ re-deriving any of this.
 - [ ] James to finalise the exact dollar break-points for the 4 tiers (the
       only still-open number — everything else in §4's table and mechanics
       is decided).
+- [ ] **James to deploy:** `supabase/functions/export-database-backup/
+      index.ts`, via Supabase Dashboard → Edge Functions (same dance as
+      `create-checkout-session`). Written 2026-11-25, not yet deployed.
 - [x] ~~Create the Stripe account and the paid-tier Products/Prices~~ —
       done 2026-11-24 (Stage B, §4): account created, Stripe Tax enabled in
       the sandbox, Basic/Advanced/Enterprise all created in GBP/Monthly/
