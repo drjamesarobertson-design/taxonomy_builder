@@ -122,6 +122,12 @@ export interface TaxonomySettings {
   lockedBy?: string;
   lockReason?: string;
   lockAuthorisedBy?: string;
+  /** Stage D5b: true only when this `locked` state came from a real, user-initiated Lock
+   * Taxonomy (performLockTaxonomy, App.tsx) -- distinguishes that from Stage D5a's unrelated
+   * read-only-over-limit Library samples, which set `locked`/`protected` for a completely
+   * different reason and must never count toward, or be decremented from, the signed-in
+   * account's max_locked_taxonomies count. Absent/false for every taxonomy never really locked. */
+  lockCounted?: boolean;
   /** Set only while the Simple Taxonomy guided wizard is active; absent for every other
    * taxonomy (including ones created via the other five workflow-menu starting points, which
    * still just open today's ordinary setup screen — their own guided wizards aren't built

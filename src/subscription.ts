@@ -20,6 +20,9 @@ export interface PlanLimits {
   maxRows: number | null;
   maxLibraryEntries: number | null;
   maxLockedTaxonomies: number | null;
+  /** Stage D5b: running count of this account's currently-locked taxonomies (supabase/0014),
+   * kept in step by the app calling adjustLockedTaxonomyCount() on every real Lock/Unlock. */
+  lockedTaxonomyCount: number;
   auditAllowed: boolean;
   chartOfAccountsWizardAllowed: boolean;
   functionMasterAllowed: boolean;
@@ -35,6 +38,7 @@ interface SubscriptionRow {
   plan_key: PlanKey;
   status: string;
   current_period_end: string | null;
+  locked_taxonomy_count: number;
 }
 
 interface PlanRow {
@@ -67,7 +71,7 @@ export async function fetchPlanLimits(): Promise<PlanLimits | null> {
 
   const { data: subscription, error: subError } = await supabase
     .from('subscriptions')
-    .select('plan_key, status, current_period_end')
+    .select('plan_key, status, current_period_end, locked_taxonomy_count')
     .eq('user_id', user.id)
     .single();
   if (subError || !subscription) {
@@ -96,6 +100,7 @@ export async function fetchPlanLimits(): Promise<PlanLimits | null> {
     maxRows: row.max_rows,
     maxLibraryEntries: row.max_library_entries,
     maxLockedTaxonomies: row.max_locked_taxonomies,
+    lockedTaxonomyCount: sub.locked_taxonomy_count,
     auditAllowed: row.audit_allowed,
     chartOfAccountsWizardAllowed: row.chart_of_accounts_wizard_allowed,
     functionMasterAllowed: row.function_master_allowed,
@@ -106,6 +111,21 @@ export async function fetchPlanLimits(): Promise<PlanLimits | null> {
     glAnalyserImportAllowed: row.gl_analyser_import_allowed,
     glBuilderExportAllowed: row.gl_builder_export_allowed,
   };
+}
+
+/** Stage D5b: adjusts the signed-in user's own locked_taxonomy_count by delta (+1 on a real Lock,
+ * -1 on Unlock -- never on Lock Taxonomy's own "Lock updates" re-sweep, and never on Stage D5a's
+ * unrelated read-only-over-limit Library samples). Calls the narrow supabase/0014 RPC rather than
+ * writing the subscriptions row directly -- ordinary accounts still have zero UPDATE grant on
+ * that table. Returns the new count on success, or null if the call failed (logged, not thrown --
+ * a failed count update should never itself block the Lock/Unlock the user actually asked for). */
+export async function adjustLockedTaxonomyCount(delta: number): Promise<number | null> {
+  const { data, error } = await supabase.rpc('adjust_locked_taxonomy_count', { delta });
+  if (error) {
+    console.error('adjustLockedTaxonomyCount failed:', error);
+    return null;
+  }
+  return data as number;
 }
 
 /** A paid plan (status 'active') whose current_period_end has passed with no renewal recorded

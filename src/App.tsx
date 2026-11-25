@@ -91,7 +91,14 @@ import { fetchDeployedVersion } from './versionCheck';
 import { isSupervisor } from './supervisor';
 import { startCheckout, type PaidPlanKey } from './checkout';
 import { downloadDatabaseBackup } from './databaseBackup';
-import { fetchPlanLimits, isExpired, effectiveMaxLevels, effectiveMaxRows, type PlanLimits } from './subscription';
+import {
+  fetchPlanLimits,
+  isExpired,
+  effectiveMaxLevels,
+  effectiveMaxRows,
+  adjustLockedTaxonomyCount,
+  type PlanLimits,
+} from './subscription';
 import ExpiredSubscriptionScreen from './ExpiredSubscriptionScreen';
 import './App.css';
 
@@ -1038,18 +1045,27 @@ export default function App() {
   // higher tier, then downgraded) are left exactly as they are; this is about the shared starter
   // library staying genuinely usable at every tier, not retroactively locking anyone's own work.
   function applyReadOnlyOverLimit(entry: LibraryEntry): TaxonomyProject {
-    if (!entry.isStarterSample || entry.project.settings.locked) return entry.project;
+    if (!entry.isStarterSample) return entry.project;
+    // Stage D5b: whatever `locked`/`lockCounted` state a starter sample itself carries (however
+    // it arose -- authored that way, or copied in from another account entirely) must never count
+    // toward the opening user's own Lock Taxonomy cap. Only a real Lock performed by this account,
+    // in this session, does that (performLockTaxonomy) -- so this is always stripped here,
+    // regardless of which path below returns.
+    const stripLockCounted = (p: TaxonomyProject): TaxonomyProject =>
+      p.settings.lockCounted ? { ...p, settings: { ...p.settings, lockCounted: false } } : p;
+    if (entry.project.settings.locked) return stripLockCounted(entry.project);
     const maxLevels = effectiveMaxLevels(planLimits);
     const maxRows = effectiveMaxRows(planLimits);
     const overLimit =
       entry.project.settings.numLevels > maxLevels || (maxRows != null && entry.project.rows.length > maxRows);
-    if (!overLimit) return entry.project;
+    if (!overLimit) return stripLockCounted(entry.project);
     return {
       ...entry.project,
       settings: {
         ...entry.project.settings,
         locked: true,
         lockReason: `Opened read-only -- this sample (${entry.project.settings.numLevels} columns, ${entry.project.rows.length} rows) exceeds your current plan's limit.`,
+        lockCounted: false,
       },
       rows: entry.project.rows.map((row) => ({ ...row, protected: true })),
     };
@@ -1340,6 +1356,17 @@ export default function App() {
   // right, so the picker opens normally from there.
   function handleLockTaxonomy() {
     if (!project) return;
+    // Stage D5b: checked before Audit even starts -- no point walking someone through a full
+    // Audit only to then tell them they're capped. Never applies to Lock updates (re-sweeping an
+    // already-locked taxonomy isn't a new lock) or to Stage D5a's unrelated read-only Library
+    // samples, which never call this function at all.
+    const maxLocked = planLimits?.maxLockedTaxonomies;
+    if (maxLocked != null && (planLimits?.lockedTaxonomyCount ?? 0) >= maxLocked) {
+      setLoadError(
+        `Your ${planLimits?.displayName ?? 'current'} plan allows up to ${maxLocked} locked taxonomies. Unlock one first, or upgrade for more.`,
+      );
+      return;
+    }
     // James's report: Lock allowed locking a taxonomy with no codes at all. This is a hard
     // gate, not a dismissible warning — Lock exists specifically to guarantee integrity for
     // data an ERP may already be posting against, so letting an incomplete taxonomy through
@@ -1872,6 +1899,7 @@ export default function App() {
         lockedBy: authedEmail ?? '',
         lockReason: reason,
         lockAuthorisedBy: authorisedBy,
+        lockCounted: true,
       },
       rows: project.rows.map((row) => ({ ...row, protected: true })),
     };
@@ -1880,6 +1908,11 @@ export default function App() {
     performSave(lockedProject);
     syncLockedProjectToLibrary(lockedProject);
     setLockSuccessMessage('Table Locked');
+    // Stage D5b: fire-and-forget -- a failed count update (logged in adjustLockedTaxonomyCount
+    // itself) should never block or undo a lock the user just confirmed.
+    adjustLockedTaxonomyCount(1).then((newCount) => {
+      if (newCount != null) setPlanLimits((prev) => (prev ? { ...prev, lockedTaxonomyCount: newCount } : prev));
+    });
   }
 
   // Unlock: lifts the enforcement only — every row's `protected` flag from the last Lock is
@@ -1895,8 +1928,17 @@ export default function App() {
 
   function performUnlockTaxonomy() {
     if (!project) return;
-    setProject({ ...project, settings: { ...project.settings, locked: false } });
+    const wasCounted = project.settings.lockCounted;
+    setProject({ ...project, settings: { ...project.settings, locked: false, lockCounted: false } });
     setDirty(true);
+    // Stage D5b: only ever decrement a lock this same session actually incremented -- never for
+    // Stage D5a's unrelated read-only-over-limit Library samples (lockCounted stays falsy for
+    // those), which would otherwise wrongly decrement another, genuinely-locked taxonomy's count.
+    if (wasCounted) {
+      adjustLockedTaxonomyCount(-1).then((newCount) => {
+        if (newCount != null) setPlanLimits((prev) => (prev ? { ...prev, lockedTaxonomyCount: newCount } : prev));
+      });
+    }
   }
 
   // Lock Taxonomy menu item (f) — "Lock updates": re-runs the exact same sweep as the initial
