@@ -133,6 +133,8 @@ export default function Grid({
     codeDelimiterChar,
     codeRestriction,
     locked,
+    lockedDueToPlanLimit,
+    lockReason,
     guidance,
     column1CodeLength,
     properCaseOnly,
@@ -650,6 +652,16 @@ export default function Grid({
     setValidationError(message);
   }
 
+  // Stage D5a fix: James's report -- a starter sample opened read-only for exceeding the plan's
+  // size limit still showed Lock Taxonomy's generic data-integrity wording ("will corrupt the
+  // long term integrity...") when blocking an edit, which is actively wrong here -- there's no
+  // live ERP data at risk, just a plan's own cap. Every lock-related block below calls this
+  // instead of using its own hardcoded message directly, substituting the real reason whenever
+  // that's why this taxonomy is actually locked.
+  function lockBlockMessage(fallback: string): string {
+    return lockedDueToPlanLimit && lockReason ? lockReason : fallback;
+  }
+
   function dismissValidationError() {
     const followUp = validationFollowUpRef.current;
     validationFollowUpRef.current = null;
@@ -864,7 +876,11 @@ export default function Grid({
     // against in the live ERP, and recoding it here has no way to reach or correct whatever
     // already used the old value there.
     if (locked && rows[editIndex].protected) {
-      showValidationError('Change of existing codes will corrupt the long term integrity of the existing data and is therefore not allowed');
+      showValidationError(
+        lockBlockMessage(
+          'Change of existing codes will corrupt the long term integrity of the existing data and is therefore not allowed',
+        ),
+      );
       return;
     }
 
@@ -1228,7 +1244,11 @@ export default function Grid({
     // its code — it may already be shown against live transactions. Mark as Delete (not a
     // direct edit) is the sanctioned way to retire one.
     if (locked && rows[editIndex].protected) {
-      showValidationError('Change of existing descriptions will corrupt the long term integrity of the existing data and is therefore not allowed');
+      showValidationError(
+        lockBlockMessage(
+          'Change of existing descriptions will corrupt the long term integrity of the existing data and is therefore not allowed',
+        ),
+      );
       return;
     }
 
@@ -1333,7 +1353,7 @@ export default function Grid({
     if (!locked) return false;
     const idSet = ids instanceof Set ? ids : new Set(ids);
     if (!rows.some((r) => idSet.has(r.id) && r.protected)) return false;
-    showValidationError(message);
+    showValidationError(lockBlockMessage(message));
     return true;
   }
 
@@ -1426,6 +1446,10 @@ export default function Grid({
   }
 
   function addRow() {
+    if (locked && lockedDueToPlanLimit) {
+      showValidationError(lockBlockMessage('This taxonomy is locked.'));
+      return;
+    }
     if (locked) {
       setMemoPrompt({
         message: 'This taxonomy is locked — enter a reason for adding this row (recorded on the row as a Note):',
@@ -1575,6 +1599,12 @@ export default function Grid({
     // James's ask (2026-10-14): once locked, adding a row (the one structural change still
     // possible) needs a mandatory reason first — see memoPrompt's own comment above.
     const doInsert = () => {
+      if (locked && lockedDueToPlanLimit) {
+        // A plan's size cap can't be reasoned around the way a genuine Lock Taxonomy's
+        // integrity rule can -- no "enter a reason" prompt here, just a hard block.
+        showValidationError(lockBlockMessage('This taxonomy is locked.'));
+        return;
+      }
       if (locked) {
         setMemoPrompt({
           message:
@@ -2197,6 +2227,11 @@ export default function Grid({
     if (!contextMenu || contextMenu.kind !== 'desc' || !selection) return;
     const { level } = contextMenu;
     const rowIds = selection.rowIds;
+    if (locked && lockedDueToPlanLimit) {
+      setContextMenu(null);
+      showValidationError(lockBlockMessage('This taxonomy is locked.'));
+      return;
+    }
     if (locked) {
       setContextMenu(null);
       setMemoPrompt({
@@ -2356,7 +2391,7 @@ export default function Grid({
     const clickedRowIdx = rows.findIndex((r) => r.id === contextMenu.rowId);
     setContextMenu(null);
     if (locked) {
-      showValidationError('This taxonomy is locked and codes cannot be auto-filled.');
+      showValidationError(lockBlockMessage('This taxonomy is locked and codes cannot be auto-filled.'));
       return;
     }
     const level = contextMenu.level;

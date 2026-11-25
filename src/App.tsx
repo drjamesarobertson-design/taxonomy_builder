@@ -1058,6 +1058,19 @@ export default function App() {
   // sample" exceeding limits) -- a subscriber's own, already-oversized entries (e.g. built on a
   // higher tier, then downgraded) are left exactly as they are; this is about the shared starter
   // library staying genuinely usable at every tier, not retroactively locking anyone's own work.
+  function readOnlyOverLimitReason(project: TaxonomyProject): string {
+    return `This sample (${project.settings.numLevels} columns, ${project.rows.length} rows) exceeds your current plan's limit -- opened read-only for study purposes.`;
+  }
+
+  // James's report, testing this live: a starter sample that happened to ALREADY be locked (for
+  // its own, genuine reason -- e.g. James locked it himself while curating it) took the early
+  // "already locked" return below, which kept its ORIGINAL lockReason (or none at all) instead of
+  // ever explaining the real, current reason it's read-only for THIS viewer -- so the title bar
+  // showed no lock indicator, and typing into it surfaced Lock Taxonomy's generic data-integrity
+  // wording, not this. Fixed by always checking the size limit FIRST and, when it applies,
+  // overriding locked/lockReason/lockedDueToPlanLimit regardless of whatever the sample's own
+  // stored lock state already was -- the plan limit is the actually relevant reason for this
+  // viewer right now, whatever else may also be true about the sample.
   function applyReadOnlyOverLimit(entry: LibraryEntry): TaxonomyProject {
     if (!entry.isStarterSample) return entry.project;
     // Stage D5b: whatever `locked`/`lockCounted` state a starter sample itself carries (however
@@ -1067,7 +1080,6 @@ export default function App() {
     // regardless of which path below returns.
     const stripLockCounted = (p: TaxonomyProject): TaxonomyProject =>
       p.settings.lockCounted ? { ...p, settings: { ...p.settings, lockCounted: false } } : p;
-    if (entry.project.settings.locked) return stripLockCounted(entry.project);
     const maxLevels = effectiveMaxLevels(planLimits);
     const maxRows = effectiveMaxRows(planLimits);
     const overLimit =
@@ -1078,7 +1090,8 @@ export default function App() {
       settings: {
         ...entry.project.settings,
         locked: true,
-        lockReason: `Opened read-only -- this sample (${entry.project.settings.numLevels} columns, ${entry.project.rows.length} rows) exceeds your current plan's limit.`,
+        lockReason: readOnlyOverLimitReason(entry.project),
+        lockedDueToPlanLimit: true,
         lockCounted: false,
       },
       rows: entry.project.rows.map((row) => ({ ...row, protected: true })),
@@ -1089,7 +1102,14 @@ export default function App() {
     if (dirty && !confirm('Discard unsaved changes to the current taxonomy and open this one from the Library?')) {
       return;
     }
-    setProject(applyReadOnlyOverLimit(entry));
+    const opened = applyReadOnlyOverLimit(entry);
+    // James's ask: an explicit pop-up the moment an oversized sample is opened, not just a
+    // banner/tooltip easy to miss while attention is on the Library sidebar that was just
+    // clicked.
+    if (opened.settings.lockedDueToPlanLimit) {
+      alert(readOnlyOverLimitReason(opened));
+    }
+    setProject(opened);
     setCurrentLibraryEntryId(entry.id);
     setDirty(false);
     setAutoFocusFirstRow(false);

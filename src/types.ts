@@ -128,6 +128,12 @@ export interface TaxonomySettings {
    * different reason and must never count toward, or be decremented from, the signed-in
    * account's max_locked_taxonomies count. Absent/false for every taxonomy never really locked. */
   lockCounted?: boolean;
+  /** Stage D5a: true only when `locked` came from the read-only-over-limit Library override
+   * (App.tsx's applyReadOnlyOverLimit), not a real Lock Taxonomy -- lets Grid.tsx show the actual
+   * plan-limit reason (lockReason, set alongside this) at every point that would otherwise show
+   * Lock Taxonomy's generic data-integrity wording, which doesn't apply here and would be
+   * actively misleading (there's no "existing ERP data" at risk, just a plan's own size cap). */
+  lockedDueToPlanLimit?: boolean;
   /** Set only while the Simple Taxonomy guided wizard is active; absent for every other
    * taxonomy (including ones created via the other five workflow-menu starting points, which
    * still just open today's ordinary setup screen — their own guided wizards aren't built
