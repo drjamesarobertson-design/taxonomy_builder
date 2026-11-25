@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import type { RefObject } from 'react';
 import type { TaxonomyProject, TaxonomyRow } from './types';
 import HelpIcon from './HelpIcon';
 import Tooltip from './Tooltip';
@@ -67,6 +68,8 @@ export default function SettingsModal({ project, onSave, onClose, helpText, maxL
 
   const [numLevelsText, setNumLevelsText] = useState(String(project.settings.numLevels));
   const [numLevelsError, setNumLevelsError] = useState<string | null>(null);
+  const numLevelsInputRef = useRef<HTMLInputElement>(null);
+  const indentCharInputRef = useRef<HTMLInputElement>(null);
   const [delimiterPositions, setDelimiterPositions] = useState<number[]>(project.settings.delimiterPositions);
   const [autoCodeGapIncrement, setAutoCodeGapIncrement] = useState<1 | 2>(project.settings.autoCodeGapIncrement);
   const [codeColumnsHidden, setCodeColumnsHidden] = useState(project.settings.codeColumnsHidden);
@@ -77,6 +80,24 @@ export default function SettingsModal({ project, onSave, onClose, helpText, maxL
   // when the user can just leave the extra columns blank instead.
   const maxRowLevel = Math.max(-1, ...project.rows.map(levelOf));
   const minSafeLevels = Math.max(1, maxRowLevel + 1);
+
+  // James's report: clicking Save on an invalid field gave no visible sign anything had
+  // happened -- the dialog just stayed open, with the actual error text potentially off-screen
+  // below the fold. Scrolls/focuses/flashes the specific input that failed, as a direct DOM
+  // side effect on its ref (not React state) -- simpler and more reliable than choreographing a
+  // CSS animation class through a render cycle, and works even if the same error fires twice in
+  // a row with identical text.
+  function drawAttentionTo(ref: RefObject<HTMLInputElement | null>) {
+    const el = ref.current;
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.focus();
+    el.classList.remove('field-invalid-flash');
+    // Force a reflow so re-adding the class restarts the animation even if it's still present
+    // from a previous failed Save.
+    void el.offsetWidth;
+    el.classList.add('field-invalid-flash');
+  }
 
   function addDelimiter() {
     const numLevels = Math.max(1, Number(numLevelsText) || project.settings.numLevels);
@@ -102,12 +123,14 @@ export default function SettingsModal({ project, onSave, onClose, helpText, maxL
       const code = indentChar.charCodeAt(0);
       if (indentChar.length !== 1 || Number.isNaN(code) || code < 33 || code > 126) {
         setIndentCharError('Enter a single printable ASCII character (not space).');
+        drawAttentionTo(indentCharInputRef);
         return;
       }
     }
     const requestedLevels = Math.max(1, Number(numLevelsText) || project.settings.numLevels);
     if (requestedLevels > maxLevels) {
       setNumLevelsError(`Your current plan allows up to ${maxLevels} columns. Upgrade for more.`);
+      drawAttentionTo(numLevelsInputRef);
       return;
     }
     const numLevels = requestedLevels;
@@ -115,6 +138,7 @@ export default function SettingsModal({ project, onSave, onClose, helpText, maxL
       setNumLevelsError(
         `Column ${minSafeLevels} still holds real content — reduce it to at least ${minSafeLevels} columns, or clear that content first.`,
       );
+      drawAttentionTo(numLevelsInputRef);
       return;
     }
     setNumLevelsError(null);
@@ -170,6 +194,7 @@ export default function SettingsModal({ project, onSave, onClose, helpText, maxL
           Number of Code Columns
           <HelpIcon field="numLevels" helpText={helpText} />
           <input
+            ref={numLevelsInputRef}
             type="number"
             min={minSafeLevels}
             max={maxLevels}
@@ -269,6 +294,7 @@ export default function SettingsModal({ project, onSave, onClose, helpText, maxL
             Leading Pad Character
             <HelpIcon field="indentChar" helpText={helpText} />
             <input
+              ref={indentCharInputRef}
               value={indentChar}
               maxLength={1}
               onChange={(e) => {
