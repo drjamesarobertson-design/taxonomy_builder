@@ -1,6 +1,6 @@
 # Taxonomy Builder — Master Briefing
 
-*Version: v 1.19*
+*Version: v 1.20*
 
 *A one-stop orientation document: what this is, what it does today, where the
 business stands, and what's still outstanding. Written for James (or anyone
@@ -8,11 +8,13 @@ he shares this with) rather than as an engineering log — for the detailed,
 round-by-round build history, see `PROGRESS.md`; for the original functional
 specification, see `CLAUDE.md`.*
 
-*Last updated: 2026-11-25 — Stage C4 is now also fully complete and proven:
-`stripe-webhook` correctly keeps renewals/cancellations in sync, and the
-staged renewal reminder emails fire at the right day-boundaries, confirmed
-live. Stages C1–C4 (the whole Stripe/Supabase subscription backend) are
-now entirely built and tested end to end. See §0.*
+*Last updated: 2026-11-25 — Stage D (app-side tier enforcement) is now
+built in full: live plan-limit fetching, the expired-subscription hard
+block, numeric caps (columns/rows/Library entries), Cubic Business Model
+workflow-type gates, the read-only-over-limit Library mode, and the Lock
+Taxonomy count cap. Built and verified by code review, Playwright checks
+and direct logic tests during this session; **not yet tested live by
+James** (one new migration, `supabase/0014`, still needs running). See §0.*
 
 *Version history: v 1.01 — first version stamp applied to this file
 (2026-10-14). v 1.02 — same evening, after PRs #230–#235 (see §0): Promote/
@@ -115,9 +117,79 @@ today, then to 8 days out — correctly producing the "expired" email and
 then the "30d" email respectively (8 days out correctly falling in the
 30-day bucket, not the 7-day one, confirming the day-boundary logic).
 **Stages C1 through C4 — the entire Stripe/Supabase subscription
-backend — are now fully built and proven end to end.** Only Stage D (app-
-side tier enforcement, including the expired-subscription block screen)
-onward remains — see §6.
+backend — are now fully built and proven end to end.** v 1.20 (2026-11-25,
+same day, built solo while James was away at a call) — **Stage D (app-
+side tier enforcement) built in full**, broken into five sub-pieces:
+(D1) `src/subscription.ts`'s `fetchPlanLimits()` reads the signed-in
+user's plan + live numeric/feature limits once per sign-in, giving every
+other piece one place to read from. (D2) the "your subscription has
+expired — renew here" hard-block screen (`ExpiredSubscriptionScreen.tsx`),
+checked against wall-clock time directly so it takes effect the moment a
+paid period lapses, independent of Stripe's own dunning timing; "renew"
+reuses the existing Checkout flow. (D3) numeric caps — code columns, rows
+(a genuinely new concept), and Library entries (counting only a
+subscriber's own entries, never starter samples, since every tier always
+sees the full starter library) — wired into every growth path: Settings,
+New Taxonomy, Add Column, the guided wizard, Insert Row, and all four CSV
+import formats. (D4) the pricing table's Chart of Accounts Wizard/
+Function Master/Location Master/Division Master rows now gate their
+matching WorkflowMenu starting points — a gated button is disabled with
+an explanatory tooltip, never hidden. (D5a) a starter sample whose own
+size exceeds the signed-in user's current plan opens read-only, reusing
+Lock Taxonomy's exact row-protection sweep — applied only to the opened
+copy, never written back to the Library entry itself. (D5b) the Lock
+Taxonomy count cap (Advanced 6, Enterprise unlimited), enforceable only via
+a new running counter (`supabase/0014_add_locked_taxonomy_count.sql`,
+not yet run) since taxonomy files are never stored centrally — a new
+`settings.lockCounted` flag keeps this counter from being wrongly
+decremented when an oversized starter sample (D5a) gets unlocked.
+**Verified via `tsc`/`vite build`, Playwright checks against the existing
+`test-bypass-auth` dev path (no new console errors), and direct logic
+tests of the gating functions — not yet tested live by James.** One
+manual step outstanding: run `supabase/0014_add_locked_taxonomy_count.sql`
+in Supabase's SQL Editor. Stage E (paid-subscriber report, starred-Library
+notifications) is next — see §6.
+**Increment this by one every time this file is next updated and/or
+shared with him (whichever comes first), and add a line here whenever its
+content actually changed** — see
+`ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md` §5, item 10.*
+
+---
+
+## 0. Where things stand right now — read this first
+
+*(2026-11-25 addendum: the restored paragraphs below were found to have been
+accidentally dropped by an earlier merge-conflict resolution in this same
+session, caught and repaired the same day -- nothing else in this document
+was affected.)*
+
+**Disaster recovery, 2026-11-25 — a real gap found and a stopgap built,
+now deployed and tested.** James asked what the DR arrangements are.
+Code/config: solid (full Git history, auto-rebuilding static site). The
+live database: no automated backups, since the Supabase project is on the
+Free plan. Built `supabase/functions/export-database-backup/index.ts`
+(supervisor-only, server-side-enforced, reads every table via the service
+role) plus a new "Export Full Backup" toolbar button
+(`src/databaseBackup.ts`) — a periodic, one-click, manual export, James's
+preferred option over upgrading the Supabase plan. Full detail in §2/§4's
+"Disaster recovery" section. **Deployed and tested successfully by James,
+2026-11-25** — a real backup download covering all five tables. A one-off
+Git-bundle backup of the code itself was also handed to him directly
+earlier (not a recurring mechanism, just a point-in-time copy).
+
+**Landing page heading fix, 2026-11-25.** The worksheet-page heading
+squeeze (PR #260) had accidentally shrunk the landing page's heading too,
+since both pages shared one CSS class. Fixed (PR #277): worksheet page
+unchanged; landing page (no project open) now shows "Taxonomy Builder" at
+its original large size, with "Copyright © James A Robertson and
+Associates Limited" beneath it in the current small font, and the
+redundant tagline paragraph removed.
+
+**Stage D (app-side tier enforcement), 2026-11-25 — built in full while
+James was away at a call, not yet tested live.** See the version history
+entry above (v 1.20) for the complete breakdown of all five sub-pieces
+(D1–D5b). One manual step outstanding: run `supabase/0014_add_locked_
+taxonomy_count.sql` in Supabase's SQL Editor, then test each gate live.
 
 **Stripe Stage B walkthrough, 2026-11-24 (same day as the planning round
 below) — done live, step by step:** account created; Stripe Tax enabled in
@@ -969,18 +1041,16 @@ infrastructure as the auth emails (see below).
    2026-11-24** (`supabase/0010_create_subscription_plans.sql`); the
    per-account plan record, defaulting every signup to Free — **done,
    2026-11-24** (`supabase/0011_create_subscriptions.sql`), both run
-   successfully by James; two small Edge Functions (create a Checkout
-   Session, including the actual "pick a paid tier" UI moment, now that
-   this is where it belongs — see §0; receive and verify Stripe's webhook,
-   updating the subscriber's plan) — **not started**, broken into six
-   sub-pieces, see §0; the renewal/expiry state machine and the staged
-   reminder emails above — not started.
-4. **Stage D — app-side enforcement**: wire the numeric caps (columns/
-   rows/Library entries/locked taxonomies) and the workflow-type gates
-   (reusing the existing `WORKFLOW_LEVELS`/Cubic Business Model structure)
-   to the live tier config; the read-only-over-limit mode for Library
-   samples that exceed a tier's own numeric limits; the "subscription
-   expired, renew here" hard-block screen.
+   successfully by James; the Checkout Session and webhook Edge Functions,
+   the renewal/expiry state machine and the staged reminder emails —
+   **all done, 2026-11-25, tested live by James** — see §0.
+4. **Stage D — app-side enforcement** — **built in full, 2026-11-25, not
+   yet tested live**: the numeric caps (columns/rows/Library entries/
+   locked taxonomies) and the workflow-type gates (reusing the existing
+   `WORKFLOW_LEVELS`/Cubic Business Model structure) wired to the live
+   tier config; the read-only-over-limit mode for Library samples that
+   exceed a tier's own numeric limits; the "subscription expired, renew
+   here" hard-block screen. See §0 for the full five-sub-piece breakdown.
 5. **Stage E — reporting & notifications**: the paid-subscriber report; the
    starred-Library-update notification feature.
 6. **Stage F — WordPress**: update the already-delivered HTML pricing
@@ -1236,9 +1306,16 @@ re-deriving any of this.
       waiting on a further email from Stripe but, pending that, is taking
       their word that it doesn't affect the live account, which otherwise
       looks to be in order.
-- [ ] **Next:** wire app-side tier enforcement: numeric caps, workflow-type
-      gates, the read-only-over-limit Library mode, and the expired-
-      subscription block screen (Stage D, §4).
+- [x] ~~Wire app-side tier enforcement: numeric caps, workflow-type gates,
+      the read-only-over-limit Library mode, and the expired-subscription
+      block screen~~ — built in full, 2026-11-25 (Stage D, §0/§4), verified
+      by code review, Playwright checks and direct logic tests. **Not yet
+      tested live by James.**
+- [ ] **James to run:** `supabase/0014_add_locked_taxonomy_count.sql` in
+      Supabase's SQL Editor (Stage D5b's lock-count cap needs it to work).
+- [ ] **Next:** James to test Stage D live — the expired-subscription
+      screen, each numeric cap, the workflow-type gates, a starter sample
+      opening read-only over-limit, and the Lock Taxonomy count cap.
 - [ ] Build the paid-subscriber report and the starred-Library-update
       notification feature (Stage E, §4 — both new asks, agreed 2026-11-24).
 - [ ] Update the WordPress pricing snippet to the new 4-tier structure once
