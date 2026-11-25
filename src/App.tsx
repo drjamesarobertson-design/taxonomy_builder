@@ -1083,14 +1083,18 @@ export default function App() {
   }
 
   // Stage D5: James's spec -- every tier always sees the FULL starter-sample Library, never a
-  // cut-down one, but a sample whose own size exceeds the signed-in user's CURRENT plan limits
-  // opens read-only rather than being hidden or blocked. Reuses the exact row-protection sweep
-  // Lock Taxonomy itself uses (performLockTaxonomy, below) -- applied only to this opened,
+  // cut-down one, but any Library entry whose own size exceeds the signed-in user's CURRENT plan
+  // limits opens read-only rather than being hidden or blocked. Reuses the exact row-protection
+  // sweep Lock Taxonomy itself uses (performLockTaxonomy, below) -- applied only to this opened,
   // in-memory copy, never written back to the Library entry itself, which stays exactly as its
-  // owner authored it. Scoped to starter samples specifically, per James's own wording ("a
-  // sample" exceeding limits) -- a subscriber's own, already-oversized entries (e.g. built on a
-  // higher tier, then downgraded) are left exactly as they are; this is about the shared starter
-  // library staying genuinely usable at every tier, not retroactively locking anyone's own work.
+  // owner authored it.
+  //
+  // James's report (2026-11-25): this was originally scoped to starter samples only, leaving a
+  // subscriber's own oversized Library entries (e.g. a personal copy seeded at signup, or one
+  // built on a higher tier then downgraded) fully editable with no warning at all -- which, once
+  // actually tested live, is not what James wants: ANY taxonomy over the current plan's size cap
+  // should get the same pop-up and read-only treatment, whoever owns it. So this now applies to
+  // every entry opened from the Library, not just ones flagged isStarterSample.
   //
   // James's report: states both the sample's actual size AND the plan's allowed size -- the
   // first version only gave the actual numbers, leaving him to go and look up his own plan's
@@ -1098,7 +1102,7 @@ export default function App() {
   function readOnlyOverLimitReason(project: TaxonomyProject, maxLevels: number, maxRows: number | null): string {
     const allowed = maxRows != null ? `${maxLevels} columns and ${maxRows} rows` : `${maxLevels} columns`;
     return (
-      `This sample has ${project.settings.numLevels} columns and ${project.rows.length} rows, exceeding your ` +
+      `This taxonomy has ${project.settings.numLevels} columns and ${project.rows.length} rows, exceeding your ` +
       `current plan's limit of ${allowed}. Read-only for study purposes.`
     );
   }
@@ -1111,21 +1115,6 @@ export default function App() {
   // own real lockReason. Fixed to use its own, independent settings.readOnlyDueToPlanLimit /
   // settings.readOnlyReason -- `locked` is left completely untouched here either way.
   function applyReadOnlyOverLimit(entry: LibraryEntry): TaxonomyProject {
-    if (!entry.isStarterSample) {
-      // James's report (2026-11-25): a personal copy of a starter sample -- seeded into every
-      // subscriber's own Library at signup, or added via "Add to Library" from an oversized
-      // sample that was open and flagged read-only in memory at the time -- could inherit a
-      // stale readOnlyDueToPlanLimit/readOnlyReason baked straight into its stored settings. Per
-      // spec this mechanism is scoped to starter samples specifically ("a subscriber's own,
-      // already-oversized entries... are left exactly as they are") -- a personal copy must never
-      // show the Read Only badge or block at all, however it got that flag, so it's always
-      // cleared here rather than just left alone.
-      if (!entry.project.settings.readOnlyDueToPlanLimit) return entry.project;
-      return {
-        ...entry.project,
-        settings: { ...entry.project.settings, readOnlyDueToPlanLimit: false, readOnlyReason: undefined },
-      };
-    }
     const maxLevels = effectiveMaxLevels(planLimits);
     const maxRows = effectiveMaxRows(planLimits);
     const overLimit =
