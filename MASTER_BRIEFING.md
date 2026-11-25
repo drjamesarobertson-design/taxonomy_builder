@@ -99,36 +99,6 @@ test payment, confirmed in Supabase's Table Editor: the test account's
 with `stripe_subscription_id`/`stripe_customer_id`/`current_period_end`
 all populated (PR #278). Only Stage C4 (renewal/expiry + reminder emails)
 remains unbuilt from the original C1–C4 plan — see §6.
-**Increment this by one every time this file is next updated and/or
-shared with him (whichever comes first), and add a line here whenever its
-content actually changed** — see
-`ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md` §5, item 10.*
-
----
-
-## 0. Where things stand right now — read this first
-
-**Disaster recovery, 2026-11-25 — a real gap found and a stopgap built,
-now deployed and tested.** James asked what the DR arrangements are.
-Code/config: solid (full Git history, auto-rebuilding static site). The
-live database: no automated backups, since the Supabase project is on the
-Free plan. Built `supabase/functions/export-database-backup/index.ts`
-(supervisor-only, server-side-enforced, reads every table via the service
-role) plus a new "Export Full Backup" toolbar button
-(`src/databaseBackup.ts`) — a periodic, one-click, manual export, James's
-preferred option over upgrading the Supabase plan. Full detail in §2/§4's
-"Disaster recovery" section. **Deployed and tested successfully by James,
-2026-11-25** — a real backup download covering all five tables. A one-off
-Git-bundle backup of the code itself was also handed to him directly
-earlier (not a recurring mechanism, just a point-in-time copy).
-
-**Landing page heading fix, 2026-11-25.** The worksheet-page heading
-squeeze (PR #260) had accidentally shrunk the landing page's heading too,
-since both pages shared one CSS class. Fixed (PR #277): worksheet page
-unchanged; landing page (no project open) now shows "Taxonomy Builder" at
-its original large size, with "Copyright © James A Robertson and
-Associates Limited" beneath it in the current small font, and the
-redundant tagline paragraph removed.
 
 **Stripe Stage B walkthrough, 2026-11-24 (same day as the planning round
 below) — done live, step by step:** account created; Stripe Tax enabled in
