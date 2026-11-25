@@ -412,10 +412,20 @@
   white-space: nowrap;
 }
 
-.app-tagline {
+.app-heading-large {
+  font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 36pt;
+  font-weight: 700;
+  margin: 0;
+  text-align: left;
+}
+
+.app-heading-copyright {
+  font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 12pt;
+  font-weight: 700;
   margin: 0.15rem 0 0;
-  font-size: 0.95rem;
-  color: #cfe0ff;
+  text-align: left;
 }
 
 .header-right {
