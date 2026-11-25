@@ -935,6 +935,19 @@ body.app-dark-theme .taxonomy-meta .purpose {
   font-weight: normal;
 }
 
+/* James's report: clicking Save on an invalid field (e.g. a column count above the plan's cap)
+   gave no visible sign anything had happened -- the dialog just silently stayed open, and the
+   actual error text could easily sit off-screen below the fold with nothing drawing the eye to
+   it. Applied briefly (removed on a timeout, not tied to React state) to the specific input that
+   failed, alongside focusing and scrolling it into view. */
+@keyframes field-invalid-flash {
+  0%, 100% { background: #fff; border-color: #ccc; }
+  25%, 75% { background: #fdecea; border-color: #c0392b; }
+}
+.field-invalid-flash {
+  animation: field-invalid-flash 0.6s ease-in-out 2;
+}
+
 .field-warning {
   margin: 0;
   color: #a15c00;
