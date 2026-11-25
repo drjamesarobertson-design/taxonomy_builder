@@ -6,6 +6,7 @@
 //
 // A null limit means unlimited; 0 means not allowed at all -- see 0010's own header comment.
 import { supabase } from './supabaseClient';
+import { MAX_LEVELS } from './types';
 
 export type PlanKey = 'free' | 'basic' | 'advanced' | 'enterprise' | 'beta';
 
@@ -115,4 +116,21 @@ export function isExpired(limits: PlanLimits | null): boolean {
   if (!limits || !limits.currentPeriodEnd) return false;
   if (limits.planKey === 'free' || limits.planKey === 'beta') return false;
   return new Date(limits.currentPeriodEnd).getTime() <= Date.now();
+}
+
+/** Stage D3: the real column/level ceiling for the signed-in user right now -- the smaller of
+ * the app's own absolute MAX_LEVELS and their plan's max_code_columns (null/not-yet-loaded both
+ * mean "no plan limit known," so this falls back to the app's own ceiling exactly as it worked
+ * before Stage D existed, never a stricter default no one asked for). */
+export function effectiveMaxLevels(limits: PlanLimits | null): number {
+  if (!limits || limits.maxCodeColumns == null) return MAX_LEVELS;
+  return Math.min(MAX_LEVELS, limits.maxCodeColumns);
+}
+
+/** Stage D3: the real row ceiling for the signed-in user right now, or null for unlimited (no
+ * app-wide absolute row cap exists, unlike MAX_LEVELS, so a missing/unloaded plan limit means
+ * genuinely no cap -- matching how this app behaved before Stage D existed). */
+export function effectiveMaxRows(limits: PlanLimits | null): number | null {
+  if (!limits) return null;
+  return limits.maxRows;
 }

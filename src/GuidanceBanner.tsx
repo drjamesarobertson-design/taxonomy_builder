@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { CodeRestriction, TaxonomyProject, TaxonomyRow, TaxonomySettings } from './types';
-import { CODE_RESTRICTIONS, growRowsToLevels, MAX_LEVELS } from './types';
+import { CODE_RESTRICTIONS, growRowsToLevels } from './types';
 import {
   countChildrenPerHeading,
   countHeadings,
@@ -24,6 +24,10 @@ interface GuidanceBannerProps {
   onSettingsAndRowsChange: (settings: TaxonomySettings, rows: TaxonomyRow[]) => void;
   onExitGuidance: () => void;
   helpText: HelpTextMap;
+  /** Stage D3: the signed-in user's real column ceiling right now (subscription.ts's
+   * effectiveMaxLevels) -- the app's absolute MAX_LEVELS, or their plan's own lower cap,
+   * whichever is smaller. */
+  maxLevels: number;
 }
 
 // The Simple Taxonomy guided wizard's on-screen driver: stage instructions, the "Next Step"
@@ -32,7 +36,7 @@ interface GuidanceBannerProps {
 // stage's Numeric/Alpha + mnemonic-suggestion prompts. Column visibility itself is Grid.tsx's
 // concern (driven by the same `settings.guidance` this component reads); this just drives the
 // stage machine and hands Grid whatever new settings/rows a transition produces.
-export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExitGuidance, helpText }: GuidanceBannerProps) {
+export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExitGuidance, helpText, maxLevels }: GuidanceBannerProps) {
   const [confirmOverride, setConfirmOverride] = useState<{ message: string; onConfirm: () => void } | null>(null);
   // James's ask: asked at the end of every description column (not just after the first) so
   // the wizard supports more than two columns — see resolveAnotherColumn below.
@@ -91,7 +95,7 @@ export default function GuidanceBanner({ project, onSettingsAndRowsChange, onExi
   // Settings dialog's own numLevels field, nothing here checked it) — there's no room left to add
   // another column, so offering the choice at all would be misleading.
   function offerAnotherColumnOrCoding() {
-    if (project.settings.numLevels >= MAX_LEVELS) beginCoding();
+    if (project.settings.numLevels >= maxLevels) beginCoding();
     else setAnotherColumnPrompt(true);
   }
 

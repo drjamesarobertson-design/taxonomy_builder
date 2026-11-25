@@ -91,7 +91,7 @@ import { fetchDeployedVersion } from './versionCheck';
 import { isSupervisor } from './supervisor';
 import { startCheckout, type PaidPlanKey } from './checkout';
 import { downloadDatabaseBackup } from './databaseBackup';
-import { fetchPlanLimits, isExpired, type PlanLimits } from './subscription';
+import { fetchPlanLimits, isExpired, effectiveMaxLevels, effectiveMaxRows, type PlanLimits } from './subscription';
 import ExpiredSubscriptionScreen from './ExpiredSubscriptionScreen';
 import './App.css';
 
@@ -954,8 +954,26 @@ export default function App() {
     }
   }
 
+  // Stage D3: James's spec counts only a subscriber's own entries against their plan's Library
+  // cap -- every tier always sees the FULL starter-sample Library regardless of its own size
+  // ("not a cut-down one"), so a starter sample can never itself count toward, or be blocked by,
+  // this limit; only entries the subscriber has added themselves do.
+  function libraryEntriesCapReached(): boolean {
+    const max = planLimits?.maxLibraryEntries;
+    if (max == null) return false;
+    const ownEntries = libraryEntries.filter((e) => !e.isStarterSample).length;
+    return ownEntries >= max;
+  }
+
   function confirmAddToLibrary() {
     if (!project) return;
+    if (libraryEntriesCapReached()) {
+      setShowLibraryCategoryPrompt(false);
+      setLoadError(
+        `Your ${planLimits?.displayName ?? 'current'} plan allows up to ${planLimits?.maxLibraryEntries} Library entries of your own. Remove one first, or upgrade for more.`,
+      );
+      return;
+    }
     const title = libraryNamePrompt.trim() || project.title;
     const namedProject = { ...project, title };
     addLibraryEntry(namedProject, libraryCategoryPrompt)
@@ -989,6 +1007,12 @@ export default function App() {
 
   function confirmNewLibraryVersion() {
     if (!project || !currentLibraryEntryId) return;
+    if (libraryEntriesCapReached()) {
+      setLoadError(
+        `Your ${planLimits?.displayName ?? 'current'} plan allows up to ${planLimits?.maxLibraryEntries} Library entries of your own. Remove one first, or upgrade for more.`,
+      );
+      return;
+    }
     const linkedEntry = libraryEntries.find((e) => e.id === currentLibraryEntryId);
     const category = linkedEntry?.category ?? LIBRARY_CATEGORIES[0];
     const { project: versioned, versionLabel } = bumpFileVersion(project, 'library');
@@ -2128,6 +2152,24 @@ export default function App() {
     return rows.some((row) => row.codes.some((c) => c.trim()) || row.descriptions.some((d) => d.trim()));
   }
 
+  // Stage D3: csvImport.ts's own shape-detection heuristics deliberately still check against the
+  // app's absolute MAX_LEVELS, not this -- lowering the ceiling they accept risks mis-detecting a
+  // file's shape entirely (several format tests run in sequence; a format that's otherwise valid
+  // but merely exceeds a subscriber's own plan limit should get a clear, specific message here,
+  // not accidentally be misread as a totally different, invalid shape upstream). Checked once a
+  // parse has already succeeded, before the result is ever offered for confirmation.
+  function columnCapExceededMessage(numLevels: number): string | null {
+    const max = effectiveMaxLevels(planLimits);
+    if (numLevels <= max) return null;
+    return `This file has ${numLevels} levels -- more than your current plan allows (${max}). Upgrade for more, or reduce the file's column count and re-import.`;
+  }
+
+  function rowCapExceededMessage(numRows: number): string | null {
+    const max = effectiveMaxRows(planLimits);
+    if (max == null || numRows <= max) return null;
+    return `This file has ${numRows} rows -- more than your current plan allows (${max}). Upgrade for more, or reduce the file's row count and re-import.`;
+  }
+
   function handleImportCsvClick() {
     // Lock Taxonomy: CSV Import replaces the whole table wholesale — it doesn't go through
     // Grid.tsx's per-cell protected-row guards at all, so it's the one path that could
@@ -2151,6 +2193,11 @@ export default function App() {
       const parsed = parseDiscreteCsv(text);
       if ('error' in parsed) {
         setLoadError(parsed.error);
+        return;
+      }
+      const capError = columnCapExceededMessage(parsed.numLevels) ?? rowCapExceededMessage(parsed.rows.length);
+      if (capError) {
+        setLoadError(capError);
         return;
       }
       setLoadError(null);
@@ -2221,6 +2268,11 @@ export default function App() {
         setLoadError(parsed.error);
         return;
       }
+      const capError = columnCapExceededMessage(parsed.numLevels) ?? rowCapExceededMessage(parsed.rows.length);
+      if (capError) {
+        setLoadError(capError);
+        return;
+      }
       setLoadError(null);
       const defaultTitle = file.name.replace(/\.csv$/i, '');
       setPendingSeparateCodeImport({ parsed, defaultTitle });
@@ -2264,6 +2316,11 @@ export default function App() {
         setLoadError(parsed.error);
         return;
       }
+      const capError = columnCapExceededMessage(parsed.numLevels) ?? rowCapExceededMessage(parsed.rows.length);
+      if (capError) {
+        setLoadError(capError);
+        return;
+      }
       setLoadError(null);
       const defaultTitle = file.name.replace(/\.csv$/i, '');
       setPendingCsvImport({ parsed, defaultTitle, hideCodeColumns: true });
@@ -2293,6 +2350,11 @@ export default function App() {
       const parsed = parseFlatCodeDescriptionCsv(text);
       if ('error' in parsed) {
         setLoadError(parsed.error);
+        return;
+      }
+      const capError = rowCapExceededMessage(parsed.rows.length);
+      if (capError) {
+        setLoadError(capError);
         return;
       }
       setLoadError(null);
@@ -3163,7 +3225,7 @@ export default function App() {
           ) : chosenWorkflowLevel === 'One Column List with Multiple Character Codes' ? (
             <FlatListSetup onCreate={handleCreateFlatList} helpText={helpText} />
           ) : (
-            <NewTaxonomyForm onCreate={handleCreate} helpText={helpText} />
+            <NewTaxonomyForm onCreate={handleCreate} helpText={helpText} maxLevels={effectiveMaxLevels(planLimits)} />
           )}
         </>
       )}
@@ -3178,6 +3240,7 @@ export default function App() {
                   onSettingsAndRowsChange={handleSettingsAndRowsChange}
                   onExitGuidance={handleExitGuidance}
                   helpText={helpText}
+                  maxLevels={effectiveMaxLevels(planLimits)}
                 />
               )}
               {!project.settings.guidance && (
@@ -3253,6 +3316,8 @@ export default function App() {
             auditActive={!!audit}
             autoCodeOverflowActive={showAutoCode || !!numericOverflowPrompt}
             signedInEmail={authedEmail ?? ''}
+            maxLevels={effectiveMaxLevels(planLimits)}
+            maxRows={effectiveMaxRows(planLimits)}
           />
         </>
       )}
@@ -3263,6 +3328,7 @@ export default function App() {
           onSave={handleSaveSettings}
           onClose={() => setShowSettings(false)}
           helpText={helpText}
+          maxLevels={effectiveMaxLevels(planLimits)}
         />
       )}
 

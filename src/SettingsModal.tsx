@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import type { TaxonomyProject, TaxonomyRow } from './types';
-import { MAX_LEVELS } from './types';
 import HelpIcon from './HelpIcon';
 import Tooltip from './Tooltip';
 import type { HelpTextMap } from './helpText';
@@ -23,6 +22,10 @@ interface SettingsModalProps {
   onSave: (fields: SettingsFields) => void;
   onClose: () => void;
   helpText: HelpTextMap;
+  /** Stage D3: the signed-in user's real column ceiling right now (subscription.ts's
+   * effectiveMaxLevels) -- the app's absolute MAX_LEVELS, or their plan's own lower cap,
+   * whichever is smaller. */
+  maxLevels: number;
 }
 
 const CODE_DELIMITER_OPTIONS = ['-', '_', '+', '=', '/'];
@@ -48,7 +51,7 @@ function levelOf(row: TaxonomyRow): number {
 // position), so it's still left out of this modal — a new taxonomy is the way to change that.
 // The padding character itself is no longer editable anywhere in setup — it's always "." as
 // typed; a one-off "0" substitution is offered instead when exporting (see App.tsx).
-export default function SettingsModal({ project, onSave, onClose, helpText }: SettingsModalProps) {
+export default function SettingsModal({ project, onSave, onClose, helpText, maxLevels }: SettingsModalProps) {
   const [title, setTitle] = useState(project.title);
   const [tableName, setTableName] = useState(project.tableName);
   const [purpose, setPurpose] = useState(project.purpose);
@@ -102,7 +105,12 @@ export default function SettingsModal({ project, onSave, onClose, helpText }: Se
         return;
       }
     }
-    const numLevels = Math.max(1, Math.min(MAX_LEVELS, Number(numLevelsText) || project.settings.numLevels));
+    const requestedLevels = Math.max(1, Number(numLevelsText) || project.settings.numLevels);
+    if (requestedLevels > maxLevels) {
+      setNumLevelsError(`Your current plan allows up to ${maxLevels} columns. Upgrade for more.`);
+      return;
+    }
+    const numLevels = requestedLevels;
     if (numLevels < minSafeLevels) {
       setNumLevelsError(
         `Column ${minSafeLevels} still holds real content — reduce it to at least ${minSafeLevels} columns, or clear that content first.`,
@@ -164,7 +172,7 @@ export default function SettingsModal({ project, onSave, onClose, helpText }: Se
           <input
             type="number"
             min={minSafeLevels}
-            max={MAX_LEVELS}
+            max={maxLevels}
             value={numLevelsText}
             onChange={(e) => {
               setNumLevelsText(e.target.value);
