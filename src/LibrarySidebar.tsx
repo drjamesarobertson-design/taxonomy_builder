@@ -55,6 +55,11 @@ interface LibrarySidebarProps {
   /** "Import from Folder (Replace)" (James's ask): fired once a batch of entries has had its
    * content replaced in place, so the caller can refresh its own copy of the Library list. */
   onBulkReplaceComplete: () => void;
+  /** James's report: adding an entry while scrolled away from its category (e.g. the entry
+   * landed under "Division" at the top, but the sidebar was scrolled down to the bottom) left it
+   * genuinely invisible, with nothing suggesting it had actually been added. Set to the newly
+   * added entry's id right after a successful add; scrolls it into view once. */
+  scrollToEntryId?: string | null;
 }
 
 interface ContextMenuState {
@@ -93,6 +98,7 @@ export default function LibrarySidebar({
   onCloseNewSamples,
   seedingStarterSamples,
   onBulkReplaceComplete,
+  scrollToEntryId,
 }: LibrarySidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -148,6 +154,16 @@ export default function LibrarySidebar({
   // narrows every heading's list down to locked entries only, without touching what's actually
   // stored or how any other Library action works.
   const [lockedOnly, setLockedOnly] = useState(false);
+
+  // James's report: an entry added while scrolled away from its own category (e.g. it landed
+  // under "Division" at the top, but the sidebar was scrolled down to the bottom) was genuinely
+  // invisible, with nothing suggesting anything had actually happened. Scrolls it into view once
+  // the list has re-rendered with the new entry in place.
+  useEffect(() => {
+    if (!scrollToEntryId) return;
+    const el = document.querySelector(`[data-entry-id="${scrollToEntryId}"]`);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [scrollToEntryId]);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const contextMenuRef = useRef<HTMLUListElement>(null);
   const importFileInputRef = useRef<HTMLInputElement>(null);
@@ -408,6 +424,7 @@ export default function LibrarySidebar({
           return (
           <li
             key={entry.id}
+            data-entry-id={entry.id}
             draggable={renamingId !== entry.id}
             className={[
               'library-entry',
