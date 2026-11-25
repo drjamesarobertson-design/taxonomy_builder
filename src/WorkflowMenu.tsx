@@ -115,16 +115,23 @@ export default function WorkflowMenu({
               return (
                 <div key={level} className="workflow-level-item">
                   {isFirstCubicLevel && <span className="workflow-level-group-heading">Cubic Business Model</span>}
-                  <Tooltip field={workflowLevelField(level)} helpText={helpText}>
-                    <button
-                      type="button"
-                      onClick={() => onChooseNew(level)}
-                      disabled={!allowed}
-                      title={allowed ? undefined : 'Not available on your current plan — upgrade to unlock'}
-                    >
-                      {workflowLevelDisplayLabel(level)}
-                    </button>
-                  </Tooltip>
+                  {allowed ? (
+                    <Tooltip field={workflowLevelField(level)} helpText={helpText}>
+                      <button type="button" onClick={() => onChooseNew(level)}>
+                        {workflowLevelDisplayLabel(level)}
+                      </button>
+                    </Tooltip>
+                  ) : (
+                    // Stage D4: a gated level shows this message in place of its normal help text
+                    // (a native title="" attribute alongside the Tooltip component stacked two
+                    // separate tooltips on top of each other -- James's report) -- the reason it's
+                    // unavailable is more useful here than the ordinary "what does this do" text.
+                    <Tooltip text="Not available on your current plan — upgrade to unlock">
+                      <button type="button" onClick={() => onChooseNew(level)} disabled>
+                        {workflowLevelDisplayLabel(level)}
+                      </button>
+                    </Tooltip>
+                  )}
                 </div>
               );
             })}
