@@ -824,6 +824,10 @@ export default function App() {
   const [seedingStarterSamples, setSeedingStarterSamples] = useState<{ done: number; total: number } | null>(null);
   const [libraryCategoryPrompt, setLibraryCategoryPrompt] = useState<LibraryCategory>(LIBRARY_CATEGORIES[0]);
   const [showLibraryCategoryPrompt, setShowLibraryCategoryPrompt] = useState(false);
+  // Stage D3 fix: James's report -- the Library-entries cap message appeared as the generic
+  // load-error banner elsewhere on the page while his attention was on this dialog, so it went
+  // unnoticed. Shown inline in the dialog itself instead, same as a field-error in Settings.
+  const [libraryCapError, setLibraryCapError] = useState<string | null>(null);
   // James's ask: let the taxonomy's name be adjusted right here, before it's saved to the
   // Library, rather than only after the fact via a separate rename — initialised from the
   // taxonomy's own current title each time the dialog opens.
@@ -835,6 +839,10 @@ export default function App() {
   const [showLoadFromLibrary, setShowLoadFromLibrary] = useState(false);
   const [showLibraryOverwritePrompt, setShowLibraryOverwritePrompt] = useState(false);
   const [justAddedToLibrary, setJustAddedToLibrary] = useState(false);
+  // James's report: an entry added to the Library while scrolled away from its category was
+  // genuinely invisible with nothing suggesting it had actually happened -- set to the newly
+  // added entry's id so LibrarySidebar can scroll it into view.
+  const [scrollToLibraryEntryId, setScrollToLibraryEntryId] = useState<string | null>(null);
   const libraryAddedFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // James's ask: two more entries under "Work on an Existing Taxonomy". GL Analyser doesn't
@@ -878,7 +886,7 @@ export default function App() {
   }
 
   function refreshLibrary() {
-    listLibraryEntries()
+    return listLibraryEntries()
       .then(setLibraryEntries)
       .catch((err) => {
         console.error('Failed to load Library:', err);
@@ -953,10 +961,12 @@ export default function App() {
       // Already linked to a Library entry — never overwrite silently (James's report):
       // ask whether to update that same entry or park this as a new, separately-numbered
       // version alongside it.
+      setLibraryCapError(null);
       setShowLibraryOverwritePrompt(true);
     } else {
       setLibraryCategoryPrompt(LIBRARY_CATEGORIES[0]);
       setLibraryNamePrompt(project.title || '');
+      setLibraryCapError(null);
       setShowLibraryCategoryPrompt(true);
     }
   }
@@ -975,8 +985,7 @@ export default function App() {
   function confirmAddToLibrary() {
     if (!project) return;
     if (libraryEntriesCapReached()) {
-      setShowLibraryCategoryPrompt(false);
-      setLoadError(
+      setLibraryCapError(
         `Your ${planLimits?.displayName ?? 'current'} plan allows up to ${planLimits?.maxLibraryEntries} Library entries of your own. Remove one first, or upgrade for more.`,
       );
       return;
@@ -988,8 +997,12 @@ export default function App() {
         setProject(namedProject);
         setCurrentLibraryEntryId(entry.id);
         setShowLibraryCategoryPrompt(false);
-        refreshLibrary();
         flashAddedToLibrary();
+        // Chained, not fire-and-forget: scrollToLibraryEntryId has to land in the SAME render as
+        // the refreshed entries list (refreshLibrary's own fetch, not yet resolved at this
+        // point), or the sidebar's own effect fires before the new entry's DOM node exists at
+        // all and never gets a second chance to scroll to it.
+        refreshLibrary().then(() => setScrollToLibraryEntryId(entry.id));
       })
       .catch(reportLibraryError);
   }
@@ -1015,7 +1028,7 @@ export default function App() {
   function confirmNewLibraryVersion() {
     if (!project || !currentLibraryEntryId) return;
     if (libraryEntriesCapReached()) {
-      setLoadError(
+      setLibraryCapError(
         `Your ${planLimits?.displayName ?? 'current'} plan allows up to ${planLimits?.maxLibraryEntries} Library entries of your own. Remove one first, or upgrade for more.`,
       );
       return;
@@ -1029,8 +1042,9 @@ export default function App() {
         setProject(newProject);
         setCurrentLibraryEntryId(entry.id);
         setShowLibraryOverwritePrompt(false);
-        refreshLibrary();
         flashAddedToLibrary();
+        // See confirmAddToLibrary's own comment on why this is chained, not fire-and-forget.
+        refreshLibrary().then(() => setScrollToLibraryEntryId(entry.id));
       })
       .catch(reportLibraryError);
   }
@@ -2767,6 +2781,7 @@ export default function App() {
         }}
         seedingStarterSamples={seedingStarterSamples}
         onBulkReplaceComplete={refreshLibrary}
+        scrollToEntryId={scrollToLibraryEntryId}
       />
       <div className="app">
       <div className="app-sticky-top" ref={setStickyTopEl}>
@@ -4041,6 +4056,7 @@ export default function App() {
                 </option>
               ))}
             </select>
+            {libraryCapError && <p className="field-error">{libraryCapError}</p>}
             <div className="confirm-dialog-actions">
               <button type="button" onClick={() => setShowLibraryCategoryPrompt(false)}>
                 Cancel
@@ -4059,6 +4075,7 @@ export default function App() {
         <div className="validation-overlay" onClick={() => setShowLibraryOverwritePrompt(false)}>
           <div className="validation-dialog" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
             <p>This taxonomy is already in the Library. Overwrite that entry, or keep it and save this as a new version?</p>
+            {libraryCapError && <p className="field-error">{libraryCapError}</p>}
             <div className="confirm-dialog-actions">
               <button type="button" onClick={() => setShowLibraryOverwritePrompt(false)}>
                 Cancel
