@@ -1111,7 +1111,21 @@ export default function App() {
   // own real lockReason. Fixed to use its own, independent settings.readOnlyDueToPlanLimit /
   // settings.readOnlyReason -- `locked` is left completely untouched here either way.
   function applyReadOnlyOverLimit(entry: LibraryEntry): TaxonomyProject {
-    if (!entry.isStarterSample) return entry.project;
+    if (!entry.isStarterSample) {
+      // James's report (2026-11-25): a personal copy of a starter sample -- seeded into every
+      // subscriber's own Library at signup, or added via "Add to Library" from an oversized
+      // sample that was open and flagged read-only in memory at the time -- could inherit a
+      // stale readOnlyDueToPlanLimit/readOnlyReason baked straight into its stored settings. Per
+      // spec this mechanism is scoped to starter samples specifically ("a subscriber's own,
+      // already-oversized entries... are left exactly as they are") -- a personal copy must never
+      // show the Read Only badge or block at all, however it got that flag, so it's always
+      // cleared here rather than just left alone.
+      if (!entry.project.settings.readOnlyDueToPlanLimit) return entry.project;
+      return {
+        ...entry.project,
+        settings: { ...entry.project.settings, readOnlyDueToPlanLimit: false, readOnlyReason: undefined },
+      };
+    }
     const maxLevels = effectiveMaxLevels(planLimits);
     const maxRows = effectiveMaxRows(planLimits);
     const overLimit =
@@ -1142,9 +1156,13 @@ export default function App() {
     const opened = applyReadOnlyOverLimit(entry);
     // James's ask: an explicit pop-up the moment an oversized sample is opened, not just a
     // banner/tooltip easy to miss while attention is on the Library sidebar that was just
-    // clicked.
-    if (opened.settings.readOnlyDueToPlanLimit && opened.settings.readOnlyReason) {
-      alertWithBeep(opened.settings.readOnlyReason);
+    // clicked. Falls back to a generic message rather than requiring readOnlyReason too --
+    // James's report (2026-11-25): a sample whose readOnlyDueToPlanLimit was true but whose
+    // readOnlyReason happened to be missing silently skipped this pop-up entirely while still
+    // showing the "📖 Read Only" badge (whose own tooltip already has this same fallback) --
+    // the two must never disagree about whether this taxonomy is read-only.
+    if (opened.settings.readOnlyDueToPlanLimit) {
+      alertWithBeep(opened.settings.readOnlyReason ?? 'This sample exceeds your current plan’s limit. Read-only for study purposes.');
     }
     setProject(opened);
     setCurrentLibraryEntryId(entry.id);
