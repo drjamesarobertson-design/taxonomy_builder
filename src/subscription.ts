@@ -7,6 +7,7 @@
 // A null limit means unlimited; 0 means not allowed at all -- see 0010's own header comment.
 import { supabase } from './supabaseClient';
 import { MAX_LEVELS } from './types';
+import type { WorkflowLevel } from './types';
 
 export type PlanKey = 'free' | 'basic' | 'advanced' | 'enterprise' | 'beta';
 
@@ -133,4 +134,28 @@ export function effectiveMaxLevels(limits: PlanLimits | null): number {
 export function effectiveMaxRows(limits: PlanLimits | null): number | null {
   if (!limits) return null;
   return limits.maxRows;
+}
+
+/** Stage D4: whether the signed-in user's plan allows starting a new taxonomy at this
+ * WorkflowLevel -- the pricing table's "Chart of Accounts Wizard" / "Function Master" /
+ * "Location Master / Division Master" rows, each gating the matching Cubic Business Model
+ * starting point in WorkflowMenu. Every other level (Simple Taxonomy, Advanced Complexity, Item /
+ * Product Master, etc.) is a generic complexity starting point, not a specific business-object
+ * type, and stays available to every tier -- nothing in the pricing table gates those. Limits not
+ * yet loaded means "don't know yet," never a premature block -- same rule as every other gate
+ * here. */
+export function workflowLevelAllowed(level: WorkflowLevel, limits: PlanLimits | null): boolean {
+  if (!limits) return true;
+  switch (level) {
+    case 'Chart of Accounts':
+      return limits.chartOfAccountsWizardAllowed;
+    case 'Function':
+      return limits.functionMasterAllowed;
+    case 'Location':
+      return limits.locationMasterAllowed;
+    case 'Division':
+      return limits.divisionMasterAllowed;
+    default:
+      return true;
+  }
 }
