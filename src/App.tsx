@@ -2598,15 +2598,15 @@ export default function App() {
       <div className="app-sticky-top" ref={setStickyTopEl}>
       <header className="app-header">
         <div className="app-heading-block">
-          <h1 className="app-heading">
-            The ERP Doctor Taxonomy Builder -- Copyright © James A Robertson and Associates Limited
-          </h1>
-          {!project && (
-            <p className="app-tagline">
-              Taxonomy Builder by the ERP Doctor
-              <br />
-              James A Robertson and Associates Limited
-            </p>
+          {project ? (
+            <h1 className="app-heading">
+              The ERP Doctor Taxonomy Builder -- Copyright © James A Robertson and Associates Limited
+            </h1>
+          ) : (
+            <>
+              <h1 className="app-heading-large">Taxonomy Builder</h1>
+              <p className="app-heading-copyright">Copyright © James A Robertson and Associates Limited</p>
+            </>
           )}
         </div>
         <div className="header-right">
