@@ -91,6 +91,8 @@ import { fetchDeployedVersion } from './versionCheck';
 import { isSupervisor } from './supervisor';
 import { startCheckout, type PaidPlanKey } from './checkout';
 import { downloadDatabaseBackup } from './databaseBackup';
+import { fetchPlanLimits, isExpired, type PlanLimits } from './subscription';
+import ExpiredSubscriptionScreen from './ExpiredSubscriptionScreen';
 import './App.css';
 
 export default function App() {
@@ -186,6 +188,15 @@ export default function App() {
   // James's ask: a small set of admin-only capabilities (starring Library entries, editing Help
   // content in-app) restricted to his own account — see supervisor.ts for the full reasoning.
   const supervisor = isSupervisor(authedEmail);
+  // Stage D1: the signed-in user's current plan + its live numeric/feature limits (null until
+  // the fetch below resolves, or if it fails -- see subscription.ts's own doc comment on why a
+  // failure here is logged rather than thrown). Deliberately NOT bypassed for the supervisor
+  // account -- its existing admin-only capabilities (Edit Help, starring Library entries, Export
+  // Full Backup) are already gated separately, directly on `supervisor`, so this stays the
+  // account's own real plan_key throughout -- letting James exercise every Stage D gate for real
+  // against his own account via the existing "Test Checkout" dropdown, the same way Stage C was
+  // tested, rather than a hardcoded bypass nothing could ever actually verify.
+  const [planLimits, setPlanLimits] = useState<PlanLimits | null>(null);
   // Automated testing hook, dev builds only: Supabase now owns real sign-on, but the sandboxed
   // environment this is developed in has no network path to Supabase's own domain (a hard
   // gateway policy, confirmed via the proxy's own status endpoint) — so every Playwright test
@@ -907,6 +918,20 @@ export default function App() {
         setSeedingStarterSamples(null);
         refreshLibrary();
       });
+  }, [authedEmail]);
+
+  // Stage D1: same authedEmail-gated pattern as the Library fetch above, for the same reason --
+  // needs a real signed-in session, which becomes available asynchronously. Re-fetches on every
+  // sign-in (including switching accounts), so Test Checkout's effect on the supervisor account's
+  // own plan_key is picked up the next time they sign in, without needing a page reload.
+  useEffect(() => {
+    if (!authedEmail) {
+      setPlanLimits(null);
+      return;
+    }
+    fetchPlanLimits()
+      .then(setPlanLimits)
+      .catch((err) => console.error('fetchPlanLimits failed:', err));
   }, [authedEmail]);
 
   function flashAddedToLibrary() {
@@ -2563,6 +2588,15 @@ export default function App() {
     return (
       <>
         <Login onSuccess={setAuthedEmail} />
+        {buildInfoTag}
+        {updateBanner}
+      </>
+    );
+  }
+  if (planLimits && isExpired(planLimits)) {
+    return (
+      <>
+        <ExpiredSubscriptionScreen limits={planLimits} onLogOut={handleLogOut} />
         {buildInfoTag}
         {updateBanner}
       </>
