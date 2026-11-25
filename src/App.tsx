@@ -102,6 +102,39 @@ import {
 import ExpiredSubscriptionScreen from './ExpiredSubscriptionScreen';
 import './App.css';
 
+// James's report: a plain alert() can land visually wherever the browser happens to put it
+// (observed landing at the top of the window, away from wherever the user's attention actually
+// was -- the Library sidebar, in this case) -- easy to miss entirely, and he'd noticed the same
+// thing before with other pop-ups without raising it until now. A short beep alongside every
+// alert() in this file means it's never silently missed regardless of where it lands on screen.
+// A plain Web Audio beep (no audio file needed) -- generated and played synchronously inside the
+// same click handler that triggers the alert(), so it's always within a real user gesture and
+// never blocked by browser autoplay policy.
+function playAlertBeep() {
+  try {
+    const AudioContextClass = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+    oscillator.frequency.value = 880;
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+    oscillator.start();
+    oscillator.stop(ctx.currentTime + 0.25);
+    oscillator.onended = () => ctx.close();
+  } catch {
+    // Audio unavailable for some reason -- the alert() itself still shows regardless.
+  }
+}
+
+function alertWithBeep(message: string) {
+  playAlertBeep();
+  alert(message);
+}
+
 export default function App() {
   // James's ask: a small, always-visible "PR #nnn" tag so he can confirm — from inside the app
   // itself, without ever touching GitHub — that a refresh actually picked up the fix he was told
@@ -1058,43 +1091,47 @@ export default function App() {
   // sample" exceeding limits) -- a subscriber's own, already-oversized entries (e.g. built on a
   // higher tier, then downgraded) are left exactly as they are; this is about the shared starter
   // library staying genuinely usable at every tier, not retroactively locking anyone's own work.
-  function readOnlyOverLimitReason(project: TaxonomyProject): string {
-    return `This sample (${project.settings.numLevels} columns, ${project.rows.length} rows) exceeds your current plan's limit -- opened read-only for study purposes.`;
+  //
+  // James's report: states both the sample's actual size AND the plan's allowed size -- the
+  // first version only gave the actual numbers, leaving him to go and look up his own plan's
+  // limit separately.
+  function readOnlyOverLimitReason(project: TaxonomyProject, maxLevels: number, maxRows: number | null): string {
+    const allowed = maxRows != null ? `${maxLevels} columns and ${maxRows} rows` : `${maxLevels} columns`;
+    return (
+      `This sample has ${project.settings.numLevels} columns and ${project.rows.length} rows, exceeding your ` +
+      `current plan's limit of ${allowed}. Read-only for study purposes.`
+    );
   }
 
-  // James's report, testing this live: a starter sample that happened to ALREADY be locked (for
-  // its own, genuine reason -- e.g. James locked it himself while curating it) took the early
-  // "already locked" return below, which kept its ORIGINAL lockReason (or none at all) instead of
-  // ever explaining the real, current reason it's read-only for THIS viewer -- so the title bar
-  // showed no lock indicator, and typing into it surfaced Lock Taxonomy's generic data-integrity
-  // wording, not this. Fixed by always checking the size limit FIRST and, when it applies,
-  // overriding locked/lockReason/lockedDueToPlanLimit regardless of whatever the sample's own
-  // stored lock state already was -- the plan limit is the actually relevant reason for this
-  // viewer right now, whatever else may also be true about the sample.
+  // James's report, testing this live: Read Only (this) and Locked (a real, user-initiated Lock
+  // Taxonomy) are two entirely separate attributes, never the same thing -- a sample can be
+  // read-only for size, genuinely locked, both, or neither. The first version wrongly reused
+  // `locked`/`lockReason` for this, which (a) showed the "🔒 Locked" badge/wording even for a
+  // sample that was never actually locked, and (b) silently clobbered a genuinely-locked sample's
+  // own real lockReason. Fixed to use its own, independent settings.readOnlyDueToPlanLimit /
+  // settings.readOnlyReason -- `locked` is left completely untouched here either way.
   function applyReadOnlyOverLimit(entry: LibraryEntry): TaxonomyProject {
     if (!entry.isStarterSample) return entry.project;
-    // Stage D5b: whatever `locked`/`lockCounted` state a starter sample itself carries (however
-    // it arose -- authored that way, or copied in from another account entirely) must never count
-    // toward the opening user's own Lock Taxonomy cap. Only a real Lock performed by this account,
-    // in this session, does that (performLockTaxonomy) -- so this is always stripped here,
-    // regardless of which path below returns.
-    const stripLockCounted = (p: TaxonomyProject): TaxonomyProject =>
-      p.settings.lockCounted ? { ...p, settings: { ...p.settings, lockCounted: false } } : p;
     const maxLevels = effectiveMaxLevels(planLimits);
     const maxRows = effectiveMaxRows(planLimits);
     const overLimit =
       entry.project.settings.numLevels > maxLevels || (maxRows != null && entry.project.rows.length > maxRows);
-    if (!overLimit) return stripLockCounted(entry.project);
+    if (!overLimit) {
+      // Clears a stale flag from a previous open under a smaller plan -- e.g. upgraded since.
+      if (!entry.project.settings.readOnlyDueToPlanLimit) return entry.project;
+      return {
+        ...entry.project,
+        settings: { ...entry.project.settings, readOnlyDueToPlanLimit: false, readOnlyReason: undefined },
+      };
+    }
     return {
       ...entry.project,
       settings: {
         ...entry.project.settings,
-        locked: true,
-        lockReason: readOnlyOverLimitReason(entry.project),
-        lockedDueToPlanLimit: true,
-        lockCounted: false,
+        readOnlyDueToPlanLimit: true,
+        readOnlyReason: readOnlyOverLimitReason(entry.project, maxLevels, maxRows),
       },
-      rows: entry.project.rows.map((row) => ({ ...row, protected: true })),
+      rows: entry.project.rows.map((row) => (row.protected ? row : { ...row, protected: true })),
     };
   }
 
@@ -1106,8 +1143,8 @@ export default function App() {
     // James's ask: an explicit pop-up the moment an oversized sample is opened, not just a
     // banner/tooltip easy to miss while attention is on the Library sidebar that was just
     // clicked.
-    if (opened.settings.lockedDueToPlanLimit) {
-      alert(readOnlyOverLimitReason(opened));
+    if (opened.settings.readOnlyDueToPlanLimit && opened.settings.readOnlyReason) {
+      alertWithBeep(opened.settings.readOnlyReason);
     }
     setProject(opened);
     setCurrentLibraryEntryId(entry.id);
@@ -1742,14 +1779,14 @@ export default function App() {
   async function handleLocalHardDriveClick() {
     if (!project) return;
     if (!supportsHddFolders()) {
-      alert(
+      alertWithBeep(
         'Local Hard Drive needs a Chromium-based browser (Chrome or Edge) to create folders on your computer — it isn\'t available in this browser.',
       );
       return;
     }
     const plan = buildHddFolderPlan(project.rows);
     if (plan.length === 0) {
-      alert('There are no entries in this taxonomy yet to create folders for.');
+      alertWithBeep('There are no entries in this taxonomy yet to create folders for.');
       return;
     }
     let root: FileSystemDirectoryHandle;
@@ -1777,7 +1814,7 @@ export default function App() {
     try {
       const target = subfolderName ? await root.getDirectoryHandle(subfolderName, { create: true }) : root;
       const result = await createHddFolders(target, plan);
-      alert(`Created ${result.created} folder${result.created === 1 ? '' : 's'} inside "${target.name}".`);
+      alertWithBeep(`Created ${result.created} folder${result.created === 1 ? '' : 's'} inside "${target.name}".`);
     } catch (err) {
       setLoadError(err instanceof Error ? `Could not finish creating folders: ${err.message}` : 'Could not finish creating folders.');
     } finally {
@@ -1804,7 +1841,7 @@ export default function App() {
     if (!project) return;
     const plan = buildHddFolderPlan(project.rows);
     if (plan.length === 0) {
-      alert('There are no entries in this taxonomy yet to create folders for.');
+      alertWithBeep('There are no entries in this taxonomy yet to create folders for.');
       return;
     }
     const blob = new Blob([buildOutlookFolderPathList(plan)], { type: 'text/plain;charset=utf-8' });
@@ -2287,7 +2324,7 @@ export default function App() {
     // Grid.tsx's per-cell protected-row guards at all, so it's the one path that could
     // silently wipe out a locked taxonomy's protected rows if it weren't blocked here.
     if (project?.settings.locked) {
-      alert('This taxonomy is locked and cannot be replaced by a CSV import.');
+      alertWithBeep('This taxonomy is locked and cannot be replaced by a CSV import.');
       return;
     }
     if (project && hasAnyContent(project.rows) && !confirm('This will clear the existing table content — proceed?')) {
@@ -2360,7 +2397,7 @@ export default function App() {
     // Same Lock Taxonomy / existing-content guards as the plain CSV import above — this also
     // replaces the whole working project wholesale.
     if (project?.settings.locked) {
-      alert('This taxonomy is locked and cannot be replaced by a CSV import.');
+      alertWithBeep('This taxonomy is locked and cannot be replaced by a CSV import.');
       return;
     }
     if (project && hasAnyContent(project.rows) && !confirm('This will clear the existing table content — proceed?')) {
@@ -2408,7 +2445,7 @@ export default function App() {
   function handleMultiColumnDescCsvClick() {
     // Same Lock Taxonomy / existing-content guards as the other two CSV import paths above.
     if (project?.settings.locked) {
-      alert('This taxonomy is locked and cannot be replaced by a CSV import.');
+      alertWithBeep('This taxonomy is locked and cannot be replaced by a CSV import.');
       return;
     }
     if (project && hasAnyContent(project.rows) && !confirm('This will clear the existing table content — proceed?')) {
@@ -2444,7 +2481,7 @@ export default function App() {
   function handleFlatCodeDescCsvClick() {
     // Same Lock Taxonomy / existing-content guards as the other three CSV import paths above.
     if (project?.settings.locked) {
-      alert('This taxonomy is locked and cannot be replaced by a CSV import.');
+      alertWithBeep('This taxonomy is locked and cannot be replaced by a CSV import.');
       return;
     }
     if (project && hasAnyContent(project.rows) && !confirm('This will clear the existing table content — proceed?')) {
@@ -2501,7 +2538,7 @@ export default function App() {
       if (oldNumLevels === 1 && (singleCodeColumn || column1CodeLength > 1)) {
         const overflowing = project.rows.filter((row) => (row.codes[0] ?? '').length > 1);
         if (overflowing.length > 0) {
-          alert(
+          alertWithBeep(
             `Column 1 holds a multi-character code on ${overflowing.length} row${overflowing.length === 1 ? '' : 's'} (e.g. "${overflowing[0].codes[0]}") — narrow it to 1 character first (right-click Column 1 → "Width of Col 1…") before adding another level.`,
           );
           return;
@@ -2555,7 +2592,7 @@ export default function App() {
     // Bulk, whole-table structural operation — same precedent as CSV Import, blocked outright
     // while locked rather than trying to thread protected-row guards through it.
     if (project.settings.locked) {
-      alert('This taxonomy is locked and cannot be auto-coded.');
+      alertWithBeep('This taxonomy is locked and cannot be auto-coded.');
       return;
     }
     setAutoCodeType(AUTO_CODE_TYPES[0]);
@@ -2631,7 +2668,7 @@ export default function App() {
     // Bulk, whole-table content operation — same precedent as Auto Code / CSV Import: blocked
     // outright while locked rather than threading protected-row guards through a bulk rewrite.
     if (project.settings.locked) {
-      alert('This taxonomy is locked and descriptions cannot be bulk-formatted.');
+      alertWithBeep('This taxonomy is locked and descriptions cannot be bulk-formatted.');
       return;
     }
     setFormatMode(FORMAT_MODES[2]);
@@ -3418,6 +3455,16 @@ export default function App() {
                     ) : (
                       <span className="locked-badge">🔒 Locked</span>
                     ))}
+                  {/* Stage D5a fix: James's report -- Read Only (exceeds this plan's size limit)
+                      and Locked (a real, user-initiated Lock Taxonomy) are two separate
+                      attributes, never the same thing -- this never reuses the Locked badge/
+                      wording, and shows alongside it (not instead of it) when a sample happens
+                      to be both. */}
+                  {project.settings.readOnlyDueToPlanLimit && (
+                    <Tooltip text={project.settings.readOnlyReason ?? 'Read-only: exceeds your current plan’s limit.'}>
+                      <span className="read-only-badge">📖 Read Only</span>
+                    </Tooltip>
+                  )}
                 </h2>
                 {project.purpose && <p className="purpose">{project.purpose}</p>}
               </section>
