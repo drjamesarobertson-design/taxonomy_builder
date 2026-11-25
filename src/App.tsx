@@ -1354,6 +1354,17 @@ export default function App() {
   // Fixed by asking through the app's own React-rendered confirm dialog instead (lockConfirm
   // below) — its "Continue" button's own onClick is a fresh, valid user gesture in its own
   // right, so the picker opens normally from there.
+  // Stage D5b: James's report -- "Unlock one first, or upgrade for more" read as nonsense when
+  // maxLocked is 0 (Basic), since there's nothing to unlock and locking isn't available at all on
+  // that plan -- that case needed its own wording, not the same sentence with "0" substituted in.
+  function lockCapMessage(maxLocked: number): string {
+    const plan = planLimits?.displayName ?? 'current';
+    if (maxLocked === 0) {
+      return `Locking taxonomies isn't included in your ${plan} plan — upgrade to Advanced or Enterprise to use Lock Taxonomy.`;
+    }
+    return `Your ${plan} plan allows up to ${maxLocked} locked taxonomies, and you're at that limit — unlock one first, or upgrade for more room.`;
+  }
+
   function handleLockTaxonomy() {
     if (!project) return;
     // Stage D5b: checked before Audit even starts -- no point walking someone through a full
@@ -1362,9 +1373,7 @@ export default function App() {
     // samples, which never call this function at all.
     const maxLocked = planLimits?.maxLockedTaxonomies;
     if (maxLocked != null && (planLimits?.lockedTaxonomyCount ?? 0) >= maxLocked) {
-      setLoadError(
-        `Your ${planLimits?.displayName ?? 'current'} plan allows up to ${maxLocked} locked taxonomies. Unlock one first, or upgrade for more.`,
-      );
+      setLoadError(lockCapMessage(maxLocked));
       return;
     }
     // James's report: Lock allowed locking a taxonomy with no codes at all. This is a hard
@@ -2936,7 +2945,7 @@ export default function App() {
               return (
               <div className="lock-menu-wrapper" ref={lockMenuRef}>
                 {lockCapReached ? (
-                  <Tooltip text={`Your ${planLimits?.displayName ?? 'current'} plan allows up to ${maxLocked} locked taxonomies. Unlock one first, or upgrade for more.`}>
+                  <Tooltip text={lockCapMessage(maxLocked ?? 0)}>
                     <button type="button" className="lock-btn" disabled>
                       🔒 Lock Taxonomy ▾
                     </button>
