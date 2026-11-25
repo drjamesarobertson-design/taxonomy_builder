@@ -11,10 +11,15 @@ import { CUBIC_BUSINESS_MODEL_WORKFLOW_LEVELS, WORKFLOW_LEVELS } from './types';
 import type { WorkflowLevel } from './types';
 import Tooltip from './Tooltip';
 import type { HelpTextMap } from './helpText';
+import { workflowLevelAllowed, type PlanLimits } from './subscription';
 
 interface WorkflowMenuProps {
   onChooseNew: (level: WorkflowLevel) => void;
   onChooseExisting: () => void;
+  /** Stage D4: gates the Cubic Business Model starting points (Division/Location/Function/Chart
+   * of Accounts) per the signed-in user's plan -- null (not yet loaded) allows everything, same
+   * as every other Stage D gate. */
+  planLimits: PlanLimits | null;
   /** The title of whatever's sitting in the session autosave slot, if anything — shown as a
    * "Resume Work in Progress" option so signing out, reloading, or navigating back here never
    * strands an open taxonomy with no way back to it. */
@@ -53,6 +58,7 @@ function workflowLevelDisplayLabel(level: WorkflowLevel): string {
 export default function WorkflowMenu({
   onChooseNew,
   onChooseExisting,
+  planLimits,
   resumeTitle,
   onResume,
   onDismissResume,
@@ -105,11 +111,17 @@ export default function WorkflowMenu({
               const isFirstCubicLevel =
                 CUBIC_BUSINESS_MODEL_WORKFLOW_LEVELS.includes(level) &&
                 WORKFLOW_LEVELS.slice(0, index).every((l) => !CUBIC_BUSINESS_MODEL_WORKFLOW_LEVELS.includes(l));
+              const allowed = workflowLevelAllowed(level, planLimits);
               return (
                 <div key={level} className="workflow-level-item">
                   {isFirstCubicLevel && <span className="workflow-level-group-heading">Cubic Business Model</span>}
                   <Tooltip field={workflowLevelField(level)} helpText={helpText}>
-                    <button type="button" onClick={() => onChooseNew(level)}>
+                    <button
+                      type="button"
+                      onClick={() => onChooseNew(level)}
+                      disabled={!allowed}
+                      title={allowed ? undefined : 'Not available on your current plan — upgrade to unlock'}
+                    >
                       {workflowLevelDisplayLabel(level)}
                     </button>
                   </Tooltip>

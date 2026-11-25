@@ -3119,6 +3119,7 @@ export default function App() {
           <WorkflowMenu
             onChooseNew={handleChooseWorkflowLevel}
             onChooseExisting={() => setSignOnStage('existing')}
+            planLimits={planLimits}
             resumeTitle={resumeAutosaveTitle}
             onResume={handleResumeWorkInProgress}
             onDismissResume={handleDismissResume}
