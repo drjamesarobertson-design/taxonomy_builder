@@ -2919,13 +2919,35 @@ export default function App() {
               </div>
             )}
             {project && <span className="toolbar-divider" />}
-            {project && (
+            {project && (() => {
+              // Stage D5b fix: James's report -- the cap check inside handleLockTaxonomy only
+              // ever showed a plain text message (easy to miss, and only after already opening
+              // the dropdown and clicking through to "Lock Taxonomy"). Disabling the trigger
+              // itself up front, with a tooltip, matches the landing menu's own gated-button
+              // style and makes the limit visible without having to click anything first. Only
+              // applies to a NOT-YET-locked taxonomy -- once locked, this same button reveals a
+              // different menu (export/update/Lock-updates options) that the lock cap has no
+              // business blocking.
+              const maxLocked = planLimits?.maxLockedTaxonomies;
+              const lockCapReached =
+                !project.settings.locked &&
+                maxLocked != null &&
+                (planLimits?.lockedTaxonomyCount ?? 0) >= maxLocked;
+              return (
               <div className="lock-menu-wrapper" ref={lockMenuRef}>
+                {lockCapReached ? (
+                  <Tooltip text={`Your ${planLimits?.displayName ?? 'current'} plan allows up to ${maxLocked} locked taxonomies. Unlock one first, or upgrade for more.`}>
+                    <button type="button" className="lock-btn" disabled>
+                      🔒 Lock Taxonomy ▾
+                    </button>
+                  </Tooltip>
+                ) : (
                 <Tooltip field="btnLockTaxonomy" helpText={helpText}>
                   <button type="button" className="lock-btn" onClick={() => setShowLockMenu((v) => !v)}>
                     🔒 Lock Taxonomy ▾
                   </button>
                 </Tooltip>
+                )}
                 {showLockMenu && (
                   <ul className="context-menu lock-menu">
                     {!project.settings.locked && (
@@ -3013,7 +3035,8 @@ export default function App() {
                   </ul>
                 )}
               </div>
-            )}
+              );
+            })()}
             {project && <span className="toolbar-divider" />}
             {project && (
               <Tooltip field="btnAutoCode" helpText={helpText}>
