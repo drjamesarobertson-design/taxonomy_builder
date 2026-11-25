@@ -1,6 +1,6 @@
 # Taxonomy Builder — Master Briefing
 
-*Version: v 1.17*
+*Version: v 1.18*
 
 *A one-stop orientation document: what this is, what it does today, where the
 business stands, and what's still outstanding. Written for James (or anyone
@@ -8,10 +8,11 @@ he shares this with) rather than as an engineering log — for the detailed,
 round-by-round build history, see `PROGRESS.md`; for the original functional
 specification, see `CLAUDE.md`.*
 
-*Last updated: 2026-11-25 — a disaster-recovery review found the live
-database has no automated backups (Supabase Free plan); a supervisor-only
-"Export Full Backup" button is built as a periodic manual stopgap, not yet
-deployed. See §0 and §2/§4's new "Disaster recovery" section.*
+*Last updated: 2026-11-25 — Stage C3 (Stripe Checkout + webhook) is now
+fully complete and proven end to end: a real test payment correctly moved
+an account's `plan_key` from `free` to the paid tier purchased. The
+disaster-recovery "Export Full Backup" button is also deployed and tested
+successfully. See §0.*
 
 *Version history: v 1.01 — first version stamp applied to this file
 (2026-10-14). v 1.02 — same evening, after PRs #230–#235 (see §0): Promote/
@@ -81,28 +82,23 @@ no automated backups (Supabase Free plan). Built a supervisor-only
 "Export Full Backup" button as a periodic manual stopgap (James's
 preference over upgrading the Supabase plan) — written, not yet deployed;
 also gave James a one-off Git-bundle backup of the code itself directly.
-**Increment this by one every time this file is next updated and/or
-shared with him (whichever comes first), and add a line here whenever its
-content actually changed** — see
-`ONBOARDING_FOR_NEW_CLAUDE_INSTANCE.md` §5, item 10.*
-
----
-
-## 0. Where things stand right now — read this first
-
-**Disaster recovery, 2026-11-25 — a real gap found and a stopgap built,
-not yet deployed.** James asked what the DR arrangements are. Code/config:
-solid (full Git history, auto-rebuilding static site). The live database:
-no automated backups, since the Supabase project is on the Free plan.
-Built `supabase/functions/export-database-backup/index.ts` (supervisor-
-only, server-side-enforced, reads every table via the service role) plus
-a new "Export Full Backup" toolbar button (`src/databaseBackup.ts`) — a
-periodic, one-click, manual export, James's preferred option over
-upgrading the Supabase plan. Full detail in §2/§4's "Disaster recovery"
-section. **Not yet deployed** — same one-time deploy dance as
-`create-checkout-session`, James's actual next step whenever he's ready.
-A one-off Git-bundle backup of the code itself was also handed to him
-directly (not a recurring mechanism, just a point-in-time copy).
+v 1.18 (2026-11-25, same day) — the "Export Full Backup" function was
+deployed and tested successfully by James (a real backup download covering
+all five tables). Fixed a regression from the heading-squeeze (PR #260):
+the landing page's heading had shrunk along with the worksheet page's,
+since both shared one CSS class — landing page now shows "Taxonomy
+Builder" at its original large size with a "Copyright © James A Robertson
+and Associates Limited" line beneath it in the current small font, and the
+redundant tagline paragraph was removed (PR #277); worksheet page
+unchanged. **Stage C3 is now fully complete**: the `stripe-webhook` Edge
+Function (piece (e)) was written, deployed, registered as a Stripe event
+destination (`checkout.session.completed`, Snapshot payload), and its
+signing secret added to Supabase — then proven end to end with a real
+test payment, confirmed in Supabase's Table Editor: the test account's
+`subscriptions` row correctly updated `plan_key` from `free` to `basic`,
+with `stripe_subscription_id`/`stripe_customer_id`/`current_period_end`
+all populated (PR #278). Only Stage C4 (renewal/expiry + reminder emails)
+remains unbuilt from the original C1–C4 plan — see §6.
 
 **Stripe Stage B walkthrough, 2026-11-24 (same day as the planning round
 below) — done live, step by step:** account created; Stripe Tax enabled in
@@ -141,9 +137,10 @@ regular app can self-grant a paid tier. Wiring an actual "pick a tier and
 sign up" UI is folded into C3 instead, once Checkout actually exists to
 make that choice real.
 
-**Stage C, piece 3 of 4 (C3) — underway, broken down into sub-pieces since
-it's genuinely new ground for this project (nothing Edge-Function-shaped
-exists yet, unlike the now well-worn SQL-migration pattern)**:
+**Stage C, piece 3 of 4 (C3) — fully complete, 2026-11-25**, broken down
+into sub-pieces since it was genuinely new ground for this project
+(nothing Edge-Function-shaped existed yet, unlike the now well-worn
+SQL-migration pattern):
 (a) add the Stripe secret key to Supabase's own Edge Function secrets —
 **done, 2026-11-24** (as `STRIPE_SECRET_KEY`, Project Settings → Edge
 Functions → Secrets — note this is a *different* area from Project
@@ -197,13 +194,32 @@ to be used (a full-page redirect out and back, not a popup — opening a
 new tab instead would leave two copies of the app open, which is more
 confusing, not less). **Nothing in the app visibly reacted to the
 successful payment yet** — expected, since that only happens once the
-webhook (piece (e), below) exists; `subscriptions.plan_key` for that test
-account is still `free` right now, deliberately. (d) register the
-deployed webhook URL in Stripe and get its signing secret, added as a
-second Supabase secret; (e) write and deploy the webhook-receiving
-function; (f) one real end-to-end test confirming the webhook actually
-updates `subscriptions.plan_key` this time. C4 (renewal/expiry + reminder
-emails) is also not started.
+webhook (piece (e)) existed yet; `subscriptions.plan_key` for that test
+account stayed `free` until the webhook below was built. (d) **done,
+2026-11-25.** Webhook registered in Stripe as an event destination
+(Workbench → Webhooks → Add endpoint; scope "Your account", payload style
+**Snapshot** — not Thin, since the webhook code reads full session detail
+like `metadata` directly off the event), listening to just
+`checkout.session.completed`, pointed at the deployed function's URL; its
+signing secret added to Supabase as a second secret, `STRIPE_WEBHOOK_
+SECRET`. (e) **done, 2026-11-25.** `supabase/functions/stripe-webhook/
+index.ts` written and deployed (same "Via Editor" dance, **"Verify JWT
+with legacy secret" turned off** — a hard requirement here, not just a
+recommendation, since Stripe's calls carry no Supabase session at all).
+Verifies the delivery's signature via `stripe.webhooks.constructEventAsync`
+(the async form Stripe's SDK provides specifically for Deno/edge runtimes,
+since there's no Node-style sync crypto available), then on
+`checkout.session.completed` updates the paying account's `subscriptions`
+row: `plan_key`, `stripe_subscription_id`, `stripe_customer_id`, and
+`current_period_end` (fetched via one extra Stripe API call against the
+session's subscription ID). (f) **done, 2026-11-25 — tested live by James,
+successfully.** Ran a real test payment (Basic tier, Stripe's test card),
+then confirmed directly in Supabase's Table Editor: the test account's
+`subscriptions` row updated from `plan_key = 'free'` to `plan_key =
+'basic'`, with `stripe_subscription_id`/`stripe_customer_id`/`current_
+period_end` all correctly populated. **Checkout, webhook and database
+update now all proven working end to end.** C4 (renewal/expiry + reminder
+emails) is the only piece of the original C1–C4 plan not yet started.
 
 **Side note from the same stretch of conversation, unrelated to any of the
 above:** going through Stripe's live-account activation flow (confirming
@@ -1130,12 +1146,13 @@ re-deriving any of this.
       Lock moved up to Advanced+, alongside Audit. See §0/§4.
 - [x] ~~Where does WooCommerce fit?~~ — reconfirmed 2026-11-24: nowhere: it
       plays no role, per the existing "Payment processing" recommendation.
-- [ ] James to finalise the exact dollar break-points for the 4 tiers (the
-      only still-open number — everything else in §4's table and mechanics
-      is decided).
-- [ ] **James to deploy:** `supabase/functions/export-database-backup/
-      index.ts`, via Supabase Dashboard → Edge Functions (same dance as
-      `create-checkout-session`). Written 2026-11-25, not yet deployed.
+- [x] ~~James to finalise the exact dollar break-points for the 4 tiers~~ —
+      done 2026-11-25: set directly in Stripe; James has also emailed
+      colleagues for marketability feedback, so treat as settled unless he
+      revisits it himself.
+- [x] ~~James to deploy `supabase/functions/export-database-backup/
+      index.ts`~~ — done 2026-11-25, tested successfully (a real backup
+      download covering all five tables).
 - [x] ~~Create the Stripe account and the paid-tier Products/Prices~~ —
       done 2026-11-24 (Stage B, §4): account created, Stripe Tax enabled in
       the sandbox, Basic/Advanced/Enterprise all created in GBP/Monthly/
@@ -1161,15 +1178,19 @@ re-deriving any of this.
       (confirmed as correct, expected behaviour, not a bug). Nothing in
       the app visibly reacted yet — expected, since that's the webhook's
       job, not yet built.
-- [ ] **Next:** register the webhook in Stripe and add its signing
-      secret; write/deploy the webhook Edge Function; one real end-to-end
-      test confirming it actually updates `subscriptions.plan_key`
-      (Stage C3, §0/§4).
-- [ ] Build the renewal/expiry state machine and staged reminder emails
-      (Stage C4, §4) — not started.
+- [x] ~~Register the webhook in Stripe, add its signing secret, write/
+      deploy the webhook Edge Function, and test end-to-end~~ — done
+      2026-11-25 (Stage C3, §0/§4): a real test payment correctly moved a
+      test account's `plan_key` from `free` to `basic`. **Stage C3 is now
+      fully complete.**
+- [ ] **Next:** build the renewal/expiry state machine and staged
+      reminder emails (Stage C4, §4) — not started.
 - [ ] Resolve the live Stripe account's "missing director" compliance
       flag with Stripe Support before Stage G (go-live) — does not block
-      anything before then (§4, "Payment processing").
+      anything before then (§4, "Payment processing"). James is currently
+      waiting on a further email from Stripe but, pending that, is taking
+      their word that it doesn't affect the live account, which otherwise
+      looks to be in order.
 - [ ] Wire app-side tier enforcement: numeric caps, workflow-type gates, the
       read-only-over-limit Library mode, and the expired-subscription block
       screen (Stage D, §4).
