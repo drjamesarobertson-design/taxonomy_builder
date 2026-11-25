@@ -1,6 +1,6 @@
 # Taxonomy Builder — Master Briefing
 
-*Version: v 1.18*
+*Version: v 1.19*
 
 *A one-stop orientation document: what this is, what it does today, where the
 business stands, and what's still outstanding. Written for James (or anyone
@@ -8,11 +8,11 @@ he shares this with) rather than as an engineering log — for the detailed,
 round-by-round build history, see `PROGRESS.md`; for the original functional
 specification, see `CLAUDE.md`.*
 
-*Last updated: 2026-11-25 — Stage C3 (Stripe Checkout + webhook) is now
-fully complete and proven end to end: a real test payment correctly moved
-an account's `plan_key` from `free` to the paid tier purchased. The
-disaster-recovery "Export Full Backup" button is also deployed and tested
-successfully. See §0.*
+*Last updated: 2026-11-25 — Stage C4 is now also fully complete and proven:
+`stripe-webhook` correctly keeps renewals/cancellations in sync, and the
+staged renewal reminder emails fire at the right day-boundaries, confirmed
+live. Stages C1–C4 (the whole Stripe/Supabase subscription backend) are
+now entirely built and tested end to end. See §0.*
 
 *Version history: v 1.01 — first version stamp applied to this file
 (2026-10-14). v 1.02 — same evening, after PRs #230–#235 (see §0): Promote/
@@ -97,8 +97,27 @@ signing secret added to Supabase — then proven end to end with a real
 test payment, confirmed in Supabase's Table Editor: the test account's
 `subscriptions` row correctly updated `plan_key` from `free` to `basic`,
 with `stripe_subscription_id`/`stripe_customer_id`/`current_period_end`
-all populated (PR #278). Only Stage C4 (renewal/expiry + reminder emails)
-remains unbuilt from the original C1–C4 plan — see §6.
+all populated (PR #278). v 1.19 (2026-11-25, same day) — **Stage C4 is
+now also fully complete**: `stripe-webhook` extended to handle
+`customer.subscription.updated` (keeps `current_period_end`/`status` in
+step with every renewal, successful or failed) and
+`customer.subscription.deleted` (drops a fully-lapsed/cancelled account
+back to `free`) — until now the webhook only ever handled the one-time
+initial purchase, so `current_period_end` would have gone stale after an
+account's first billing period; `supabase/0013_add_renewal_reminders.sql`
+added a daily `pg_cron` job sending the staged reminder emails (30/7/1
+days before renewal, an expired notice, a follow-up nudge), reusing
+`0008`'s proven `pg_net` + Vault + Resend pattern, no new Edge Function
+needed (PR #280). **Tested live by James, successfully**: the new events
+were added to the Stripe webhook destination; the reminder function was
+run manually against a test row with its `current_period_end` adjusted to
+today, then to 8 days out — correctly producing the "expired" email and
+then the "30d" email respectively (8 days out correctly falling in the
+30-day bucket, not the 7-day one, confirming the day-boundary logic).
+**Stages C1 through C4 — the entire Stripe/Supabase subscription
+backend — are now fully built and proven end to end.** Only Stage D (app-
+side tier enforcement, including the expired-subscription block screen)
+onward remains — see §6.
 
 **Stripe Stage B walkthrough, 2026-11-24 (same day as the planning round
 below) — done live, step by step:** account created; Stripe Tax enabled in
@@ -218,8 +237,31 @@ then confirmed directly in Supabase's Table Editor: the test account's
 `subscriptions` row updated from `plan_key = 'free'` to `plan_key =
 'basic'`, with `stripe_subscription_id`/`stripe_customer_id`/`current_
 period_end` all correctly populated. **Checkout, webhook and database
-update now all proven working end to end.** C4 (renewal/expiry + reminder
-emails) is the only piece of the original C1–C4 plan not yet started.
+update now all proven working end to end.**
+
+**Stage C4 (renewal/expiry + reminder emails) — done, 2026-11-25.**
+`stripe-webhook` extended to also handle `customer.subscription.updated`
+(every renewal, successful or failed, plus any other change to the
+subscription) and `customer.subscription.deleted` (fully ended) —
+necessary because `checkout.session.completed` alone only ever fires once,
+at the very first payment, so without this `current_period_end` would
+have gone stale the moment an account renewed for a second period.
+`supabase/0013_add_renewal_reminders.sql` added `subscriptions.last_
+reminder_stage` (tracks the most advanced reminder already sent for the
+current period, so a daily run never repeats one) and a daily `pg_cron`
+job (08:00 UTC) calling a new SQL function that sends the staged reminder
+emails James specified — 30/7/1 days before renewal, an expired notice,
+then one follow-up nudge — via Resend, reusing `0008`'s exact `pg_net` +
+Vault pattern (no new Edge Function, no new API key). **Tested live by
+James, successfully**: redeployed `stripe-webhook`; added the two new
+event types to the Stripe webhook destination; ran the reminder function
+manually against a test row with `current_period_end` set to today (got
+the "expired" email, correctly) and then to 8 days out (got the "30d"
+email, correctly — 8 days falls in the 30-day bucket, not the 7-day one,
+confirming the boundary logic). **With this, Stages C1 through C4 — the
+entire Stripe/Supabase subscription backend — are fully built and proven
+end to end.** Stage D (app-side tier enforcement, including the expired-
+subscription block screen itself) is next — see §6.
 
 **Side note from the same stretch of conversation, unrelated to any of the
 above:** going through Stripe's live-account activation flow (confirming
@@ -1183,17 +1225,20 @@ re-deriving any of this.
       2026-11-25 (Stage C3, §0/§4): a real test payment correctly moved a
       test account's `plan_key` from `free` to `basic`. **Stage C3 is now
       fully complete.**
-- [ ] **Next:** build the renewal/expiry state machine and staged
-      reminder emails (Stage C4, §4) — not started.
+- [x] ~~Build the renewal/expiry state machine and staged reminder
+      emails~~ — done 2026-11-25 (Stage C4, §4): `stripe-webhook` now keeps
+      renewals/cancellations accurate, and the staged reminder emails
+      (30d/7d/1d/expired/followup) were tested live and fire correctly at
+      the right day-boundaries. **Stages C1–C4 are now fully complete.**
 - [ ] Resolve the live Stripe account's "missing director" compliance
       flag with Stripe Support before Stage G (go-live) — does not block
       anything before then (§4, "Payment processing"). James is currently
       waiting on a further email from Stripe but, pending that, is taking
       their word that it doesn't affect the live account, which otherwise
       looks to be in order.
-- [ ] Wire app-side tier enforcement: numeric caps, workflow-type gates, the
-      read-only-over-limit Library mode, and the expired-subscription block
-      screen (Stage D, §4).
+- [ ] **Next:** wire app-side tier enforcement: numeric caps, workflow-type
+      gates, the read-only-over-limit Library mode, and the expired-
+      subscription block screen (Stage D, §4).
 - [ ] Build the paid-subscriber report and the starred-Library-update
       notification feature (Stage E, §4 — both new asks, agreed 2026-11-24).
 - [ ] Update the WordPress pricing snippet to the new 4-tier structure once
