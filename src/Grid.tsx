@@ -133,14 +133,22 @@ export default function Grid({
     codeDelimiterChar,
     codeRestriction,
     locked,
-    lockedDueToPlanLimit,
-    lockReason,
+    readOnlyDueToPlanLimit,
+    readOnlyReason,
     guidance,
     column1CodeLength,
     properCaseOnly,
     customAbbreviations,
     autoCodeGapIncrement,
   } = settings;
+
+  // Stage D5a fix: Locked (`locked`) and Read Only (`readOnlyDueToPlanLimit`) are two separate
+  // attributes -- a taxonomy can be either, both, or neither -- but every edit-blocking check
+  // below needs to fire for either one, since both mean the same thing underneath (every row
+  // marked `protected`, nothing structural allowed). `locked` alone still gates anything that's
+  // specific to a REAL lock (the reason-prompt flows, for one -- a prompt asking for a reason
+  // makes no sense against a plan's own size cap, which no reason can override).
+  const readOnly = locked || readOnlyDueToPlanLimit;
 
   // The grid's own frozen header's second row needs to sit exactly one row below the first — but
   // the first row's own rendered height isn't the plain 1.7rem every cell's `height` is set to:
@@ -655,11 +663,11 @@ export default function Grid({
   // Stage D5a fix: James's report -- a starter sample opened read-only for exceeding the plan's
   // size limit still showed Lock Taxonomy's generic data-integrity wording ("will corrupt the
   // long term integrity...") when blocking an edit, which is actively wrong here -- there's no
-  // live ERP data at risk, just a plan's own cap. Every lock-related block below calls this
+  // live ERP data at risk, just a plan's own cap. Every read-only-related block below calls this
   // instead of using its own hardcoded message directly, substituting the real reason whenever
-  // that's why this taxonomy is actually locked.
+  // that's why this taxonomy is actually read-only.
   function lockBlockMessage(fallback: string): string {
-    return lockedDueToPlanLimit && lockReason ? lockReason : fallback;
+    return readOnlyDueToPlanLimit && readOnlyReason ? readOnlyReason : fallback;
   }
 
   function dismissValidationError() {
@@ -875,7 +883,7 @@ export default function Grid({
     // Lock Taxonomy: a protected row's own code is off-limits — it may already be posted
     // against in the live ERP, and recoding it here has no way to reach or correct whatever
     // already used the old value there.
-    if (locked && rows[editIndex].protected) {
+    if (readOnly && rows[editIndex].protected) {
       showValidationError(
         lockBlockMessage(
           'Change of existing codes will corrupt the long term integrity of the existing data and is therefore not allowed',
@@ -1243,7 +1251,7 @@ export default function Grid({
     // Lock Taxonomy: a protected row's own description is off-limits for the same reason as
     // its code — it may already be shown against live transactions. Mark as Delete (not a
     // direct edit) is the sanctioned way to retire one.
-    if (locked && rows[editIndex].protected) {
+    if (readOnly && rows[editIndex].protected) {
       showValidationError(
         lockBlockMessage(
           'Change of existing descriptions will corrupt the long term integrity of the existing data and is therefore not allowed',
@@ -1350,7 +1358,7 @@ export default function Grid({
   const CORRUPT_ORDER_MESSAGE =
     'Reordering an existing entry protected by Lock Taxonomy could break its recorded position relative to its siblings and is therefore not allowed';
   function blockIfAnyProtected(ids: Iterable<string>, message: string = CORRUPT_CODES_MESSAGE): boolean {
-    if (!locked) return false;
+    if (!readOnly) return false;
     const idSet = ids instanceof Set ? ids : new Set(ids);
     if (!rows.some((r) => idSet.has(r.id) && r.protected)) return false;
     showValidationError(lockBlockMessage(message));
@@ -1446,8 +1454,8 @@ export default function Grid({
   }
 
   function addRow() {
-    if (locked && lockedDueToPlanLimit) {
-      showValidationError(lockBlockMessage('This taxonomy is locked.'));
+    if (readOnlyDueToPlanLimit) {
+      showValidationError(lockBlockMessage('This taxonomy is read-only.'));
       return;
     }
     if (locked) {
@@ -1599,10 +1607,10 @@ export default function Grid({
     // James's ask (2026-10-14): once locked, adding a row (the one structural change still
     // possible) needs a mandatory reason first — see memoPrompt's own comment above.
     const doInsert = () => {
-      if (locked && lockedDueToPlanLimit) {
+      if (readOnlyDueToPlanLimit) {
         // A plan's size cap can't be reasoned around the way a genuine Lock Taxonomy's
         // integrity rule can -- no "enter a reason" prompt here, just a hard block.
-        showValidationError(lockBlockMessage('This taxonomy is locked.'));
+        showValidationError(lockBlockMessage('This taxonomy is read-only.'));
         return;
       }
       if (locked) {
@@ -1974,6 +1982,14 @@ export default function Grid({
 
   function handleCellContextMenu(kind: CellKind, rowId: string, level: number, e: React.MouseEvent) {
     e.preventDefault();
+    // James's ask: a read-only-due-to-plan-limit taxonomy blocks the right-click menu entirely --
+    // unlike a genuine Lock Taxonomy (where right-click still opens a restricted menu, since some
+    // actions, like adding a row with a reason, remain legitimately possible), nothing here is
+    // ever legitimately possible, so there's no menu worth opening at all.
+    if (readOnlyDueToPlanLimit) {
+      showValidationError(lockBlockMessage('This taxonomy is read-only.'));
+      return;
+    }
     // Right-clicking a cell of the *same* kind as the current selection still needs to fall
     // within its highlighted column(s) to count as "in range" (so right-clicking outside a
     // deliberately narrow code-column block doesn't silently widen it). An "every column
@@ -2227,9 +2243,9 @@ export default function Grid({
     if (!contextMenu || contextMenu.kind !== 'desc' || !selection) return;
     const { level } = contextMenu;
     const rowIds = selection.rowIds;
-    if (locked && lockedDueToPlanLimit) {
+    if (readOnlyDueToPlanLimit) {
       setContextMenu(null);
-      showValidationError(lockBlockMessage('This taxonomy is locked.'));
+      showValidationError(lockBlockMessage('This taxonomy is read-only.'));
       return;
     }
     if (locked) {
@@ -2390,8 +2406,8 @@ export default function Grid({
     if (!contextMenu || contextMenu.kind !== 'code') return;
     const clickedRowIdx = rows.findIndex((r) => r.id === contextMenu.rowId);
     setContextMenu(null);
-    if (locked) {
-      showValidationError(lockBlockMessage('This taxonomy is locked and codes cannot be auto-filled.'));
+    if (readOnly) {
+      showValidationError(lockBlockMessage('This taxonomy is read-only and codes cannot be auto-filled.'));
       return;
     }
     const level = contextMenu.level;

@@ -1645,6 +1645,21 @@ body.app-dark-theme .taxonomy-meta .purpose {
   padding: 0.15rem 0.5rem;
 }
 
+/* Stage D5a fix: deliberately a distinct colour/icon from .locked-badge -- Read Only (exceeds
+   this plan's size limit) and Locked (a real Lock Taxonomy) are two separate attributes and
+   must never look like the same thing, even when both happen to show at once. */
+.read-only-badge {
+  margin-left: 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  vertical-align: middle;
+  background: #d6e8ff;
+  color: #0b4a8f;
+  border: 1px solid #9cc4ed;
+  border-radius: 4px;
+  padding: 0.15rem 0.5rem;
+}
+
 .lock-btn,
 .unlock-btn {
   font-weight: 600;

@@ -123,17 +123,22 @@ export interface TaxonomySettings {
   lockReason?: string;
   lockAuthorisedBy?: string;
   /** Stage D5b: true only when this `locked` state came from a real, user-initiated Lock
-   * Taxonomy (performLockTaxonomy, App.tsx) -- distinguishes that from Stage D5a's unrelated
-   * read-only-over-limit Library samples, which set `locked`/`protected` for a completely
-   * different reason and must never count toward, or be decremented from, the signed-in
-   * account's max_locked_taxonomies count. Absent/false for every taxonomy never really locked. */
+   * Taxonomy (performLockTaxonomy, App.tsx) -- a real Lock is the only thing that ever sets this,
+   * so it stays false (and the corresponding count is never touched) for every taxonomy that's
+   * merely read-only for some other reason, e.g. readOnlyDueToPlanLimit below. Absent/false for
+   * every taxonomy never really locked. */
   lockCounted?: boolean;
-  /** Stage D5a: true only when `locked` came from the read-only-over-limit Library override
-   * (App.tsx's applyReadOnlyOverLimit), not a real Lock Taxonomy -- lets Grid.tsx show the actual
-   * plan-limit reason (lockReason, set alongside this) at every point that would otherwise show
-   * Lock Taxonomy's generic data-integrity wording, which doesn't apply here and would be
-   * actively misleading (there's no "existing ERP data" at risk, just a plan's own size cap). */
-  lockedDueToPlanLimit?: boolean;
+  /** Stage D5a: James's report -- Read Only (this) and Locked (`locked`, above) are two entirely
+   * separate attributes and must never be conflated or shown as the same thing, even though both
+   * are enforced the same way underneath (every row marked `protected`). True when a starter
+   * sample's own size exceeds the signed-in viewer's current plan limit (App.tsx's
+   * applyReadOnlyOverLimit) -- completely independent of `locked`: a sample can be read-only for
+   * this reason, genuinely locked, both at once, or neither. readOnlyReason (its own field, never
+   * lockReason) carries the explanation -- Lock Taxonomy's own generic data-integrity wording
+   * would be actively misleading here, since there's no live ERP data at risk, just a plan's own
+   * size cap. */
+  readOnlyDueToPlanLimit?: boolean;
+  readOnlyReason?: string;
   /** Set only while the Simple Taxonomy guided wizard is active; absent for every other
    * taxonomy (including ones created via the other five workflow-menu starting points, which
    * still just open today's ordinary setup screen — their own guided wizards aren't built
