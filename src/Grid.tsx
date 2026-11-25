@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { TaxonomyRow, TaxonomySettings } from './types';
-import { createEmptyRow, growRowsToLevels, MAX_LEVELS } from './types';
+import { createEmptyRow, growRowsToLevels } from './types';
 import { getLevelColor } from './colors';
 import { toggleCase } from './caseUtils';
 import { toProperCasePreservingAbbreviations } from './abbreviations';
@@ -71,6 +71,14 @@ interface GridProps {
    * (Section 6.9) rather than a new, parallel field: "possibly as a text suffix", in James's own
    * words. Stamping who made the change needs to know who's actually signed in. */
   signedInEmail: string;
+  /** Stage D3: the signed-in user's real column ceiling right now (subscription.ts's
+   * effectiveMaxLevels) -- the app's absolute MAX_LEVELS, or their plan's own lower cap,
+   * whichever is smaller. */
+  maxLevels: number;
+  /** Stage D3: the signed-in user's plan's row cap, or null for unlimited (subscription.ts's
+   * effectiveMaxRows) -- unlike maxLevels there's no app-wide absolute row ceiling, so null here
+   * really does mean no cap at all, not "unknown." */
+  maxRows: number | null;
 }
 
 type CellKind = 'code' | 'desc' | 'suffix';
@@ -113,6 +121,8 @@ export default function Grid({
   auditActive,
   autoCodeOverflowActive,
   signedInEmail,
+  maxLevels,
+  maxRows,
 }: GridProps) {
   const {
     numLevels,
@@ -1516,6 +1526,15 @@ export default function Grid({
   function handleInsertRow(position: 'above' | 'below') {
     if (!contextMenu) return;
     const count = pendingInsertCount();
+    // Stage D3: checked here rather than in performInsertRow itself -- every other row-adding
+    // path (paste, CSV import, Promote/Demote splitting a row into children) already has its own
+    // natural place to grow row count, but right-click Insert Row is the one genuinely open-ended
+    // "just keep adding more" action, so it's the one place this needs an explicit ceiling.
+    if (maxRows != null && rows.length + count > maxRows) {
+      setContextMenu(null);
+      showValidationError(`Your current plan allows up to ${maxRows} rows. Upgrade for more.`);
+      return;
+    }
     let idx: number;
     if (count > 1 && selection) {
       const selectedIndices = rows
@@ -2709,8 +2728,8 @@ export default function Grid({
     // James's report (2026-10-14): this control had no ceiling at all -- unlike the Settings
     // dialog's own numLevels field, which already clamps to MAX_LEVELS, a user could keep
     // right-clicking "Add Column" past it indefinitely with no warning.
-    if (numLevels >= MAX_LEVELS) {
-      showValidationError(`This taxonomy is already at the maximum of ${MAX_LEVELS} levels.`);
+    if (numLevels >= maxLevels) {
+      showValidationError(`This taxonomy is already at the maximum of ${maxLevels} levels.`);
       return;
     }
     // James's gap: column 1 of a flat, single-level taxonomy may hold a multi-character code

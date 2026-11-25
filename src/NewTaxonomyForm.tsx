@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { DEFAULT_SETTINGS, MAX_LEVELS } from './types';
+import { DEFAULT_SETTINGS } from './types';
 import type { SuffixField } from './types';
 import HelpIcon from './HelpIcon';
 import Tooltip from './Tooltip';
@@ -19,6 +19,10 @@ interface NewTaxonomyFormProps {
     codeDelimiterChar: string,
   ) => void;
   helpText: HelpTextMap;
+  /** Stage D3: the signed-in user's real column ceiling right now (subscription.ts's
+   * effectiveMaxLevels) -- the app's absolute MAX_LEVELS, or their plan's own lower cap,
+   * whichever is smaller. */
+  maxLevels: number;
 }
 
 const CODE_DELIMITER_OPTIONS = ['-', '_', '+', '=', '/'];
@@ -27,7 +31,7 @@ function defaultSuffix(): SuffixField {
   return { width: 4, delimiter: '-', mode: 'editable', constantValue: '' };
 }
 
-export default function NewTaxonomyForm({ onCreate, helpText }: NewTaxonomyFormProps) {
+export default function NewTaxonomyForm({ onCreate, helpText, maxLevels }: NewTaxonomyFormProps) {
   // James's report: arriving here with the page already scrolled down (e.g. from browsing the
   // Library) left the sticky header (.app-sticky-top, App.css) pinned over this form's own top
   // — the "Create a New Taxonomy" heading and Title label — with no visible way to tell it was
@@ -47,7 +51,7 @@ export default function NewTaxonomyForm({ onCreate, helpText }: NewTaxonomyFormP
     String(DEFAULT_SETTINGS.maxDescriptionLength),
   );
   const [numLevelsText, setNumLevelsText] = useState(String(DEFAULT_SETTINGS.numLevels));
-  const numLevels = Math.max(1, Math.min(MAX_LEVELS, Number(numLevelsText) || DEFAULT_SETTINGS.numLevels));
+  const numLevels = Math.max(1, Math.min(maxLevels, Number(numLevelsText) || DEFAULT_SETTINGS.numLevels));
   const [delimiterPositions, setDelimiterPositions] = useState<number[]>(
     DEFAULT_SETTINGS.delimiterPositions,
   );
@@ -204,18 +208,18 @@ export default function NewTaxonomyForm({ onCreate, helpText }: NewTaxonomyFormP
         <input
           type="number"
           min={1}
-          max={MAX_LEVELS}
+          max={maxLevels}
           value={numLevelsText}
           onChange={(e) => setNumLevelsText(e.target.value)}
           onBlur={() => {
             const n = Number(numLevelsText);
             if (!numLevelsText || Number.isNaN(n) || n < 1) {
               setNumLevelsText(String(DEFAULT_SETTINGS.numLevels));
-            } else if (n > MAX_LEVELS) {
-              setNumLevelsText(String(MAX_LEVELS));
+            } else if (n > maxLevels) {
+              setNumLevelsText(String(maxLevels));
             }
           }}
-          title={`How many hierarchy levels (code and description columns) this taxonomy starts with, up to ${MAX_LEVELS}`}
+          title={`How many hierarchy levels (code and description columns) this taxonomy starts with, up to ${maxLevels}`}
         />
       </label>
 
