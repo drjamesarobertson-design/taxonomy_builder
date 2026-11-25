@@ -1028,11 +1028,38 @@ export default function App() {
       .catch(reportLibraryError);
   }
 
+  // Stage D5: James's spec -- every tier always sees the FULL starter-sample Library, never a
+  // cut-down one, but a sample whose own size exceeds the signed-in user's CURRENT plan limits
+  // opens read-only rather than being hidden or blocked. Reuses the exact row-protection sweep
+  // Lock Taxonomy itself uses (performLockTaxonomy, below) -- applied only to this opened,
+  // in-memory copy, never written back to the Library entry itself, which stays exactly as its
+  // owner authored it. Scoped to starter samples specifically, per James's own wording ("a
+  // sample" exceeding limits) -- a subscriber's own, already-oversized entries (e.g. built on a
+  // higher tier, then downgraded) are left exactly as they are; this is about the shared starter
+  // library staying genuinely usable at every tier, not retroactively locking anyone's own work.
+  function applyReadOnlyOverLimit(entry: LibraryEntry): TaxonomyProject {
+    if (!entry.isStarterSample || entry.project.settings.locked) return entry.project;
+    const maxLevels = effectiveMaxLevels(planLimits);
+    const maxRows = effectiveMaxRows(planLimits);
+    const overLimit =
+      entry.project.settings.numLevels > maxLevels || (maxRows != null && entry.project.rows.length > maxRows);
+    if (!overLimit) return entry.project;
+    return {
+      ...entry.project,
+      settings: {
+        ...entry.project.settings,
+        locked: true,
+        lockReason: `Opened read-only -- this sample (${entry.project.settings.numLevels} columns, ${entry.project.rows.length} rows) exceeds your current plan's limit.`,
+      },
+      rows: entry.project.rows.map((row) => ({ ...row, protected: true })),
+    };
+  }
+
   function handleMoveToWorkArea(entry: LibraryEntry) {
     if (dirty && !confirm('Discard unsaved changes to the current taxonomy and open this one from the Library?')) {
       return;
     }
-    setProject(entry.project);
+    setProject(applyReadOnlyOverLimit(entry));
     setCurrentLibraryEntryId(entry.id);
     setDirty(false);
     setAutoFocusFirstRow(false);
