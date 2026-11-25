@@ -1,6 +1,6 @@
 # Taxonomy Builder — Master Briefing
 
-*Version: v 1.20*
+*Version: v 1.21*
 
 *A one-stop orientation document: what this is, what it does today, where the
 business stands, and what's still outstanding. Written for James (or anyone
@@ -8,13 +8,16 @@ he shares this with) rather than as an engineering log — for the detailed,
 round-by-round build history, see `PROGRESS.md`; for the original functional
 specification, see `CLAUDE.md`.*
 
-*Last updated: 2026-11-25 — Stage D (app-side tier enforcement) is now
-built in full: live plan-limit fetching, the expired-subscription hard
-block, numeric caps (columns/rows/Library entries), Cubic Business Model
-workflow-type gates, the read-only-over-limit Library mode, and the Lock
-Taxonomy count cap. Built and verified by code review, Playwright checks
-and direct logic tests during this session; **not yet tested live by
-James** (one new migration, `supabase/0014`, still needs running). See §0.*
+*Last updated: 2026-11-25 — Stage D (app-side tier enforcement) has now
+been tested live by James, round by round, with every bug found along the
+way fixed and confirmed working: the workflow-type gates, the Lock
+Taxonomy count cap, the Settings dialog's error handling, the Library
+entries cap, and — the biggest piece — the read-only-over-limit Library
+mode, which went through several rounds of real live-testing feedback
+before landing on its final shape (see §0). James's own words once the
+last round checked out: "That is it, well done." **Test: Expired-
+subscription screen is the one piece still held over, deliberately, for
+James to test tonight** — see §0/§6.*
 
 *Version history: v 1.01 — first version stamp applied to this file
 (2026-10-14). v 1.02 — same evening, after PRs #230–#235 (see §0): Promote/
@@ -148,7 +151,69 @@ decremented when an oversized starter sample (D5a) gets unlocked.
 tests of the gating functions — not yet tested live by James.** One
 manual step outstanding: run `supabase/0014_add_locked_taxonomy_count.sql`
 in Supabase's SQL Editor. Stage E (paid-subscriber report, starred-Library
-notifications) is next — see §6.
+notifications) is next — see §6. v 1.21 (2026-11-25, same day) —
+**Stage D tested live by James, round by round, every bug found along the
+way fixed, redeployed and reconfirmed, with James's final "that is it,
+well done" once the last round checked out:**
+`supabase/0014_add_locked_taxonomy_count.sql` run successfully. (D4) the
+gated workflow buttons weren't visibly greyed out (the button's own
+explicit colours were overriding the browser's disabled-state dimming)
+and showed two stacked tooltips (a native `title=""` attribute on top of
+the `Tooltip` component) — both fixed (PR #286/#287-ish). (D5b) the Lock
+Taxonomy cap gave no visible feedback when blocked — fixed by disabling
+the toolbar's own "Lock Taxonomy ▾" button with an explanatory tooltip,
+matching the landing page's own pattern; wording then also fixed for the
+`maxLocked === 0` case, which read as nonsense ("unlock one first" when
+there's nothing to unlock). Settings dialog: a failed Save gave no visible
+sign anything had happened if the error text was scrolled out of view —
+fixed with a `drawAttentionTo()` helper that scrolls/focuses/flashes the
+offending field directly (James's own preference over an audible
+warning, for this specific case). Library entries cap: the error showed
+as a banner elsewhere on the page, easy to miss while attention was on
+the dialog — moved inline into the dialog itself; separately, a newly
+added entry wasn't scrolled into view in the Library sidebar — fixed via
+a `scrollToEntryId` prop, with `refreshLibrary()` changed to return its
+own promise so the scroll only fires once the new entry actually exists
+in the refreshed list. **(D5a, the largest piece, went through several
+more rounds after that:** every `alert()` in `App.tsx` now plays a short
+synchronous Web Audio beep first (`alertWithBeep`) — James's report, after
+missing a top-of-window pop-up while looking at the Library sidebar, that
+this had been a recurring issue with other pop-ups too, never raised
+until now. The over-limit message now states both the taxonomy's actual
+size and the plan's allowed size, not just the actual numbers. Right-click
+on a read-only-over-limit taxonomy is now blocked entirely (no menu opens
+at all), not just individual actions after a menu item is chosen. "Locked"
+(a real, user-initiated Lock Taxonomy) and "Read Only" (exceeds the
+viewer's current plan size limit) are now two fully independent
+attributes — separate settings fields (`readOnlyDueToPlanLimit`/
+`readOnlyReason`, replacing an earlier version that wrongly reused
+`locked`/`lockReason`), separate title-bar badges (a new blue "📖 Read
+Only" shown *alongside*, never instead of, the existing yellow "🔒
+Locked"), and separate wording everywhere. Two further rounds of live
+feedback refined this further: a personal Library copy of an oversized
+sample (seeded into every subscriber's own Library at signup, or saved
+via "Add to Library") was found to inherit a stale `readOnlyDueToPlanLimit`
+flag with no explanation text, so the badge showed but the pop-up silently
+didn't — fixed to always recompute fresh, with the pop-up falling back to
+a generic message exactly like the badge's own tooltip already did, so
+the two can never disagree. That fix also exposed a genuine, separate bug
+in `SettingsModal`: a taxonomy already over its plan's column cap could
+not save ANY Settings change at all, even ones unrelated to column count,
+because the save-block check fired on the unchanged value alone — fixed
+to only block actually *increasing* the count past the cap. **Finally,
+James made an explicit scope decision after seeing a personal copy load
+with no warning at all**: the read-only-over-limit treatment, originally
+scoped to starter samples only ("a subscriber's own, already-oversized
+entries... are left exactly as they are"), now applies to **every**
+Library entry regardless of ownership — any taxonomy over the current
+plan's size cap gets the same pop-up, badge and full block, whoever owns
+it. **With this, Stage D is confirmed fully working end to end**, bar one
+piece James deliberately held over: **Test: Expired-subscription screen,
+scheduled for tonight.** Separately noted, not yet investigated (James
+called it out explicitly as "a separate issue," not something to action
+immediately): a Library duplicate-name-detection regression — caught a
+duplicate the first time it was tried, then let one through in a later,
+separate session.
 **Increment this by one every time this file is next updated and/or
 shared with him (whichever comes first), and add a line here whenever its
 content actually changed** — see
@@ -185,11 +250,17 @@ its original large size, with "Copyright © James A Robertson and
 Associates Limited" beneath it in the current small font, and the
 redundant tagline paragraph removed.
 
-**Stage D (app-side tier enforcement), 2026-11-25 — built in full while
-James was away at a call, not yet tested live.** See the version history
-entry above (v 1.20) for the complete breakdown of all five sub-pieces
-(D1–D5b). One manual step outstanding: run `supabase/0014_add_locked_
-taxonomy_count.sql` in Supabase's SQL Editor, then test each gate live.
+**Stage D (app-side tier enforcement), 2026-11-25 — built in full, then
+tested live by James round by round, with every bug found along the way
+fixed, redeployed and reconfirmed.** See the version history entry above
+(v 1.20) for the original five-sub-piece breakdown (D1–D5b), and v 1.21
+for the full list of live-testing fixes — including a significant,
+James-directed scope widening of the read-only-over-limit mode to cover
+every Library entry, not just starter samples. James's own words once the
+last round checked out: "That is it, well done." **One piece deliberately
+held over: Test: Expired-subscription screen, scheduled for tonight.**
+Also noted, separately and not yet investigated: a Library duplicate-name
+detection regression (§6).
 
 **Stripe Stage B walkthrough, 2026-11-24 (same day as the planning round
 below) — done live, step by step:** account created; Stripe Tax enabled in
@@ -1044,13 +1115,17 @@ infrastructure as the auth emails (see below).
    successfully by James; the Checkout Session and webhook Edge Functions,
    the renewal/expiry state machine and the staged reminder emails —
    **all done, 2026-11-25, tested live by James** — see §0.
-4. **Stage D — app-side enforcement** — **built in full, 2026-11-25, not
-   yet tested live**: the numeric caps (columns/rows/Library entries/
-   locked taxonomies) and the workflow-type gates (reusing the existing
-   `WORKFLOW_LEVELS`/Cubic Business Model structure) wired to the live
-   tier config; the read-only-over-limit mode for Library samples that
-   exceed a tier's own numeric limits; the "subscription expired, renew
-   here" hard-block screen. See §0 for the full five-sub-piece breakdown.
+4. **Stage D — app-side enforcement** — **built in full, 2026-11-25, then
+   tested live by James and confirmed working** (bar one piece
+   deliberately held over — see below): the numeric caps (columns/rows/
+   Library entries/locked taxonomies) and the workflow-type gates
+   (reusing the existing `WORKFLOW_LEVELS`/Cubic Business Model
+   structure) wired to the live tier config; the read-only-over-limit
+   mode, which — after live-testing feedback — now applies to any
+   oversized Library entry regardless of ownership, not just starter
+   samples; the "subscription expired, renew here" hard-block screen,
+   **not yet tested live (held over for tonight at James's own request)**.
+   See §0 for the full breakdown.
 5. **Stage E — reporting & notifications**: the paid-subscriber report; the
    starred-Library-update notification feature.
 6. **Stage F — WordPress**: update the already-delivered HTML pricing
@@ -1308,14 +1383,19 @@ re-deriving any of this.
       looks to be in order.
 - [x] ~~Wire app-side tier enforcement: numeric caps, workflow-type gates,
       the read-only-over-limit Library mode, and the expired-subscription
-      block screen~~ — built in full, 2026-11-25 (Stage D, §0/§4), verified
-      by code review, Playwright checks and direct logic tests. **Not yet
-      tested live by James.**
-- [ ] **James to run:** `supabase/0014_add_locked_taxonomy_count.sql` in
-      Supabase's SQL Editor (Stage D5b's lock-count cap needs it to work).
-- [ ] **Next:** James to test Stage D live — the expired-subscription
-      screen, each numeric cap, the workflow-type gates, a starter sample
-      opening read-only over-limit, and the Lock Taxonomy count cap.
+      block screen~~ — built in full, 2026-11-25 (Stage D, §0/§4); **the
+      numeric caps, workflow-type gates, and read-only-over-limit mode are
+      now tested live and confirmed working** (v 1.21) — the last round
+      widened read-only-over-limit to every Library entry, not just
+      starter samples, at James's explicit direction.
+- [x] ~~Run `supabase/0014_add_locked_taxonomy_count.sql`~~ — done,
+      2026-11-25; the Lock Taxonomy count cap is tested live and working.
+- [ ] **Next (tonight, at James's own request):** test the one Stage D
+      piece still held over — the expired-subscription hard-block screen.
+- [ ] Investigate a Library duplicate-name detection regression James
+      flagged as a separate issue during Stage D testing (2026-11-25): it
+      caught a duplicate name the first time, then let one through in a
+      later, separate session. Not yet looked into.
 - [ ] Build the paid-subscriber report and the starred-Library-update
       notification feature (Stage E, §4 — both new asks, agreed 2026-11-24).
 - [ ] Update the WordPress pricing snippet to the new 4-tier structure once
