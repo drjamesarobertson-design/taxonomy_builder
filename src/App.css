@@ -797,6 +797,16 @@
   border-color: #124fa8;
 }
 
+/* Stage D4: a plan-gated workflow level -- an explicit background/border already override the
+   browser's own default disabled dimming (which only kicks in for unstyled controls), so without
+   this, a disabled button here looked completely indistinguishable from an enabled one. */
+.workflow-level-buttons button:disabled {
+  cursor: not-allowed;
+  background: #9fb3cc;
+  border-color: #9fb3cc;
+  color: #e8edf5;
+}
+
 .sign-on-back-btn {
   margin-top: 1.5rem;
   padding: 0.4rem 0.9rem;
